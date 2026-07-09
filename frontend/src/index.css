@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%; /* #FFFFFF */
+    --surface: 220 27% 98%; /* #F8F9FB */
+    --foreground: 226 42% 18%; /* #1A2340 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 226 42% 18%;
+
+    --muted: 220 27% 97%;
+    --muted-foreground: 220 10% 40%; /* #5B6270 */
+
+    --primary: 243 75% 59%; /* #4F46E5 indigo */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 175 84% 32%; /* #0D9488 teal */
+    --secondary-foreground: 0 0% 100%;
+
+    --accent: 243 75% 59%;
+    --accent-foreground: 0 0% 100%;
+
+    --success: 175 84% 32%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 16% 90%;
+    --input: 220 16% 88%;
+    --ring: 243 75% 59%;
+
+    --radius: 0.625rem; /* 10px — within the 8–12px spec */
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface text-foreground font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* Thin, unobtrusive scrollbars for a cleaner look */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+}
