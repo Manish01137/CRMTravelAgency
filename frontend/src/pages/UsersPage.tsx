@@ -10,6 +10,7 @@ import {
   Trash2,
   UserPlus,
   UserRound,
+  Users,
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -21,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { EmptyState } from '@/components/ui/empty-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -229,6 +231,22 @@ export function UsersPage() {
             ))}
           </div>
         </>
+      )}
+
+      {/* Friendly nudge when the team is just the owner */}
+      {!usersQuery.isLoading && members.length <= 1 && invitations.length === 0 && (
+        <div className="mt-6">
+          <EmptyState
+            icon={<Users />}
+            title="It's just you so far"
+            description="Invite agents so your whole team can capture and work leads together."
+            action={
+              <Button onClick={() => setInviteOpen(true)}>
+                <UserPlus /> Invite teammate
+              </Button>
+            }
+          />
+        </div>
       )}
 
       {/* Pending invitations */}

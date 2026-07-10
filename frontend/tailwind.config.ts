@@ -55,7 +55,14 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        display: ['"General Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        display: [
+          '"Cabinet Grotesk"',
+          '"General Sans"',
+          'Inter',
+          'ui-sans-serif',
+          'system-ui',
+          'sans-serif',
+        ],
       },
       boxShadow: {
         card: '0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04)',

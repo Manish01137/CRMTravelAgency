@@ -101,6 +101,7 @@ export interface LeadStats {
   won: number;
   lost: number;
   newThisWeek: number;
+  newToday: number;
   byStatus: Record<string, number>;
 }
 

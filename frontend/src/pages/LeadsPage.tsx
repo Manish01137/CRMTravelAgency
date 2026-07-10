@@ -12,13 +12,14 @@ import {
   Search,
   SearchX,
   Trash2,
+  UserRound,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { Lead, Paginated, User } from '@/types';
+import { cn } from '@/lib/utils';
+import type { Lead, LeadSource, LeadStatus, Paginated, User } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -38,7 +39,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
-import { LEAD_SOURCES, LEAD_STATUSES, leadSourceLabel, leadStatusMeta } from '@/lib/leadMeta';
+import {
+  LEAD_SOURCES,
+  LEAD_STATUSES,
+  leadSourceStyle,
+  leadStatusStyle,
+  leadTemperature,
+} from '@/lib/leadMeta';
 import { formatCurrency, formatDate, initials } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 
@@ -67,13 +74,108 @@ function LeadActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () =>
 }
 
 function AssigneeBadge({ lead }: { lead: Lead }) {
-  if (!lead.assignedTo) return <span className="text-sm text-muted-foreground">Unassigned</span>;
+  if (!lead.assignedTo) {
+    return (
+      <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="flex size-6 items-center justify-center rounded-full border border-dashed border-muted-foreground/40">
+          <UserRound className="size-3.5" />
+        </span>
+        <span className="italic">Unassigned</span>
+      </span>
+    );
+  }
   return (
     <div className="flex items-center gap-2">
       <Avatar className="h-6 w-6">
         <AvatarFallback className="text-[10px]">{initials(lead.assignedTo.name)}</AvatarFallback>
       </Avatar>
       <span className="truncate text-sm text-foreground">{lead.assignedTo.name}</span>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: LeadStatus }) {
+  const st = leadStatusStyle(status);
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
+        st.pill,
+      )}
+    >
+      <span className={cn('size-1.5 rounded-full', st.dot)} />
+      {st.label}
+    </span>
+  );
+}
+
+function SourceBadge({ source }: { source: LeadSource }) {
+  const s = leadSourceStyle(source);
+  const Icon = s.Icon;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
+        s.badge,
+      )}
+    >
+      <Icon className="size-3.5" />
+      {s.label}
+    </span>
+  );
+}
+
+function TemperaturePill({ lead }: { lead: Lead }) {
+  const temp = leadTemperature(lead);
+  if (!temp) return null;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none ring-1 ring-inset',
+        temp.pill,
+      )}
+    >
+      {temp.label}
+    </span>
+  );
+}
+
+/** Horizontal, scrollable pipeline-stage filter chips (one colour per stage). */
+function PipelineChips({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const base =
+    'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
+  return (
+    <div className="mb-4 flex gap-2 overflow-x-auto pb-1 scrollbar-thin" role="tablist" aria-label="Filter by pipeline stage">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={value === ALL}
+        onClick={() => onChange(ALL)}
+        className={cn(
+          base,
+          value === ALL
+            ? 'bg-foreground text-background ring-1 ring-inset ring-foreground'
+            : 'bg-card text-muted-foreground ring-1 ring-inset ring-border hover:bg-muted',
+        )}
+      >
+        All leads
+      </button>
+      {LEAD_STATUSES.map((s) => {
+        const st = leadStatusStyle(s.value);
+        const active = value === s.value;
+        return (
+          <button
+            key={s.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(active ? ALL : s.value)}
+            className={cn(base, active ? st.chipActive : st.chipIdle)}
+          >
+            {s.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -159,9 +261,12 @@ export function LeadsPage() {
         </Button>
       </PageHeader>
 
-      {/* Toolbar */}
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="relative lg:max-w-xs lg:flex-1">
+      {/* Pipeline stage filter — colored, horizontally scrollable */}
+      <PipelineChips value={status} onChange={setStatus} />
+
+      {/* Toolbar: search + secondary filters */}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={searchInput}
@@ -171,22 +276,9 @@ export function LeadsPage() {
             aria-label="Search leads"
           />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:flex lg:flex-1 lg:justify-end">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="lg:w-40" aria-label="Filter by status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All statuses</SelectItem>
-              {LEAD_STATUSES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-1 sm:justify-end">
           <Select value={source} onValueChange={setSource}>
-            <SelectTrigger className="lg:w-40" aria-label="Filter by source">
+            <SelectTrigger className="sm:w-40" aria-label="Filter by source">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -199,7 +291,7 @@ export function LeadsPage() {
             </SelectContent>
           </Select>
           <Select value={assignee} onValueChange={setAssignee}>
-            <SelectTrigger className="col-span-2 sm:col-span-1 lg:w-44" aria-label="Filter by assignee">
+            <SelectTrigger className="sm:w-44" aria-label="Filter by assignee">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -263,29 +355,37 @@ export function LeadsPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {leads.map((lead) => {
-                    const st = leadStatusMeta(lead.status);
+                    const temp = leadTemperature(lead);
                     return (
-                      <tr key={lead.id} className="transition-colors hover:bg-muted/50">
-                        <td className="px-4 py-3">
+                      <tr
+                        key={lead.id}
+                        className={cn('transition-colors', temp ? temp.rowClass : 'hover:bg-muted/50')}
+                      >
+                        <td className={cn('px-4 py-3', temp?.accentCell)}>
                           <div className="flex items-center gap-3">
                             <Avatar>
                               <AvatarFallback>{initials(lead.name)}</AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
-                              <p className="truncate font-medium text-foreground">{lead.name}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="truncate font-medium text-foreground">{lead.name}</p>
+                                <TemperaturePill lead={lead} />
+                              </div>
                               <p className="truncate text-xs text-muted-foreground">
                                 {lead.email || lead.phone || '—'}
                               </p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">{leadSourceLabel(lead.source)}</td>
+                        <td className="px-4 py-3">
+                          <SourceBadge source={lead.source} />
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">{lead.destination || '—'}</td>
                         <td className="px-4 py-3 text-foreground">
                           {formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'USD')}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant={st.variant}>{st.label}</Badge>
+                          <StatusPill status={lead.status} />
                         </td>
                         <td className="px-4 py-3">
                           <AssigneeBadge lead={lead} />
@@ -304,16 +404,19 @@ export function LeadsPage() {
           {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
             {leads.map((lead) => {
-              const st = leadStatusMeta(lead.status);
+              const temp = leadTemperature(lead);
               return (
-                <Card key={lead.id} className="p-4">
+                <Card key={lead.id} className={cn('p-4', temp?.cardClass)}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar>
                         <AvatarFallback>{initials(lead.name)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{lead.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-medium text-foreground">{lead.name}</p>
+                          <TemperaturePill lead={lead} />
+                        </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {lead.email || lead.phone || '—'}
                         </p>
@@ -322,8 +425,8 @@ export function LeadsPage() {
                     <LeadActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} />
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant={st.variant}>{st.label}</Badge>
-                    <Badge variant="muted">{leadSourceLabel(lead.source)}</Badge>
+                    <StatusPill status={lead.status} />
+                    <SourceBadge source={lead.source} />
                   </div>
                   <dl className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
                     <div>

@@ -30,7 +30,7 @@
     --destructive-foreground: 0 0% 100%;
 
     --border: 220 16% 90%;
-    --input: 220 16% 88%;
+    --input: 225 16% 90%; /* #E2E4EA */
     --ring: 243 75% 59%;
 
     --radius: 0.625rem; /* 10px — within the 8–12px spec */
@@ -42,6 +42,7 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -53,11 +54,44 @@
   h2,
   h3,
   h4 {
-    @apply font-display tracking-tight;
+    @apply font-display font-semibold tracking-tight;
   }
 
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Kill the browser autofill tint (the lavender/yellow fill) — keep inputs white. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    -webkit-box-shadow: 0 0 0 1000px hsl(var(--card)) inset;
+    caret-color: hsl(var(--foreground));
+    transition: background-color 9999s ease-in-out 0s;
+  }
+}
+
+/* Ambient glow behind the auth icon mark — slow, alive-feeling pulse/drift. */
+@keyframes auth-glow {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.18) translateY(-6px);
+    opacity: 0.75;
+  }
+}
+
+.animate-auth-glow {
+  animation: auth-glow 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-auth-glow {
+    animation: none;
   }
 }
 

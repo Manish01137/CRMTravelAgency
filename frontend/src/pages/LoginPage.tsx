@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { Star } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,16 @@ export function LoginPage() {
     <AuthLayout
       title="Welcome back"
       subtitle="Sign in to your Voyage CRM workspace"
+      trust={
+        <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <span className="flex text-amber-400" aria-hidden>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star key={i} className="size-3 fill-current" strokeWidth={0} />
+            ))}
+          </span>
+          Trusted by travel agencies across India
+        </p>
+      }
       footer={
         <>
           New to Voyage?{' '}

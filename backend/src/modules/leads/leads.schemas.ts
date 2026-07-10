@@ -65,7 +65,14 @@ export const updateLeadSchema = z
 
 export const listLeadsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
-  status: LeadStatusEnum.optional(),
+  // Accepts a single status or a comma-separated list (e.g. "NEGOTIATION,PROPOSAL_SENT"
+  // powers the Hot/Warm quick filters on the leads dashboard).
+  status: z
+    .preprocess(
+      (v) => (typeof v === 'string' && v.includes(',') ? v.split(',') : v),
+      z.union([LeadStatusEnum, z.array(LeadStatusEnum).min(1).max(7)]),
+    )
+    .optional(),
   source: LeadSourceEnum.optional(),
   assignedToId: z.union([z.literal('unassigned'), z.string().uuid()]).optional(),
   page: z.coerce.number().int().positive().default(1),
