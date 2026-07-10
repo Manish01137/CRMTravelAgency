@@ -45,6 +45,8 @@ export interface LeadStatusStyle {
   chipActive: string;
   pill: string;
   dot: string;
+  /** Solid fill (white text) — pipeline arrow chips + inline status dropdown pill. */
+  solid: string;
 }
 
 export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
@@ -54,6 +56,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-blue-600 text-white ring-1 ring-inset ring-blue-600',
     pill: 'bg-blue-50 text-blue-700 ring-blue-200',
     dot: 'bg-blue-500',
+    solid: 'text-white bg-blue-500 hover:bg-blue-600',
   },
   CONTACTED: {
     label: 'Contacted',
@@ -61,6 +64,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-violet-600 text-white ring-1 ring-inset ring-violet-600',
     pill: 'bg-violet-50 text-violet-700 ring-violet-200',
     dot: 'bg-violet-500',
+    solid: 'text-white bg-violet-500 hover:bg-violet-600',
   },
   QUALIFIED: {
     label: 'Qualified',
@@ -68,6 +72,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-pink-600 text-white ring-1 ring-inset ring-pink-600',
     pill: 'bg-pink-50 text-pink-700 ring-pink-200',
     dot: 'bg-pink-500',
+    solid: 'text-white bg-pink-500 hover:bg-pink-600',
   },
   PROPOSAL_SENT: {
     label: 'Proposal sent',
@@ -75,6 +80,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-amber-500 text-white ring-1 ring-inset ring-amber-500',
     pill: 'bg-amber-50 text-amber-700 ring-amber-200',
     dot: 'bg-amber-500',
+    solid: 'text-white bg-amber-500 hover:bg-amber-600',
   },
   NEGOTIATION: {
     label: 'Negotiation',
@@ -82,6 +88,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-orange-500 text-white ring-1 ring-inset ring-orange-500',
     pill: 'bg-orange-50 text-orange-700 ring-orange-200',
     dot: 'bg-orange-500',
+    solid: 'text-white bg-orange-500 hover:bg-orange-600',
   },
   WON: {
     label: 'Won',
@@ -89,6 +96,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-emerald-600 text-white ring-1 ring-inset ring-emerald-600',
     pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
     dot: 'bg-emerald-500',
+    solid: 'text-white bg-emerald-600 hover:bg-emerald-700',
   },
   LOST: {
     label: 'Lost',
@@ -96,6 +104,7 @@ export const LEAD_STATUS_STYLES: Record<LeadStatus, LeadStatusStyle> = {
     chipActive: 'bg-slate-600 text-white ring-1 ring-inset ring-slate-600',
     pill: 'bg-slate-100 text-slate-600 ring-slate-200',
     dot: 'bg-slate-400',
+    solid: 'text-white bg-slate-500 hover:bg-slate-600',
   },
 };
 
@@ -184,6 +193,26 @@ export function leadTemperature(lead: Lead): TemperatureStyle | null {
   if (lead.status === 'QUALIFIED' || lead.status === 'CONTACTED') return TEMPERATURE_STYLES.WARM;
   return null;
 }
+
+/**
+ * Quick temperature filters above the table (reference: All / Hot / Warm / Cold / Lost).
+ * Each maps to a status GROUP — the backend accepts a comma-separated status list,
+ * so these filter server-side with correct pagination counts. Groupings mirror the
+ * derived temperature above (same placeholder caveat).
+ */
+export interface QuickFilter {
+  key: string;
+  label: string;
+  statuses: LeadStatus[];
+}
+
+export const QUICK_FILTERS: QuickFilter[] = [
+  { key: 'hot', label: 'Hot', statuses: ['NEGOTIATION', 'PROPOSAL_SENT'] },
+  { key: 'warm', label: 'Warm', statuses: ['QUALIFIED', 'CONTACTED'] },
+  { key: 'cold', label: 'Cold', statuses: ['NEW'] },
+  { key: 'won', label: 'Won', statuses: ['WON'] },
+  { key: 'lost', label: 'Lost', statuses: ['LOST'] },
+];
 
 export const ROLE_LABEL: Record<Role, string> = { ADMIN: 'Admin', AGENT: 'Agent' };
 

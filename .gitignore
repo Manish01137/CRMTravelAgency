@@ -38,3 +38,6 @@ coverage/
 # Misc
 tmp/
 .cache/
+
+# Supabase setup with real password (never commit)
+supabase/setup.local.sql

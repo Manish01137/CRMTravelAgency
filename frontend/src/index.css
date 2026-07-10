@@ -89,8 +89,53 @@
   animation: auth-glow 6s ease-in-out infinite;
 }
 
+/* Landing page — slow-drifting gradient blobs behind the hero. */
+@keyframes blob-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(24px, -18px) scale(1.08);
+  }
+  66% {
+    transform: translate(-16px, 14px) scale(0.96);
+  }
+}
+
+.animate-blob {
+  animation: blob-drift 14s ease-in-out infinite;
+}
+
+.animate-blob-slow {
+  animation: blob-drift 20s ease-in-out infinite reverse;
+}
+
+/* Landing page — gentle bob for floating notification cards. */
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float-y 5s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float-y 6.5s ease-in-out 1.2s infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-auth-glow {
+  .animate-auth-glow,
+  .animate-blob,
+  .animate-blob-slow,
+  .animate-float,
+  .animate-float-delayed {
     animation: none;
   }
 }

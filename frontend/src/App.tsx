@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { AppShell } from '@/components/layout/AppShell';
 import { FullPageLoader } from '@/components/ui/spinner';
 import { ApiError } from '@/lib/api';
+import { LandingPage } from '@/pages/LandingPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
@@ -62,6 +63,9 @@ function PublicOnlyRoute() {
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public marketing landing — visible to everyone. */}
+      <Route path="/" element={<LandingPage />} />
+
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
@@ -70,7 +74,6 @@ function AppRoutes() {
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/leads" element={<LeadsPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />

@@ -25,8 +25,10 @@ BEGIN
 END
 $$;
 
--- Belt and braces: this role must never bypass RLS or hold elevated rights.
-ALTER ROLE crm_app NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+-- Keep the role unprivileged. (No NOSUPERUSER/NOBYPASSRLS here: Supabase's
+-- `postgres` user may not touch those attributes, and fresh roles never have
+-- them anyway — new roles are created without SUPERUSER or BYPASSRLS.)
+ALTER ROLE crm_app NOCREATEDB NOCREATEROLE;
 
 -- Connect to the DB + use the schema.
 GRANT USAGE ON SCHEMA public TO crm_app;
