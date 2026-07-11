@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "main": "dist/index.js",
   "prisma": {
     "seed": "tsx prisma/seed.ts"
