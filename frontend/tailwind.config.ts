@@ -54,16 +54,9 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Figtree', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         hand: ['Caveat', 'cursive'],
-        display: [
-          '"Cabinet Grotesk"',
-          '"General Sans"',
-          'Inter',
-          'ui-sans-serif',
-          'system-ui',
-          'sans-serif',
-        ],
+        display: ['Figtree', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
         card: '0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04)',

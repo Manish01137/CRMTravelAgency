@@ -1247,29 +1247,87 @@ export function LandingPage() {
         <QuotesSection />
         <FaqSection />
 
-        {/* Final CTA */}
-        <section className="px-4 py-24 sm:px-6">
-          <Reveal>
-            <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-primary px-6 py-16 text-center shadow-pop sm:px-12">
-              <div className="animate-blob pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
-              <div className="animate-blob-slow pointer-events-none absolute -bottom-20 -left-10 h-64 w-64 rounded-full bg-violet-300/20 blur-2xl" />
-              <div className="relative">
-                <p className="text-base font-semibold text-amber-300">No learning curve, effortless & streamlined</p>
-                <h2 className="mx-auto mt-3 max-w-2xl font-display text-3xl font-bold tracking-tight text-white sm:text-5xl">
-                  Stop losing leads to the group chat
+        {/* Final CTA — yellow card sitting half on white, half on the dark footer (Ether style) */}
+        <section className="relative px-4 pt-24 sm:px-6">
+          <div className="absolute inset-x-0 bottom-0 h-44 bg-[#141414]" />
+          <Reveal className="relative">
+            <div className="relative mx-auto grid max-w-6xl items-center gap-12 rounded-[2.5rem] bg-[#F6D960] p-8 sm:p-14 lg:grid-cols-2">
+              <div>
+                <h2 className="font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-[#141414] sm:text-5xl">
+                  Transform Your Agency's Management Today!
                 </h2>
-                <p className="mx-auto mt-4 max-w-md text-sm text-white/75 sm:text-base">
-                  Create your agency's workspace now — free while we're in early access.
+                <p className="mt-5 max-w-md text-lg text-[#141414]/70">
+                  Capture more enquiries, streamline your team, and simplify follow-ups — experience
+                  the difference today.
                 </p>
-                <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Button asChild size="lg" className="w-full bg-white text-primary hover:bg-white/90 sm:w-auto">
-                    <Link to="/signup">
-                      Get started free <ArrowRight />
-                    </Link>
-                  </Button>
-                  <Button asChild size="lg" variant="outline" className="w-full border-white/30 bg-transparent text-white hover:bg-white/10 sm:w-auto">
-                    <Link to="/login">Access Voyage</Link>
-                  </Button>
+                <Button
+                  asChild
+                  size="lg"
+                  className="mt-8 rounded-xl bg-[#141414] px-7 text-white hover:bg-[#141414]/85"
+                >
+                  <Link to="/signup">Get Started Today</Link>
+                </Button>
+              </div>
+
+              {/* Illustration cluster */}
+              <div className="relative mx-auto w-full max-w-md pb-24 sm:pb-28">
+                <div className="rounded-2xl bg-white p-6 shadow-soft">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="font-display text-lg font-bold text-[#141414] sm:text-xl">
+                      More Enquiries. More Bookings.
+                    </p>
+                    <TrendingUp className="size-7 shrink-0 text-emerald-500" />
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-sky-100 p-4">
+                      <p className="flex items-center gap-1.5 text-[11px] font-medium text-[#141414]/60">
+                        <MessageCircle className="size-3.5" /> Enquiry
+                      </p>
+                      <p className="mt-1.5 font-display text-base font-bold text-[#141414]">Higher Volume</p>
+                    </div>
+                    <div className="rounded-xl bg-sky-100 p-4">
+                      <p className="flex items-center gap-1.5 text-[11px] font-medium text-[#141414]/60">
+                        <CalendarCheck2 className="size-3.5" /> Closure
+                      </p>
+                      <p className="mt-1.5 font-display text-base font-bold text-[#141414]">Better Conversion</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Overlapping progress card */}
+                <div className="absolute -bottom-2 right-0 w-[min(17rem,85%)] rounded-2xl bg-white p-5 shadow-pop">
+                  <p className="text-sm font-bold text-[#141414]">Empowering owners, agents and travellers</p>
+                  <div className="mt-2.5 flex -space-x-1.5">
+                    {[
+                      ['A', 'bg-violet-500'],
+                      ['S', 'bg-pink-500'],
+                      ['M', 'bg-teal-500'],
+                    ].map(([letter, color]) => (
+                      <span
+                        key={letter}
+                        className={cn(
+                          'flex size-6 items-center justify-center rounded-full text-[9px] font-bold text-white ring-2 ring-white',
+                          color,
+                        )}
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs text-[#141414]/60">Transformation in progress</p>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#141414]/10">
+                    <span className="block h-full w-2/3 rounded-full bg-[#141414]" />
+                  </div>
+                </div>
+
+                {/* Handwritten annotation */}
+                <div className="absolute -bottom-4 left-0 hidden items-center gap-1 sm:flex">
+                  <p className="-rotate-6 font-hand text-2xl font-bold leading-none text-[#141414]">
+                    Seamless
+                    <br />
+                    Setup
+                  </p>
+                  <CurvedArrow className="mt-2 w-10 -rotate-45 text-[#141414]" />
                 </div>
               </div>
             </div>
@@ -1277,27 +1335,62 @@ export function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-center sm:flex-row sm:px-6 sm:text-left">
-          <div className="flex items-center gap-2.5">
-            <LogoMark className="h-8 w-8 rounded-lg" />
+      {/* Dark multi-column footer (Ether style) */}
+      <footer className="bg-[#141414] pt-20 text-white">
+        <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+          <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1.3fr]">
             <div>
-              <p className="font-display text-sm font-bold text-foreground">Voyage CRM</p>
-              <p className="text-xs text-muted-foreground">The all-in-one CRM for travel agencies.</p>
+              <div className="flex items-center gap-2.5">
+                <LogoMark className="h-9 w-9" />
+                <span className="font-display text-2xl font-bold tracking-tight">Voyage</span>
+              </div>
+              <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-white/60">
+                Discover Voyage, the leading travel-agency CRM to capture enquiries, boost bookings,
+                manage your team effectively, and automate follow-ups. Try it today!
+              </p>
+            </div>
+
+            <div>
+              <p className="font-display text-lg font-bold">Quick Links</p>
+              <ul className="mt-4 space-y-3 text-[15px] text-white/60">
+                <li><Link to="/" className="transition-colors hover:text-white">Home</Link></li>
+                <li><a href="#why" className="transition-colors hover:text-white">Why Voyage</a></li>
+                <li><a href="#features" className="transition-colors hover:text-white">Features</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-display text-lg font-bold">Company</p>
+              <ul className="mt-4 space-y-3 text-[15px] text-white/60">
+                <li><a href="#how" className="transition-colors hover:text-white">How it works</a></li>
+                <li><a href="#stories" className="transition-colors hover:text-white">Testimonials</a></li>
+                <li><a href="#faq" className="transition-colors hover:text-white">FAQ</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-display text-lg font-bold">Legal</p>
+              <ul className="mt-4 space-y-3 text-[15px] text-white/60">
+                <li><a href="#" className="transition-colors hover:text-white">Terms &amp; Conditions</a></li>
+                <li><a href="#" className="transition-colors hover:text-white">Privacy Policy</a></li>
+                <li><a href="#" className="transition-colors hover:text-white">Refund &amp; Cancellation</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="max-w-[200px] font-display text-lg font-bold leading-snug">
+                Ready to simplify agency operations? Start here.
+              </p>
+              <Button asChild size="lg" className="mt-5 rounded-xl px-7">
+                <Link to="/signup">Get Started</Link>
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-5 text-xs text-muted-foreground">
-            <Link to="/login" className="transition-colors hover:text-foreground">
-              Sign in
-            </Link>
-            <Link to="/signup" className="transition-colors hover:text-foreground">
-              Create account
-            </Link>
-            <a href="#faq" className="transition-colors hover:text-foreground">
-              FAQ
-            </a>
+
+          <div className="mt-14 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-sm text-white/50 sm:flex-row">
+            <p>© {new Date().getFullYear()} Voyage CRM. All rights reserved.</p>
+            <p>Made for travel agencies ✈️</p>
           </div>
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Voyage CRM</p>
         </div>
       </footer>
     </div>
