@@ -163,7 +163,11 @@ export function OrgSettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-1">
+        <Card className="overflow-hidden lg:col-span-1">
+          <div
+            className="h-2.5 w-full"
+            style={{ background: `linear-gradient(to right, ${previewPrimary}, ${previewSecondary})` }}
+          />
           <CardHeader>
             <CardTitle>Live preview</CardTitle>
             <CardDescription>How your brand looks in the app.</CardDescription>

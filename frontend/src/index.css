@@ -130,12 +130,61 @@
   animation: float-y 6.5s ease-in-out 1.2s infinite;
 }
 
+/* Landing — infinite channel marquee (list is duplicated; slide by half). */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+}
+
+/* Landing — animated gradient sweep for highlighted headline words. */
+@keyframes gradient-x {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient-x {
+  background-size: 200% auto;
+  animation: gradient-x 5s ease-in-out infinite;
+}
+
+/* Landing — slow shine sweep across the hero mock frame. */
+@keyframes sheen {
+  0%,
+  60%,
+  100% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  30% {
+    transform: translateX(220%) skewX(-18deg);
+  }
+}
+
+.animate-sheen {
+  animation: sheen 7s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-auth-glow,
   .animate-blob,
   .animate-blob-slow,
   .animate-float,
-  .animate-float-delayed {
+  .animate-float-delayed,
+  .animate-marquee,
+  .animate-gradient-x,
+  .animate-sheen {
     animation: none;
   }
 }

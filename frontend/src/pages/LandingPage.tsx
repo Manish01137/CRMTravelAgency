@@ -1,18 +1,31 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+} from 'framer-motion';
 import {
   ArrowRight,
   BellRing,
   CalendarCheck2,
   Check,
+  ChevronDown,
   Contact2,
+  Footprints,
+  Globe,
+  Instagram,
   LayoutGrid,
+  Mail,
   MessageCircle,
   Plane,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Star,
+  ThumbsUp,
   TrendingUp,
   UsersRound,
   Wallet,
@@ -20,27 +33,22 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
+import { CountUp } from '@/components/ui/count-up';
 import { cn } from '@/lib/utils';
 
 /* ------------------------------ Motion helpers ----------------------------- */
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+const VIEWPORT = { once: true, margin: '-60px' } as const;
 
-function Reveal({
-  children,
-  delay = 0,
-  className,
-}: {
-  children: ReactNode;
-  delay?: number;
-  className?: string;
-}) {
+/** Rise + fade on scroll (headings, generic blocks). */
+function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
   const reduce = useReducedMotion();
   return (
     <motion.div
       initial={reduce ? { opacity: 0 } : { opacity: 0, y: 26 }}
       whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-60px' }}
+      viewport={VIEWPORT}
       transition={{ duration: 0.6, delay, ease: EASE }}
       className={className}
     >
@@ -49,31 +57,93 @@ function Reveal({
   );
 }
 
-/** Ether-style section heading: violet eyebrow → huge headline → gray subtext. */
+/** Slide in from the left or right with a tiny rotation settle (bento cards). */
+function RevealX({
+  children,
+  from,
+  delay = 0,
+  className,
+}: {
+  children: ReactNode;
+  from: 'left' | 'right';
+  delay?: number;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  const x = from === 'left' ? -48 : 48;
+  const rotate = from === 'left' ? -1.5 : 1.5;
+  return (
+    <motion.div
+      initial={reduce ? { opacity: 0 } : { opacity: 0, x, rotate }}
+      whileInView={reduce ? { opacity: 1 } : { opacity: 1, x: 0, rotate: 0 }}
+      viewport={VIEWPORT}
+      transition={{ duration: 0.7, delay, ease: EASE }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** 3D flip-up on scroll (core feature cards). */
+function FlipIn({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? { opacity: 0 } : { opacity: 0, rotateX: -35, y: 32 }}
+      whileInView={reduce ? { opacity: 1 } : { opacity: 1, rotateX: 0, y: 0 }}
+      viewport={VIEWPORT}
+      transition={{ duration: 0.7, delay, ease: EASE }}
+      style={{ transformPerspective: 900 }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** Mouse-follow 3D tilt wrapper (hero product mock). */
+function Tilt({ children }: { children: ReactNode }) {
+  const reduce = useReducedMotion();
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 140, damping: 18 });
+  const sry = useSpring(ry, { stiffness: 140, damping: 18 });
+  if (reduce) return <>{children}</>;
+  return (
+    <motion.div
+      style={{ rotateX: srx, rotateY: sry, transformPerspective: 1100 }}
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        ry.set(((e.clientX - r.left) / r.width - 0.5) * 8);
+        rx.set(-((e.clientY - r.top) / r.height - 0.5) * 6);
+      }}
+      onMouseLeave={() => {
+        rx.set(0);
+        ry.set(0);
+      }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/** Ether-style section heading: eyebrow → huge headline → gray subtext. */
 function SectionHeading({
   eyebrow,
   title,
   subtitle,
   light = false,
-  eyebrowClass,
 }: {
   eyebrow: string;
   title: string;
   subtitle?: string;
   light?: boolean;
-  eyebrowClass?: string;
 }) {
   return (
     <Reveal className="mx-auto max-w-3xl text-center">
-      <p className={cn('text-base font-semibold', eyebrowClass ?? (light ? 'text-amber-300' : 'text-primary'))}>
-        {eyebrow}
-      </p>
-      <h2
-        className={cn(
-          'mt-3 font-display text-4xl font-bold tracking-tight sm:text-5xl',
-          light ? 'text-white' : 'text-foreground',
-        )}
-      >
+      <p className={cn('text-base font-semibold', light ? 'text-amber-300' : 'text-primary')}>{eyebrow}</p>
+      <h2 className={cn('mt-3 font-display text-4xl font-bold tracking-tight sm:text-5xl', light ? 'text-white' : 'text-foreground')}>
         {title}
       </h2>
       {subtitle && (
@@ -89,12 +159,7 @@ function SectionHeading({
 
 function LogoMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm',
-        className,
-      )}
-    >
+    <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm', className)}>
       <Plane className="size-5" />
     </span>
   );
@@ -117,8 +182,11 @@ function Nav() {
           <a href="#features" className="transition-colors hover:text-foreground">
             Features
           </a>
-          <a href="#stories" className="transition-colors hover:text-foreground">
-            Stories
+          <a href="#how" className="transition-colors hover:text-foreground">
+            How it works
+          </a>
+          <a href="#faq" className="transition-colors hover:text-foreground">
+            FAQ
           </a>
         </nav>
         <div className="flex items-center gap-2.5">
@@ -148,7 +216,6 @@ function Nav() {
 
 /* ----------------------------------- Hero ---------------------------------- */
 
-/** CSS-built product preview — a miniature of the real leads dashboard. */
 function ProductMock() {
   const rows = [
     { name: 'Priya Menon', dest: 'Bali, Indonesia', status: 'New', dot: 'bg-blue-500', pill: 'bg-blue-50 text-blue-700' },
@@ -158,7 +225,9 @@ function ProductMock() {
   const stages = ['bg-blue-500', 'bg-violet-500', 'bg-pink-500', 'bg-amber-500', 'bg-orange-500', 'bg-emerald-600'];
   return (
     <div className="relative mx-auto w-full max-w-3xl">
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-pop">
+      <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-pop">
+        {/* periodic shine sweep */}
+        <span className="animate-sheen pointer-events-none absolute inset-y-0 z-10 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
         <div className="flex items-center gap-1.5 border-b border-border bg-muted/60 px-4 py-2.5">
           <span className="size-2.5 rounded-full bg-red-400" />
           <span className="size-2.5 rounded-full bg-amber-400" />
@@ -176,13 +245,7 @@ function ProductMock() {
               <span className="font-display text-[11px] font-bold">Voyage</span>
             </div>
             {['Dashboard', 'Leads', 'Team', 'Settings'].map((item, i) => (
-              <div
-                key={item}
-                className={cn(
-                  'rounded-md px-2 py-1.5 text-[10px] font-medium',
-                  i === 1 ? 'bg-primary/10 text-primary' : 'text-muted-foreground',
-                )}
-              >
+              <div key={item} className={cn('rounded-md px-2 py-1.5 text-[10px] font-medium', i === 1 ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
                 {item}
               </div>
             ))}
@@ -235,6 +298,7 @@ function ProductMock() {
         </div>
       </div>
 
+      {/* Floating cards + destination chips around the mock */}
       <div className="animate-float absolute -bottom-6 -left-4 hidden items-center gap-2.5 rounded-xl border border-border bg-card p-3 shadow-pop sm:flex">
         <span className="flex size-8 items-center justify-center rounded-full bg-green-100 text-green-700">
           <MessageCircle className="size-4" />
@@ -253,6 +317,14 @@ function ProductMock() {
           <p className="text-[10px] text-muted-foreground">Maldives · $5,300</p>
         </div>
       </div>
+      <div className="animate-float-delayed absolute -left-16 top-16 hidden -rotate-3 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 shadow-pop lg:flex">
+        <span className="text-base">🌴</span>
+        <span className="text-xs font-semibold text-foreground">Bali · ₹49,999</span>
+      </div>
+      <div className="animate-float absolute -right-14 bottom-16 hidden rotate-2 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 shadow-pop lg:flex">
+        <span className="text-base">🏔️</span>
+        <span className="text-xs font-semibold text-foreground">Swiss Alps · ₹1.2L</span>
+      </div>
     </div>
   );
 }
@@ -265,11 +337,9 @@ function Hero() {
   const rise = (delay: number) =>
     reduce
       ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.25, delay } }
-      : {
-          initial: { opacity: 0, y: 22 },
-          animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.65, delay, ease: EASE },
-        };
+      : { initial: { opacity: 0, y: 22 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.65, delay, ease: EASE } };
+
+  const words = 'All-in-one Operating System for'.split(' ');
 
   return (
     <section className="relative overflow-hidden">
@@ -277,7 +347,7 @@ function Hero() {
       <div className="animate-blob-slow pointer-events-none absolute -top-10 left-1/2 h-[22rem] w-[22rem] translate-x-[10%] rounded-full bg-violet-400/15 blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50rem_30rem_at_50%_-10%,hsl(var(--primary)/0.06),transparent)]" />
 
-      <div className="relative mx-auto max-w-6xl px-4 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
+      <div className="relative mx-auto max-w-6xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-24">
         <motion.div {...rise(0)} className="mb-6 flex justify-center">
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-card">
             <span className="flex text-amber-400" aria-hidden>
@@ -289,22 +359,35 @@ function Hero() {
           </span>
         </motion.div>
 
-        <motion.h1
-          {...rise(0.1)}
-          className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.08] tracking-tight text-foreground sm:text-6xl"
-        >
-          All-in-one Operating System for{' '}
-          <span className="bg-gradient-to-r from-primary via-violet-500 to-primary bg-clip-text text-transparent">
+        {/* Word-by-word blur-in headline with animated gradient highlight */}
+        <h1 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.08] tracking-tight text-foreground sm:text-6xl">
+          {words.map((w, i) => (
+            <motion.span
+              key={i}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 20, filter: 'blur(8px)' }}
+              animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ delay: 0.08 + i * 0.07, duration: 0.55, ease: EASE }}
+              className="mr-[0.28em] inline-block"
+            >
+              {w}
+            </motion.span>
+          ))}
+          <motion.span
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 20, filter: 'blur(10px)' }}
+            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
+            transition={{ delay: 0.08 + words.length * 0.07, duration: 0.6, ease: EASE }}
+            className="animate-gradient-x inline-block bg-gradient-to-r from-primary via-fuchsia-500 to-primary bg-clip-text text-transparent"
+          >
             Travel Agencies
-          </span>
-        </motion.h1>
+          </motion.span>
+        </h1>
 
-        <motion.p {...rise(0.2)} className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
+        <motion.p {...rise(0.55)} className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
           Capture every enquiry, run one clean pipeline, and close more trips together — without
           juggling five different tools.
         </motion.p>
 
-        <motion.div {...rise(0.3)} className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <motion.div {...rise(0.65)} className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           {authed ? (
             <Button asChild size="lg" className="w-full sm:w-auto">
               <Link to="/dashboard">
@@ -313,7 +396,7 @@ function Hero() {
             </Button>
           ) : (
             <>
-              <Button asChild size="lg" className="w-full sm:w-auto">
+              <Button asChild size="lg" className="w-full shadow-pop transition-transform hover:scale-[1.02] sm:w-auto">
                 <Link to="/signup">
                   Get started free <ArrowRight />
                 </Link>
@@ -325,18 +408,56 @@ function Hero() {
           )}
         </motion.div>
 
-        <motion.p {...rise(0.38)} className="mt-4 text-xs text-muted-foreground">
+        <motion.p {...rise(0.72)} className="mt-4 text-xs text-muted-foreground">
           No learning curve. Set up your agency in under two minutes.
         </motion.p>
 
         <motion.div
-          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 40, scale: 0.97 }}
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 60, scale: 0.94 }}
           animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.45, ease: EASE }}
-          className="mt-14"
+          transition={{ duration: 0.9, delay: 0.8, ease: EASE }}
+          className="mt-16"
         >
-          <ProductMock />
+          <Tilt>
+            <ProductMock />
+          </Tilt>
         </motion.div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------- NEW · channel marquee strip ------------------------- */
+
+const CHANNELS: { Icon: typeof Zap; label: string; cls: string }[] = [
+  { Icon: MessageCircle, label: 'WhatsApp', cls: 'bg-green-50 text-green-700' },
+  { Icon: Instagram, label: 'Instagram', cls: 'bg-pink-50 text-pink-600' },
+  { Icon: ThumbsUp, label: 'Facebook', cls: 'bg-blue-50 text-blue-600' },
+  { Icon: Globe, label: 'Website', cls: 'bg-indigo-50 text-indigo-600' },
+  { Icon: Mail, label: 'Email', cls: 'bg-amber-50 text-amber-600' },
+  { Icon: Smartphone, label: 'SMS', cls: 'bg-violet-50 text-violet-600' },
+  { Icon: Sparkles, label: 'Gemini AI', cls: 'bg-fuchsia-50 text-fuchsia-600' },
+  { Icon: UsersRound, label: 'Referrals', cls: 'bg-teal-50 text-teal-600' },
+  { Icon: Footprints, label: 'Walk-ins', cls: 'bg-slate-100 text-slate-600' },
+];
+
+function ChannelMarquee() {
+  return (
+    <section className="border-y border-border bg-card py-8">
+      <p className="text-center text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        One pipeline for enquiries from every channel
+      </p>
+      <div className="relative mt-5 overflow-hidden">
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-card to-transparent" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-card to-transparent" />
+        <div className="animate-marquee flex w-max gap-4">
+          {[...CHANNELS, ...CHANNELS].map((c, i) => (
+            <span key={i} className={cn('flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold', c.cls)}>
+              <c.Icon className="size-4" />
+              {c.label}
+            </span>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -395,13 +516,7 @@ const BENTOS: Bento[] = [
     Icon: TrendingUp,
     title: 'Boost Bookings',
     text: 'Reply first, follow up on time, and keep every enquiry warm. Faster responses mean more confirmed trips and more word-of-mouth.',
-    inner: (
-      <InnerTagline
-        line1="More Follow-ups."
-        line2="More Bookings."
-        icon={<TrendingUp className="size-10 text-cyan-500" />}
-      />
-    ),
+    inner: <InnerTagline line1="More Follow-ups." line2="More Bookings." icon={<TrendingUp className="size-10 text-cyan-500" />} />,
   },
   {
     bg: 'bg-[#FADEE5]',
@@ -469,8 +584,8 @@ function BentoSection() {
         />
         <div className="mt-14 grid gap-6 md:grid-cols-2">
           {BENTOS.map((b, i) => (
-            <Reveal key={b.title} delay={(i % 2) * 0.1}>
-              <div className={cn('flex h-full flex-col rounded-[2rem] p-7 sm:p-9', b.bg)}>
+            <RevealX key={b.title} from={i % 2 === 0 ? 'left' : 'right'} delay={(i % 2) * 0.08}>
+              <div className={cn('flex h-full flex-col rounded-[2rem] p-7 transition-transform duration-300 hover:-translate-y-1 sm:p-9', b.bg)}>
                 <span className={cn('flex h-14 w-14 items-center justify-center rounded-2xl text-white', b.iconBg)}>
                   <b.Icon className="size-6" />
                 </span>
@@ -485,7 +600,7 @@ function BentoSection() {
                 <p className="mt-3 text-[15px] leading-relaxed text-foreground/70">{b.text}</p>
                 <div className="mt-7 flex-1">{b.inner}</div>
               </div>
-            </Reveal>
+            </RevealX>
           ))}
         </div>
       </div>
@@ -592,28 +707,29 @@ function PillarShowcase() {
           subtitle="A smart, all-in-one platform built with travel agencies to connect, manage, and grow the business effortlessly."
         />
 
-        {/* Tabs */}
-        <Reveal className="mt-12">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {PILLARS.map((tab, i) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActive(i)}
-                aria-pressed={i === active}
-                className={cn(
-                  'flex min-h-[104px] flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-4 text-sm font-semibold text-foreground shadow-card transition-all duration-200',
-                  i === active ? cn(p.tabActive, 'scale-[1.02]') : 'border-border hover:-translate-y-0.5 hover:shadow-soft',
-                )}
-              >
-                <tab.Icon className={cn('size-6', tab.iconColor)} />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </Reveal>
+        {/* Tabs pop in with a spring stagger */}
+        <div className="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {PILLARS.map((tab, i) => (
+            <motion.button
+              key={tab.key}
+              type="button"
+              onClick={() => setActive(i)}
+              aria-pressed={i === active}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.82, y: 16 }}
+              whileInView={reduce ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+              viewport={VIEWPORT}
+              transition={{ type: 'spring', stiffness: 240, damping: 18, delay: i * 0.08 }}
+              className={cn(
+                'flex min-h-[104px] flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-4 text-sm font-semibold text-foreground shadow-card transition-all duration-200',
+                i === active ? cn(p.tabActive, 'scale-[1.02]') : 'border-border hover:-translate-y-0.5 hover:shadow-soft',
+              )}
+            >
+              <tab.Icon className={cn('size-6', tab.iconColor)} />
+              {tab.label}
+            </motion.button>
+          ))}
+        </div>
 
-        {/* Showcase card */}
         <div className="mt-6">
           <AnimatePresence mode="wait">
             <motion.div
@@ -641,17 +757,10 @@ function PillarShowcase() {
                 </Button>
               </div>
 
-              {/* CSS illustration: overlapping mini cards + floating icon dots */}
               <div className="relative mx-auto w-full max-w-sm py-6">
                 <div className="absolute -top-2 left-6 flex gap-3">
                   {[Contact2, MessageCircle, CalendarCheck2].map((I, idx) => (
-                    <span
-                      key={idx}
-                      className={cn(
-                        'flex size-10 items-center justify-center rounded-full bg-white shadow-soft',
-                        idx === 1 && 'animate-float',
-                      )}
-                    >
+                    <span key={idx} className={cn('flex size-10 items-center justify-center rounded-full bg-white shadow-soft', idx === 1 && 'animate-float')}>
                       <I className={cn('size-4', p.iconColor)} />
                     </span>
                   ))}
@@ -661,9 +770,11 @@ function PillarShowcase() {
                   <p className="font-display text-3xl font-bold text-foreground">{p.statValue}</p>
                   <div className="mt-3 flex h-14 items-end gap-1.5">
                     {[35, 55, 40, 70, 50, 90, 65].map((h, idx) => (
-                      <span
+                      <motion.span
                         key={idx}
-                        style={{ height: `${h}%` }}
+                        initial={{ height: 0 }}
+                        animate={{ height: `${h}%` }}
+                        transition={{ delay: 0.15 + idx * 0.05, duration: 0.4, ease: EASE }}
                         className={cn('flex-1 rounded-sm', idx === 5 ? p.statAccent : 'bg-muted')}
                       />
                     ))}
@@ -691,6 +802,37 @@ function PillarShowcase() {
   );
 }
 
+/* ----------------------- NEW · animated stats band -------------------------- */
+
+const STATS = [
+  { to: 2430, suffix: '+', label: 'Enquiries captured' },
+  { to: 480, suffix: '+', label: 'Trips booked' },
+  { to: 4.8, decimals: 1, label: 'Average rating' },
+  { to: 4, suffix: ' min', label: 'Avg. first reply' },
+];
+
+function StatsBand() {
+  return (
+    <section className="px-4 pb-24 sm:px-6">
+      <Reveal>
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-gradient-to-r from-primary to-violet-600 px-6 py-12 shadow-pop sm:px-12">
+          <div className="animate-blob pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
+          <div className="relative grid grid-cols-2 gap-8 text-center md:grid-cols-4">
+            {STATS.map((s) => (
+              <div key={s.label}>
+                <p className="font-display text-4xl font-bold text-white sm:text-5xl">
+                  <CountUp to={s.to} suffix={s.suffix ?? ''} decimals={s.decimals ?? 0} />
+                </p>
+                <p className="mt-2 text-sm text-white/70">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
 /* -------------------------- Violet ecosystem band --------------------------- */
 
 const CHECKLIST: { label: string; soon?: boolean }[] = [
@@ -703,13 +845,14 @@ const CHECKLIST: { label: string; soon?: boolean }[] = [
 ];
 
 const FLOATING_UPDATES = [
-  { Icon: MessageCircle, label: 'New WhatsApp lead', bg: 'bg-pink-100', color: 'text-pink-600', rotate: '-rotate-2' },
-  { Icon: BellRing, label: 'Follow-up due · Tom', bg: 'bg-violet-100', color: 'text-violet-600', rotate: 'rotate-1' },
-  { Icon: CalendarCheck2, label: 'Itinerary sent', bg: 'bg-emerald-100', color: 'text-emerald-600', rotate: '-rotate-1' },
-  { Icon: Wallet, label: 'Payment received', bg: 'bg-amber-100', color: 'text-amber-600', rotate: 'rotate-2' },
+  { Icon: MessageCircle, label: 'New WhatsApp lead', bg: 'bg-pink-100', color: 'text-pink-600', rotate: -2 },
+  { Icon: BellRing, label: 'Follow-up due · Tom', bg: 'bg-violet-100', color: 'text-violet-600', rotate: 1 },
+  { Icon: CalendarCheck2, label: 'Itinerary sent', bg: 'bg-emerald-100', color: 'text-emerald-600', rotate: -1 },
+  { Icon: Wallet, label: 'Payment received', bg: 'bg-amber-100', color: 'text-amber-600', rotate: 2 },
 ];
 
 function EcosystemSection() {
+  const reduce = useReducedMotion();
   return (
     <section className="bg-primary py-24 text-white">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -720,18 +863,19 @@ function EcosystemSection() {
           subtitle="Seamless communication, streamlined operations, and a thriving travel business."
         />
 
-        {/* Row A: updates card + copy */}
         <div className="mt-16 grid items-center gap-10 lg:grid-cols-2">
-          <Reveal>
+          <RevealX from="left">
             <div className="rounded-[2rem] bg-[#FBE9EE] p-7 sm:p-9">
-              <p className="text-center font-medium italic text-foreground/60">
-                all important updates at one place ↓
-              </p>
+              <p className="text-center font-medium italic text-foreground/60">all important updates at one place ↓</p>
               <div className="mx-auto mt-6 max-w-xs space-y-4">
-                {FLOATING_UPDATES.map((u) => (
-                  <div
+                {FLOATING_UPDATES.map((u, i) => (
+                  <motion.div
                     key={u.label}
-                    className={cn('flex items-center gap-3 rounded-2xl bg-white p-4 shadow-soft transition-transform duration-200 hover:rotate-0 hover:scale-[1.02]', u.rotate)}
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 28, rotate: u.rotate * 3 }}
+                    whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0, rotate: u.rotate }}
+                    viewport={VIEWPORT}
+                    transition={{ type: 'spring', stiffness: 200, damping: 16, delay: 0.15 + i * 0.13 }}
+                    className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-soft transition-transform duration-200 hover:rotate-0 hover:scale-[1.02]"
                   >
                     <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-full', u.bg, u.color)}>
                       <u.Icon className="size-4" />
@@ -744,12 +888,12 @@ function EcosystemSection() {
                       </div>
                     </div>
                     <span className="text-muted-foreground">×</span>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </div>
-          </Reveal>
-          <Reveal delay={0.1}>
+          </RevealX>
+          <RevealX from="right" delay={0.1}>
             <h3 className="font-display text-3xl font-bold sm:text-4xl">Unified Customer Communication</h3>
             <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-white/75">
               It's not just one-way updates. Enquiries, follow-ups, itineraries, and payments — every
@@ -757,37 +901,48 @@ function EcosystemSection() {
               agents. Happy travellers.
             </p>
             <p className="mt-4 text-sm font-medium text-amber-300">
-              WhatsApp & Instagram inboxes arrive in the next release — your pipeline is ready for
-              them today.
+              WhatsApp & Instagram inboxes arrive in the next release — your pipeline is ready for them today.
             </p>
-          </Reveal>
+          </RevealX>
         </div>
 
-        {/* Row B: checklist + secured card */}
         <div className="mt-20 grid items-center gap-10 lg:grid-cols-2">
-          <Reveal className="order-2 lg:order-1">
+          <RevealX from="left" className="order-2 lg:order-1">
             <h3 className="font-display text-3xl font-bold sm:text-4xl">Boost Your Conversions</h3>
             <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-white/75">
               Forget lost enquiries, forgotten follow-ups, and spreadsheets nobody updates. Everything
               your team needs to close trips, in one place.
             </p>
             <ul className="mt-7 space-y-4">
-              {CHECKLIST.map((item) => (
-                <li key={item.label} className="flex items-center gap-3 text-[15px] font-medium">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-primary">
+              {CHECKLIST.map((item, i) => (
+                <motion.li
+                  key={item.label}
+                  initial={reduce ? { opacity: 0 } : { opacity: 0, x: -18 }}
+                  whileInView={reduce ? { opacity: 1 } : { opacity: 1, x: 0 }}
+                  viewport={VIEWPORT}
+                  transition={{ duration: 0.4, delay: 0.1 + i * 0.09, ease: EASE }}
+                  className="flex items-center gap-3 text-[15px] font-medium"
+                >
+                  <motion.span
+                    initial={reduce ? undefined : { scale: 0 }}
+                    whileInView={reduce ? undefined : { scale: 1 }}
+                    viewport={VIEWPORT}
+                    transition={{ type: 'spring', stiffness: 300, damping: 14, delay: 0.18 + i * 0.09 }}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-primary"
+                  >
                     <Check className="size-3.5" strokeWidth={3} />
-                  </span>
+                  </motion.span>
                   {item.label}
                   {item.soon && (
                     <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
                       Soon
                     </span>
                   )}
-                </li>
+                </motion.li>
               ))}
             </ul>
-          </Reveal>
-          <Reveal delay={0.1} className="order-1 lg:order-2">
+          </RevealX>
+          <RevealX from="right" delay={0.1} className="order-1 lg:order-2">
             <div className="rounded-[2rem] bg-[#FCF3DC] p-7 sm:p-9">
               <p className="text-center font-medium italic text-foreground/60">your pipeline, secured ↓</p>
               <div className="relative mx-auto mt-6 max-w-xs">
@@ -813,7 +968,52 @@ function EcosystemSection() {
                 </div>
               </div>
             </div>
-          </Reveal>
+          </RevealX>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------ NEW · how it works timeline ----------------------- */
+
+const STEPS = [
+  { n: 1, title: 'Create your agency', text: 'Sign up free — your branded, isolated workspace is ready in under two minutes.' },
+  { n: 2, title: 'Bring in your team', text: 'Invite agents with a link. Everyone works the same pipeline with the right permissions.' },
+  { n: 3, title: 'Close more trips', text: 'Capture enquiries, move them through stages, and never let a follow-up slip again.' },
+];
+
+function HowItWorks() {
+  const reduce = useReducedMotion();
+  return (
+    <section id="how" className="py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <SectionHeading eyebrow="Getting started" title="Up and Running in Minutes" subtitle="Three steps between you and a pipeline your whole team loves." />
+        <div className="relative mt-14 grid gap-10 md:grid-cols-3 md:gap-6">
+          {/* dashed connector */}
+          <div className="absolute left-[18%] right-[18%] top-8 hidden border-t-2 border-dashed border-primary/25 md:block" />
+          {STEPS.map((s, i) => (
+            <motion.div
+              key={s.n}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 32 }}
+              whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              viewport={VIEWPORT}
+              transition={{ duration: 0.55, delay: i * 0.18, ease: EASE }}
+              className="relative text-center"
+            >
+              <motion.span
+                initial={reduce ? undefined : { scale: 0 }}
+                whileInView={reduce ? undefined : { scale: 1 }}
+                viewport={VIEWPORT}
+                transition={{ type: 'spring', stiffness: 260, damping: 15, delay: 0.1 + i * 0.18 }}
+                className="relative z-10 mx-auto flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 font-display text-2xl font-bold text-white shadow-pop"
+              >
+                {s.n}
+              </motion.span>
+              <h3 className="mt-5 font-display text-xl font-bold text-foreground">{s.title}</h3>
+              <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.text}</p>
+            </motion.div>
+          ))}
         </div>
       </div>
     </section>
@@ -854,7 +1054,7 @@ function CoreSection() {
         />
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {CORE.map((c, i) => (
-            <Reveal key={c.title} delay={i * 0.1}>
+            <FlipIn key={c.title} delay={i * 0.12}>
               <div className="h-full rounded-[1.75rem] bg-card p-8 shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-soft">
                 <span className={cn('flex h-14 w-14 items-center justify-center rounded-2xl text-white', c.iconBg)}>
                   <c.Icon className="size-6" />
@@ -862,7 +1062,7 @@ function CoreSection() {
                 <h3 className="mt-6 font-display text-xl font-bold text-foreground">{c.title}</h3>
                 <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{c.text}</p>
               </div>
-            </Reveal>
+            </FlipIn>
           ))}
         </div>
       </div>
@@ -874,15 +1074,13 @@ function CoreSection() {
 
 const QUOTES = [
   {
-    quote:
-      'We used to lose enquiries in three different WhatsApp accounts. Now every lead is on one board and nothing slips through.',
+    quote: 'We used to lose enquiries in three different WhatsApp accounts. Now every lead is on one board and nothing slips through.',
     role: 'Founder, Wanderlust Travel Co.',
     name: 'Aisha K.',
     avatarBg: 'bg-violet-500',
   },
   {
-    quote:
-      'What stood out was how effortlessly it brought the whole team onto a single platform. Voyage became our go-to hub for every customer interaction.',
+    quote: 'What stood out was how effortlessly it brought the whole team onto a single platform. Voyage became our go-to hub for every customer interaction.',
     role: 'Director, Globe Hoppers',
     name: 'Diego A.',
     avatarBg: 'bg-teal-500',
@@ -890,31 +1088,104 @@ const QUOTES = [
 ];
 
 function QuotesSection() {
+  const reduce = useReducedMotion();
   return (
     <section id="stories" className="py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <SectionHeading
-          eyebrow="Testimonials"
-          title="Hear from Travel Agencies"
-          subtitle="Here are some glowing reviews from our early-access agencies."
-        />
+        <SectionHeading eyebrow="Testimonials" title="Hear from Travel Agencies" subtitle="Here are some glowing reviews from our early-access agencies." />
         <div className="mt-14 grid gap-6 md:grid-cols-2">
           {QUOTES.map((q, i) => (
-            <Reveal key={q.name} delay={i * 0.1}>
-              <figure className="h-full rounded-[1.75rem] bg-card p-8 shadow-card">
-                <blockquote className="text-lg leading-relaxed text-foreground">“{q.quote}”</blockquote>
-                <figcaption className="mt-6 flex items-center gap-3">
-                  <span className={cn('flex size-11 items-center justify-center rounded-full font-display text-sm font-bold text-white', q.avatarBg)}>
-                    {q.name.slice(0, 1)}
-                  </span>
-                  <span>
-                    <span className="block text-sm font-bold text-foreground">{q.role}</span>
-                    <span className="block text-sm text-muted-foreground">{q.name}</span>
-                  </span>
-                </figcaption>
-              </figure>
-            </Reveal>
+            <motion.figure
+              key={q.name}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.93 }}
+              whileInView={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              viewport={VIEWPORT}
+              transition={{ duration: 0.55, delay: i * 0.12, ease: EASE }}
+              className="h-full rounded-[1.75rem] bg-card p-8 shadow-card"
+            >
+              <blockquote className="text-lg leading-relaxed text-foreground">“{q.quote}”</blockquote>
+              <figcaption className="mt-6 flex items-center gap-3">
+                <span className={cn('flex size-11 items-center justify-center rounded-full font-display text-sm font-bold text-white', q.avatarBg)}>
+                  {q.name.slice(0, 1)}
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-foreground">{q.role}</span>
+                  <span className="block text-sm text-muted-foreground">{q.name}</span>
+                </span>
+              </figcaption>
+            </motion.figure>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- NEW · FAQ ---------------------------------- */
+
+const FAQS = [
+  {
+    q: 'How long does it take to set up?',
+    a: 'Under two minutes. Sign up, name your agency, and your branded workspace is live — invite your team whenever you like.',
+  },
+  {
+    q: 'Can my whole team use it?',
+    a: 'Yes. Invite as many agents as you need with a link. Admins manage the agency and team; agents work the pipeline. Everyone sees the same, always-up-to-date board.',
+  },
+  {
+    q: "Is my agency's data private?",
+    a: 'Completely. Every agency lives in its own isolated workspace, enforced at the database level with row-level security — not just in the app. One agency can never see another\'s data.',
+  },
+  {
+    q: 'When do WhatsApp & Instagram inboxes arrive?',
+    a: "They're rolling out in upcoming releases, along with bookings, invoices and AI follow-ups. Your pipeline is ready for them today — leads you add now connect to those tools automatically.",
+  },
+  {
+    q: 'What does it cost?',
+    a: "It's free while we're in early access. Early agencies lock in preferential pricing when paid plans launch.",
+  },
+];
+
+function FaqSection() {
+  const [open, setOpen] = useState<number | null>(0);
+  return (
+    <section id="faq" className="bg-surface py-24">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+        <SectionHeading eyebrow="FAQ" title="Questions, Answered" subtitle="Everything agencies usually ask before getting started." />
+        <div className="mt-12 space-y-3">
+          {FAQS.map((f, i) => {
+            const isOpen = open === i;
+            return (
+              <Reveal key={f.q} delay={i * 0.06}>
+                <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+                  <button
+                    type="button"
+                    onClick={() => setOpen(isOpen ? null : i)}
+                    aria-expanded={isOpen}
+                    className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left sm:px-6"
+                  >
+                    <span className="font-display text-base font-semibold text-foreground sm:text-lg">{f.q}</span>
+                    <motion.span animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.25 }} className="shrink-0 text-muted-foreground">
+                      <ChevronDown className="size-5" />
+                    </motion.span>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: EASE }}
+                        className="overflow-hidden"
+                      >
+                        <p className="px-5 pb-5 text-sm leading-relaxed text-muted-foreground sm:px-6">{f.a}</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </Reveal>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -929,14 +1200,18 @@ export function LandingPage() {
       <Nav />
       <main>
         <Hero />
+        <ChannelMarquee />
         <BentoSection />
         <PillarShowcase />
+        <StatsBand />
         <EcosystemSection />
+        <HowItWorks />
         <CoreSection />
         <QuotesSection />
+        <FaqSection />
 
         {/* Final CTA */}
-        <section className="px-4 pb-24 sm:px-6">
+        <section className="px-4 py-24 sm:px-6">
           <Reveal>
             <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-primary px-6 py-16 text-center shadow-pop sm:px-12">
               <div className="animate-blob pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
@@ -955,12 +1230,7 @@ export function LandingPage() {
                       Get started free <ArrowRight />
                     </Link>
                   </Button>
-                  <Button
-                    asChild
-                    size="lg"
-                    variant="outline"
-                    className="w-full border-white/30 bg-transparent text-white hover:bg-white/10 sm:w-auto"
-                  >
+                  <Button asChild size="lg" variant="outline" className="w-full border-white/30 bg-transparent text-white hover:bg-white/10 sm:w-auto">
                     <Link to="/login">Access Voyage</Link>
                   </Button>
                 </div>
@@ -986,8 +1256,8 @@ export function LandingPage() {
             <Link to="/signup" className="transition-colors hover:text-foreground">
               Create account
             </Link>
-            <a href="#features" className="transition-colors hover:text-foreground">
-              Features
+            <a href="#faq" className="transition-colors hover:text-foreground">
+              FAQ
             </a>
           </div>
           <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} Voyage CRM</p>

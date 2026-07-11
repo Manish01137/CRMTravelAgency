@@ -146,6 +146,25 @@ export function UsersPage() {
         </Button>
       </PageHeader>
 
+      {/* Team stat chips */}
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        {[
+          { label: 'Members', value: members.length, tile: 'bg-gradient-to-br from-primary to-violet-500' },
+          { label: 'Admins', value: members.filter((m) => m.role === 'ADMIN').length, tile: 'bg-gradient-to-br from-sky-500 to-blue-600' },
+          { label: 'Pending invites', value: invitations.length, tile: 'bg-gradient-to-br from-amber-400 to-orange-500' },
+        ].map((s) => (
+          <Card key={s.label} className="flex items-center gap-3 p-4">
+            <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-white ${s.tile}`}>
+              <UserRound className="size-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-xs text-muted-foreground">{s.label}</span>
+              <span className="block font-display text-xl font-bold text-foreground">{s.value}</span>
+            </span>
+          </Card>
+        ))}
+      </div>
+
       {/* Members */}
       {usersQuery.isLoading ? (
         <Card className="divide-y divide-border">
@@ -166,7 +185,7 @@ export function UsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr className="border-b border-border bg-primary/[0.04] text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="px-4 py-3 font-medium">Member</th>
                     <th className="px-4 py-3 font-medium">Role</th>
                     <th className="px-4 py-3 font-medium">Status</th>

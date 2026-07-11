@@ -13,7 +13,10 @@ build/
 .env.local
 .env.*.local
 backend/.env
+backend/.env.*
+!backend/.env.example
 frontend/.env
+frontend/.env.*
 
 # Prisma
 backend/prisma/*.db

@@ -86,11 +86,14 @@ export function ProfilePage() {
       <PageHeader title="My profile" description="Manage your personal details and password." />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardContent className="pt-6">
+        <Card className="overflow-hidden lg:col-span-1">
+          <div className="relative h-24 bg-gradient-to-r from-primary via-indigo-500 to-violet-500">
+            <div className="animate-blob pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/15 blur-xl" />
+          </div>
+          <CardContent className="-mt-10 pt-0">
             <div className="flex flex-col items-center text-center">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="text-lg">{initials(user.name)}</AvatarFallback>
+              <Avatar className="h-20 w-20 ring-4 ring-card">
+                <AvatarFallback className="bg-primary text-lg text-white">{initials(user.name)}</AvatarFallback>
               </Avatar>
               <p className="mt-3 font-display text-lg font-semibold text-foreground">{user.name}</p>
               <p className="text-sm text-muted-foreground">{user.email}</p>
