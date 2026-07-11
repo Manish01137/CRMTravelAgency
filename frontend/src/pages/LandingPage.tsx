@@ -1015,9 +1015,76 @@ function EcosystemSection() {
 /* ------------------------ NEW · how it works timeline ----------------------- */
 
 const STEPS = [
-  { n: 1, title: 'Create your agency', text: 'Sign up free — your branded, isolated workspace is ready in under two minutes.' },
-  { n: 2, title: 'Bring in your team', text: 'Invite agents with a link. Everyone works the same pipeline with the right permissions.' },
-  { n: 3, title: 'Close more trips', text: 'Capture enquiries, move them through stages, and never let a follow-up slip again.' },
+  {
+    n: '01',
+    title: 'Create your agency',
+    text: 'Sign up free — your branded, isolated workspace is ready in under two minutes.',
+    bg: 'bg-[#E9E4FB]',
+    tile: 'bg-violet-500',
+    inner: (
+      <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-card">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-violet-500 text-white">
+          <Plane className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-foreground">Wanderlust Travel Co.</p>
+          <p className="text-[11px] text-muted-foreground">Workspace ready</p>
+        </div>
+        <span className="flex size-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+          <Check className="size-3.5" strokeWidth={3} />
+        </span>
+      </div>
+    ),
+  },
+  {
+    n: '02',
+    title: 'Bring in your team',
+    text: 'Invite agents with a link. Everyone works the same pipeline with the right permissions.',
+    bg: 'bg-[#D9F2F8]',
+    tile: 'bg-cyan-500',
+    inner: (
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-card">
+        <span className="flex -space-x-2">
+          {[
+            ['A', 'bg-violet-500'],
+            ['S', 'bg-pink-500'],
+            ['M', 'bg-teal-500'],
+          ].map(([letter, color]) => (
+            <span
+              key={letter}
+              className={cn('flex size-8 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 ring-white', color)}
+            >
+              {letter}
+            </span>
+          ))}
+        </span>
+        <span className="rounded-full bg-cyan-100 px-3 py-1.5 text-xs font-bold text-cyan-700">+ Invite agent</span>
+      </div>
+    ),
+  },
+  {
+    n: '03',
+    title: 'Close more trips',
+    text: 'Capture enquiries, move them through stages, and never let a follow-up slip again.',
+    bg: 'bg-[#FADEE5]',
+    tile: 'bg-pink-500',
+    inner: (
+      <div className="rounded-2xl bg-white p-4 shadow-card">
+        <div className="flex gap-0.5">
+          {['bg-blue-500', 'bg-violet-500', 'bg-pink-500', 'bg-amber-500', 'bg-emerald-600'].map((c, i) => (
+            <span
+              key={i}
+              className={cn('h-3.5 flex-1 [clip-path:polygon(0_0,calc(100%-6px)_0,100%_50%,calc(100%-6px)_100%,0_100%,5px_50%)]', c)}
+            />
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Maldives · Nadia H.</p>
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">Won ✓</span>
+        </div>
+      </div>
+    ),
+  },
 ];
 
 function HowItWorks() {
@@ -1026,29 +1093,28 @@ function HowItWorks() {
     <section id="how" className="py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHeading eyebrow="Getting started" title="Up and Running in Minutes" subtitle="Three steps between you and a pipeline your whole team loves." />
-        <div className="relative mt-14 grid gap-10 md:grid-cols-3 md:gap-6">
-          {/* dashed connector */}
-          <div className="absolute left-[18%] right-[18%] top-8 hidden border-t-2 border-dashed border-primary/25 md:block" />
+        <div className="mt-14 grid gap-6 md:grid-cols-3">
           {STEPS.map((s, i) => (
             <motion.div
               key={s.n}
-              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 32 }}
-              whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 44, rotate: i === 1 ? 0 : i === 0 ? -2 : 2 }}
+              whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0, rotate: 0 }}
               viewport={VIEWPORT}
-              transition={{ duration: 0.55, delay: i * 0.18, ease: EASE }}
-              className="relative text-center"
+              transition={{ type: 'spring', stiffness: 130, damping: 17, delay: i * 0.15 }}
+              className={cn('flex h-full flex-col rounded-[2rem] p-7 transition-transform duration-300 hover:-translate-y-1.5 sm:p-8', s.bg)}
             >
               <motion.span
-                initial={reduce ? undefined : { scale: 0 }}
-                whileInView={reduce ? undefined : { scale: 1 }}
+                initial={reduce ? undefined : { scale: 0, rotate: -14 }}
+                whileInView={reduce ? undefined : { scale: 1, rotate: 0 }}
                 viewport={VIEWPORT}
-                transition={{ type: 'spring', stiffness: 260, damping: 15, delay: 0.1 + i * 0.18 }}
-                className="relative z-10 mx-auto flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 font-display text-2xl font-bold text-white shadow-pop"
+                transition={{ type: 'spring', stiffness: 260, damping: 14, delay: 0.12 + i * 0.15 }}
+                className={cn('flex size-14 items-center justify-center rounded-2xl font-display text-xl font-extrabold text-white shadow-pop', s.tile)}
               >
                 {s.n}
               </motion.span>
-              <h3 className="mt-5 font-display text-xl font-bold text-foreground">{s.title}</h3>
-              <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{s.text}</p>
+              <h3 className="mt-6 font-display text-2xl font-bold text-foreground">{s.title}</h3>
+              <p className="mt-2.5 text-[15px] leading-relaxed text-foreground/70">{s.text}</p>
+              <div className="mt-6 flex-1 content-end">{s.inner}</div>
             </motion.div>
           ))}
         </div>
@@ -1062,21 +1128,30 @@ function HowItWorks() {
 const CORE = [
   {
     Icon: UsersRound,
-    iconBg: 'bg-violet-400',
+    bg: 'bg-[#E9E4FB]',
+    tile: 'bg-violet-500',
+    chipCls: 'bg-white text-violet-700',
     title: 'Built for Travel People',
     text: 'Voyage is designed around how agencies actually sell trips — enquiries, follow-ups, departures — not generic sales jargon.',
+    chips: ['Enquiries', 'Follow-ups', 'Departures'],
   },
   {
     Icon: Zap,
-    iconBg: 'bg-cyan-400',
+    bg: 'bg-[#D9F2F8]',
+    tile: 'bg-cyan-500',
+    chipCls: 'bg-white text-cyan-700',
     title: 'Easy-to-Use',
     text: 'Anyone who can use Instagram & WhatsApp can use Voyage. Your team is productive on day one, no training needed.',
+    chips: ['No training', 'Day-one ready', 'Mobile friendly'],
   },
   {
     Icon: ShieldCheck,
-    iconBg: 'bg-amber-400',
+    bg: 'bg-[#FCEFD3]',
+    tile: 'bg-amber-500',
+    chipCls: 'bg-white text-amber-700',
     title: 'Your Brand + Your Data',
     text: 'Your logo and colors across the workspace, with your data isolated at the database level — no other agency can ever see it.',
+    chips: ['Your logo', 'Your colors', 'Isolated data'],
   },
 ];
 
@@ -1092,12 +1167,29 @@ function CoreSection() {
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {CORE.map((c, i) => (
             <FlipIn key={c.title} delay={i * 0.12}>
-              <div className="h-full rounded-[1.75rem] bg-card p-8 shadow-card transition-all duration-200 hover:-translate-y-1 hover:shadow-soft">
-                <span className={cn('flex h-14 w-14 items-center justify-center rounded-2xl text-white', c.iconBg)}>
+              <div
+                className={cn(
+                  'group flex h-full flex-col rounded-[2rem] p-8 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-soft',
+                  c.bg,
+                )}
+              >
+                <span
+                  className={cn(
+                    'flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-pop transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110',
+                    c.tile,
+                  )}
+                >
                   <c.Icon className="size-6" />
                 </span>
-                <h3 className="mt-6 font-display text-xl font-bold text-foreground">{c.title}</h3>
-                <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">{c.text}</p>
+                <h3 className="mt-6 font-display text-2xl font-bold text-foreground">{c.title}</h3>
+                <p className="mt-3 flex-1 text-[15px] leading-relaxed text-foreground/70">{c.text}</p>
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {c.chips.map((chip) => (
+                    <span key={chip} className={cn('rounded-full px-3 py-1.5 text-xs font-bold shadow-card', c.chipCls)}>
+                      {chip}
+                    </span>
+                  ))}
+                </div>
               </div>
             </FlipIn>
           ))}
@@ -1114,13 +1206,19 @@ const QUOTES = [
     quote: 'We used to lose enquiries in three different WhatsApp accounts. Now every lead is on one board and nothing slips through.',
     role: 'Founder, Wanderlust Travel Co.',
     name: 'Aisha K.',
+    bg: 'bg-[#E9E4FB]',
     avatarBg: 'bg-violet-500',
+    mark: 'text-violet-300',
+    tilt: -1.5,
   },
   {
     quote: 'What stood out was how effortlessly it brought the whole team onto a single platform. Voyage became our go-to hub for every customer interaction.',
     role: 'Director, Globe Hoppers',
     name: 'Diego A.',
+    bg: 'bg-[#D9F2E2]',
     avatarBg: 'bg-teal-500',
+    mark: 'text-teal-300',
+    tilt: 1.5,
   },
 ];
 
@@ -1134,22 +1232,47 @@ function QuotesSection() {
           {QUOTES.map((q, i) => (
             <motion.figure
               key={q.name}
-              initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.93 }}
-              whileInView={reduce ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 36, scale: 0.92, rotate: q.tilt * 2 }}
+              whileInView={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, rotate: q.tilt }}
+              whileHover={reduce ? undefined : { rotate: 0, y: -6 }}
               viewport={VIEWPORT}
-              transition={{ duration: 0.55, delay: i * 0.12, ease: EASE }}
-              className="h-full rounded-[1.75rem] bg-card p-8 shadow-card"
+              transition={{ type: 'spring', stiffness: 140, damping: 16, delay: i * 0.14 }}
+              className={cn('relative h-full overflow-hidden rounded-[2rem] p-8 sm:p-10', q.bg)}
             >
-              <blockquote className="text-lg leading-relaxed text-foreground">“{q.quote}”</blockquote>
-              <figcaption className="mt-6 flex items-center gap-3">
-                <span className={cn('flex size-11 items-center justify-center rounded-full font-display text-sm font-bold text-white', q.avatarBg)}>
-                  {q.name.slice(0, 1)}
-                </span>
-                <span>
-                  <span className="block text-sm font-bold text-foreground">{q.role}</span>
-                  <span className="block text-sm text-muted-foreground">{q.name}</span>
-                </span>
-              </figcaption>
+              {/* Decorative oversized quote mark */}
+              <span
+                aria-hidden
+                className={cn('pointer-events-none absolute -top-6 right-4 select-none font-display text-[9rem] font-extrabold leading-none', q.mark)}
+              >
+                ”
+              </span>
+              <div className="relative">
+                <div className="flex text-amber-400" aria-hidden>
+                  {Array.from({ length: 5 }).map((_, j) => (
+                    <motion.span
+                      key={j}
+                      initial={reduce ? undefined : { opacity: 0, scale: 0 }}
+                      whileInView={reduce ? undefined : { opacity: 1, scale: 1 }}
+                      viewport={VIEWPORT}
+                      transition={{ type: 'spring', stiffness: 320, damping: 15, delay: 0.25 + i * 0.14 + j * 0.06 }}
+                    >
+                      <Star className="size-4 fill-current" strokeWidth={0} />
+                    </motion.span>
+                  ))}
+                </div>
+                <blockquote className="mt-4 text-lg font-medium leading-relaxed text-foreground">
+                  “{q.quote}”
+                </blockquote>
+                <figcaption className="mt-7 flex items-center gap-3">
+                  <span className={cn('flex size-12 items-center justify-center rounded-full font-display text-base font-bold text-white ring-2 ring-white', q.avatarBg)}>
+                    {q.name.slice(0, 1)}
+                  </span>
+                  <span>
+                    <span className="block text-sm font-bold text-foreground">{q.role}</span>
+                    <span className="block text-sm text-foreground/60">{q.name}</span>
+                  </span>
+                </figcaption>
+              </div>
             </motion.figure>
           ))}
         </div>
