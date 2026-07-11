@@ -169,42 +169,41 @@ function Nav() {
   const { status } = useAuth();
   const authed = status === 'authenticated';
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+    <header className="sticky top-0 z-40 border-b border-border/60 bg-white/90 backdrop-blur-md">
+      <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2.5">
           <LogoMark />
-          <span className="font-display text-lg font-bold tracking-tight text-foreground">Voyage</span>
+          <span className="font-display text-xl font-bold tracking-tight text-foreground">Voyage</span>
         </Link>
-        <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
-          <a href="#why" className="transition-colors hover:text-foreground">
-            Why Voyage
+        <nav className="hidden items-center gap-8 text-[15px] font-semibold text-foreground md:flex">
+          <a href="#why" className="transition-colors hover:text-primary">
+            About Us
           </a>
-          <a href="#features" className="transition-colors hover:text-foreground">
+          <a href="#features" className="relative transition-colors hover:text-primary">
             Features
+            <span className="absolute -right-6 -top-3 rounded-full bg-pink-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+              New
+            </span>
           </a>
-          <a href="#how" className="transition-colors hover:text-foreground">
+          <a href="#how" className="ml-3 transition-colors hover:text-primary">
             How it works
           </a>
-          <a href="#faq" className="transition-colors hover:text-foreground">
+          <a href="#faq" className="transition-colors hover:text-primary">
             FAQ
           </a>
         </nav>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           {authed ? (
-            <Button asChild size="sm" className="h-10 px-4">
-              <Link to="/dashboard">
-                Open dashboard <ArrowRight />
-              </Link>
+            <Button asChild size="sm" className="h-11 rounded-xl bg-foreground px-5 text-background hover:bg-foreground/90">
+              <Link to="/dashboard">Open dashboard</Link>
             </Button>
           ) : (
             <>
-              <Button asChild variant="ghost" size="sm" className="h-10 px-4">
-                <Link to="/login">Sign in</Link>
+              <Button asChild variant="outline" size="sm" className="h-11 rounded-xl px-5 text-[15px] font-semibold">
+                <Link to="/login">Login</Link>
               </Button>
-              <Button asChild size="sm" className="h-10 px-4">
-                <Link to="/signup">
-                  Get started <ArrowRight />
-                </Link>
+              <Button asChild size="sm" className="h-11 rounded-xl bg-foreground px-5 text-[15px] font-semibold text-background hover:bg-foreground/90">
+                <Link to="/signup">Get Started</Link>
               </Button>
             </>
           )}
@@ -224,8 +223,8 @@ function ProductMock() {
   ];
   const stages = ['bg-blue-500', 'bg-violet-500', 'bg-pink-500', 'bg-amber-500', 'bg-orange-500', 'bg-emerald-600'];
   return (
-    <div className="relative mx-auto w-full max-w-3xl">
-      <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-pop">
+    <div className="relative mx-auto w-full">
+      <div className="relative overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-pop">
         {/* periodic shine sweep */}
         <span className="animate-sheen pointer-events-none absolute inset-y-0 z-10 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
         <div className="flex items-center gap-1.5 border-b border-border bg-muted/60 px-4 py-2.5">
@@ -329,6 +328,16 @@ function ProductMock() {
   );
 }
 
+/** Hand-drawn curved arrow for the hero annotations (Ether style). */
+function CurvedArrow({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 90 64" fill="none" className={className} aria-hidden>
+      <path d="M8 6 C 24 36, 44 50, 74 46" stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
+      <path d="M62 56 L 76 46 L 66 31" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function Hero() {
   const reduce = useReducedMotion();
   const { status } = useAuth();
@@ -339,87 +348,115 @@ function Hero() {
       ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.25, delay } }
       : { initial: { opacity: 0, y: 22 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.65, delay, ease: EASE } };
 
-  const words = 'All-in-one Operating System for'.split(' ');
+  const blurIn = (delay: number) =>
+    reduce
+      ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.3, delay } }
+      : {
+          initial: { opacity: 0, y: 24, filter: 'blur(10px)' },
+          animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+          transition: { delay, duration: 0.65, ease: EASE },
+        };
 
   return (
-    <section className="relative overflow-hidden">
-      <div className="animate-blob pointer-events-none absolute -top-24 left-1/2 h-[26rem] w-[26rem] -translate-x-[80%] rounded-full bg-primary/15 blur-3xl" />
-      <div className="animate-blob-slow pointer-events-none absolute -top-10 left-1/2 h-[22rem] w-[22rem] translate-x-[10%] rounded-full bg-violet-400/15 blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(50rem_30rem_at_50%_-10%,hsl(var(--primary)/0.06),transparent)]" />
+    <section className="relative overflow-hidden bg-[#5433EB] pb-20 text-white sm:pb-24">
+      {/* subtle drifting glows on the flat violet */}
+      <div className="animate-blob pointer-events-none absolute -left-24 top-24 h-96 w-96 rounded-full bg-white/[0.07] blur-3xl" />
+      <div className="animate-blob-slow pointer-events-none absolute -right-24 bottom-0 h-96 w-96 rounded-full bg-fuchsia-300/10 blur-3xl" />
 
-      <div className="relative mx-auto max-w-6xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-24">
-        <motion.div {...rise(0)} className="mb-6 flex justify-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-card">
-            <span className="flex text-amber-400" aria-hidden>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="size-3 fill-current" strokeWidth={0} />
+      <div className="relative mx-auto max-w-6xl px-4 pt-14 text-center sm:px-6 sm:pt-20">
+        {/* Yellow rating pill with avatar stack + green stars */}
+        <motion.div {...rise(0)} className="mb-9 flex justify-center">
+          <span className="inline-flex items-center gap-2.5 rounded-full bg-amber-300 py-1.5 pl-2 pr-4 text-sm font-bold text-[#1A2340] shadow-pop">
+            <span className="flex -space-x-2" aria-hidden>
+              {[
+                ['A', 'bg-violet-500'],
+                ['S', 'bg-pink-500'],
+                ['M', 'bg-teal-500'],
+              ].map(([letter, color]) => (
+                <span
+                  key={letter}
+                  className={cn(
+                    'flex size-7 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 ring-amber-300',
+                    color,
+                  )}
+                >
+                  {letter}
+                </span>
               ))}
             </span>
-            Rated 4.8 · Trusted by travel agencies across India
+            Rated 4.8
+            <span className="flex text-emerald-700" aria-hidden>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Star key={i} className="size-4 fill-current" strokeWidth={0} />
+              ))}
+            </span>
+            <span className="hidden font-semibold sm:inline">by 40+ agencies</span>
           </span>
         </motion.div>
 
-        {/* Word-by-word blur-in headline with animated gradient highlight */}
-        <h1 className="mx-auto max-w-3xl font-display text-4xl font-bold leading-[1.08] tracking-tight text-foreground sm:text-6xl">
-          {words.map((w, i) => (
-            <motion.span
-              key={i}
-              initial={reduce ? { opacity: 0 } : { opacity: 0, y: 20, filter: 'blur(8px)' }}
-              animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
-              transition={{ delay: 0.08 + i * 0.07, duration: 0.55, ease: EASE }}
-              className="mr-[0.28em] inline-block"
-            >
-              {w}
-            </motion.span>
-          ))}
-          <motion.span
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 20, filter: 'blur(10px)' }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ delay: 0.08 + words.length * 0.07, duration: 0.6, ease: EASE }}
-            className="animate-gradient-x inline-block bg-gradient-to-r from-primary via-fuchsia-500 to-primary bg-clip-text text-transparent"
-          >
-            Travel Agencies
+        {/* Ether-style two-line headline: yellow + white */}
+        <h1 className="font-display font-bold leading-[1.06] tracking-tight">
+          <motion.span {...blurIn(0.15)} className="block text-5xl text-amber-300 sm:text-7xl">
+            All-in-one
+          </motion.span>
+          <motion.span {...blurIn(0.32)} className="mx-auto mt-2 block max-w-4xl text-4xl text-white sm:text-6xl">
+            Operating System for Travel Agencies
           </motion.span>
         </h1>
 
-        <motion.p {...rise(0.55)} className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
-          Capture every enquiry, run one clean pipeline, and close more trips together — without
-          juggling five different tools.
+        <motion.p {...rise(0.5)} className="mx-auto mt-6 max-w-2xl text-base text-white/80 sm:text-lg">
+          Everything your agency needs to capture, operate, and grow — without switching between
+          multiple tools and apps.
         </motion.p>
 
-        <motion.div {...rise(0.65)} className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {authed ? (
-            <Button asChild size="lg" className="w-full sm:w-auto">
-              <Link to="/dashboard">
-                Open your dashboard <ArrowRight />
-              </Link>
-            </Button>
-          ) : (
-            <>
-              <Button asChild size="lg" className="w-full shadow-pop transition-transform hover:scale-[1.02] sm:w-auto">
-                <Link to="/signup">
-                  Get started free <ArrowRight />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-                <Link to="/login">Sign in</Link>
-              </Button>
-            </>
-          )}
+        {/* Black + white button pair */}
+        <motion.div {...rise(0.62)} className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Button
+            asChild
+            size="lg"
+            className="w-full rounded-xl bg-[#14162B] px-7 text-white shadow-pop transition-transform hover:scale-[1.02] hover:bg-[#14162B]/90 sm:w-auto"
+          >
+            <Link to="/signup">Book a Free Demo</Link>
+          </Button>
+          <Button
+            asChild
+            size="lg"
+            className="w-full rounded-xl bg-white px-7 text-foreground hover:bg-white/90 sm:w-auto"
+          >
+            <Link to={authed ? '/dashboard' : '/login'}>Access Voyage</Link>
+          </Button>
         </motion.div>
 
-        <motion.p {...rise(0.72)} className="mt-4 text-xs text-muted-foreground">
-          No learning curve. Set up your agency in under two minutes.
-        </motion.p>
-
+        {/* Framed dashboard screenshot with handwritten annotations */}
         <motion.div
-          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 60, scale: 0.94 }}
+          initial={reduce ? { opacity: 0 } : { opacity: 0, y: 60, scale: 0.95 }}
           animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.9, delay: 0.8, ease: EASE }}
-          className="mt-16"
+          transition={{ duration: 0.9, delay: 0.75, ease: EASE }}
+          className="relative mx-auto mt-20 max-w-4xl"
         >
+          {/* “No Learning Curve” — left annotation */}
+          <div className="absolute -top-16 left-0 hidden -translate-x-2/3 lg:block">
+            <p className="-rotate-6 font-hand text-3xl font-bold leading-none text-white">
+              No Learning
+              <br />
+              Curve
+            </p>
+            <CurvedArrow className="ml-14 mt-1 w-14 text-white/90" />
+          </div>
+          {/* “Effortless & Streamlined” — right annotation */}
+          <div className="absolute -top-16 right-0 hidden translate-x-2/3 text-right lg:block">
+            <CurvedArrow className="mb-1 ml-auto mr-14 w-14 -scale-x-100 text-white/90" />
+            <p className="rotate-3 font-hand text-3xl font-bold leading-none text-white">
+              Effortless &
+              <br />
+              Streamlined
+            </p>
+          </div>
+
           <Tilt>
-            <ProductMock />
+            <div className="rounded-[2rem] bg-white/20 p-2 shadow-2xl ring-1 ring-white/30 sm:p-3">
+              <ProductMock />
+            </div>
           </Tilt>
         </motion.div>
       </div>

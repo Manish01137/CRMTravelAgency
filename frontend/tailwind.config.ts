@@ -55,6 +55,7 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        hand: ['Caveat', 'cursive'],
         display: [
           '"Cabinet Grotesk"',
           '"General Sans"',
