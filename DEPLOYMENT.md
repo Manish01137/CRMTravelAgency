@@ -24,7 +24,7 @@ Browser ──▶ your-app.vercel.app  (static React app)
    | Name | `voyage-crm-api` ← keep this exact name if available (it's baked into vercel.json) |
    | Region | Singapore (closest to your Supabase in Seoul) |
    | Root Directory | `backend` |
-   | Build Command | `npm install && npm run build` |
+   | Build Command | `npm install --include=dev && npm run build` ← the `--include=dev` matters: with `NODE_ENV=production` set, plain `npm install` skips TypeScript/@types and the build fails |
    | Start Command | `npm start` |
    | Instance Type | Free |
 4. **Environment tab** → add every variable from `backend/.env.production`
