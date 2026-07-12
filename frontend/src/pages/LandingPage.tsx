@@ -307,7 +307,7 @@ function ProductMock() {
           <p className="text-[10px] text-muted-foreground">Priya · Bali · ₹2.5L budget</p>
         </div>
       </div>
-      <div className="animate-float-delayed absolute -right-4 -top-6 hidden items-center gap-2.5 rounded-xl border border-border bg-card p-3 shadow-pop sm:flex">
+      <div className="animate-float-delayed absolute -right-6 top-24 hidden items-center gap-2.5 rounded-xl border border-border bg-card p-3 shadow-pop sm:flex">
         <span className="flex size-8 items-center justify-center rounded-full bg-teal-100 text-teal-700">
           <CalendarCheck2 className="size-4" />
         </span>
@@ -316,7 +316,7 @@ function ProductMock() {
           <p className="text-[10px] text-muted-foreground">Maldives · $5,300</p>
         </div>
       </div>
-      <div className="animate-float-delayed absolute -left-16 top-16 hidden -rotate-3 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 shadow-pop lg:flex">
+      <div className="animate-float-delayed absolute -left-20 top-32 hidden -rotate-3 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 shadow-pop lg:flex">
         <span className="text-base">🌴</span>
         <span className="text-xs font-semibold text-foreground">Bali · ₹49,999</span>
       </div>
@@ -432,26 +432,36 @@ function Hero() {
           initial={reduce ? { opacity: 0 } : { opacity: 0, y: 60, scale: 0.95 }}
           animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.9, delay: 0.75, ease: EASE }}
-          className="relative mx-auto mt-20 max-w-4xl"
+          className="relative mx-auto mt-24 max-w-4xl sm:mt-28"
         >
-          {/* “No Learning Curve” — left annotation */}
-          <div className="absolute -top-16 left-0 hidden -translate-x-2/3 lg:block">
+          {/* “No Learning Curve” — left annotation (fades in after the frame settles) */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.5, duration: 0.6, ease: EASE }}
+            className="absolute -top-24 left-0 z-20 hidden -translate-x-[70%] lg:block"
+          >
             <p className="-rotate-6 font-hand text-3xl font-bold leading-none text-white">
               No Learning
               <br />
               Curve
             </p>
-            <CurvedArrow className="ml-14 mt-1 w-14 text-white/90" />
-          </div>
+            <CurvedArrow className="ml-16 mt-2 w-12 text-white/90" />
+          </motion.div>
           {/* “Effortless & Streamlined” — right annotation */}
-          <div className="absolute -top-16 right-0 hidden translate-x-2/3 text-right lg:block">
-            <CurvedArrow className="mb-1 ml-auto mr-14 w-14 -scale-x-100 text-white/90" />
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.7, duration: 0.6, ease: EASE }}
+            className="absolute -top-24 right-0 z-20 hidden translate-x-[70%] text-right lg:block"
+          >
             <p className="rotate-3 font-hand text-3xl font-bold leading-none text-white">
               Effortless &
               <br />
               Streamlined
             </p>
-          </div>
+            <CurvedArrow className="mr-16 mt-2 inline-block w-12 -scale-x-100 text-white/90" />
+          </motion.div>
 
           <Tilt>
             <div className="rounded-[2rem] bg-white/20 p-2 shadow-2xl ring-1 ring-white/30 sm:p-3">
