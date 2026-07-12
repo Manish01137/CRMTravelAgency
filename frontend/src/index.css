@@ -43,11 +43,18 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Kill horizontal page scroll from pre-animation transforms / decorative
+       offsets. `clip` (not `hidden`) keeps position:sticky working; the
+       `hidden` line above it is the fallback for older iOS Safari. */
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   body {
     @apply bg-surface text-foreground font-sans antialiased;
     text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   h1,
