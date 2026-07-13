@@ -121,12 +121,15 @@ model Organization {
   logoUrl             String?
   brandPrimaryColor   String   @default("#4F46E5") @map("brand_primary_color")
   brandSecondaryColor String   @default("#0D9488") @map("brand_secondary_color")
+  bio                 String?
+  hostLinks           Json     @default("[]") @map("host_links")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   users       User[]
   leads       Lead[]
   invitations Invitation[]
+  hotels      Hotel[]
   packages    Package[]
   bookings    Booking[]
   itineraryItems ItineraryItem[]
@@ -217,6 +220,29 @@ model Invitation {
 // ===========================================================================
 // Phase 2 — Core CRM
 // ===========================================================================
+
+/// Partner hotel in the agency's directory.
+model Hotel {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  city           String
+  address        String?
+  starRating     Int      @default(3) @map("star_rating")
+  phone          String?
+  email          String?
+  pricePerNight  Int?     @map("price_per_night")
+  currency       String   @default("INR")
+  notes          String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("hotels")
+}
 
 /// Reusable trip template ("Bali 5N/6D — ₹49,999").
 model Package {

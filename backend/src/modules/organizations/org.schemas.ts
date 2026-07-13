@@ -15,6 +15,18 @@ export const updateOrgSchema = z
       .optional(),
     brandPrimaryColor: hexColor.optional(),
     brandSecondaryColor: hexColor.optional(),
+    bio: z
+      .preprocess((v) => (v === '' ? null : v), z.string().max(500).nullable())
+      .optional(),
+    hostLinks: z
+      .array(
+        z.object({
+          label: z.string().trim().min(1, 'Label required').max(60),
+          url: z.string().trim().url('Enter a valid URL').max(500),
+        }),
+      )
+      .max(10)
+      .optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No fields to update' });
 

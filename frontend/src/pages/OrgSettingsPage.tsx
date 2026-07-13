@@ -1,4 +1,6 @@
-import { Controller, useForm, type Control } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, type Control } from 'react-hook-form';
+import { Copy, ExternalLink, Globe, Plus, Trash2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
@@ -61,6 +63,121 @@ function ColorField({
         )}
       />
     </Field>
+  );
+}
+
+interface HostFormValues {
+  bio: string;
+  links: { label: string; url: string }[];
+}
+
+/** Public host page (Linktree-style mini site) settings. */
+function HostPageCard() {
+  const { organization, setOrganization } = useAuth();
+  const { register, handleSubmit, control, formState: { errors } } = useForm<HostFormValues>({
+    defaultValues: {
+      bio: organization?.bio ?? '',
+      links: organization?.hostLinks ?? [],
+    },
+  });
+  const { fields, append, remove } = useFieldArray({ control, name: 'links' });
+
+  const mutation = useMutation({
+    mutationFn: (v: HostFormValues) =>
+      api.patch<Organization>('/organization', {
+        bio: v.bio.trim() || null,
+        hostLinks: v.links
+          .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+          .filter((l) => l.label && l.url),
+      }),
+    onSuccess: (updated) => {
+      setOrganization(updated);
+      toast.success('Host page updated');
+    },
+    onError: (err) => handleApiError(err),
+  });
+
+  if (!organization) return null;
+  const publicUrl = `${window.location.origin}/a/${organization.slug}`;
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Globe className="size-5 text-primary" /> Host page
+        </CardTitle>
+        <CardDescription>
+          Your public mini-site — share it on Instagram/WhatsApp. Enquiries land straight in your
+          Leads pipeline.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Shareable URL */}
+        <div className="mb-5 flex flex-col gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center">
+          <code className="flex-1 truncate text-sm font-medium text-primary">{publicUrl}</code>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                navigator.clipboard.writeText(publicUrl);
+                toast.success('Link copied');
+              }}
+            >
+              <Copy /> Copy
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <a href={publicUrl} target="_blank" rel="noreferrer">
+                <ExternalLink /> Preview
+              </a>
+            </Button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4" noValidate>
+          <Field label="Bio" htmlFor="hostBio" hint="A short line about your agency, shown under your name.">
+            <Textarea id="hostBio" rows={2} maxLength={500} placeholder="Making dream trips easy since 2015 ✈" {...register('bio')} />
+          </Field>
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground">Links</p>
+            <div className="space-y-2">
+              {fields.map((field, idx) => (
+                <div key={field.id} className="flex gap-2">
+                  <Input
+                    placeholder="Label (e.g. WhatsApp us)"
+                    className="sm:max-w-[200px]"
+                    aria-invalid={!!errors.links?.[idx]?.label}
+                    {...register(`links.${idx}.label`, { required: true })}
+                  />
+                  <Input
+                    placeholder="https://…"
+                    aria-invalid={!!errors.links?.[idx]?.url}
+                    {...register(`links.${idx}.url`, { required: true })}
+                  />
+                  <Button type="button" variant="ghost" size="icon" aria-label="Remove link" onClick={() => remove(idx)}>
+                    <Trash2 className="text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {fields.length < 10 && (
+              <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ label: '', url: '' })}>
+                <Plus /> Add link
+              </Button>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending && <Spinner />}
+              Save host page
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -220,6 +337,8 @@ export function OrgSettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <HostPageCard />
     </div>
   );
 }

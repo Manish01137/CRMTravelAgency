@@ -18,6 +18,8 @@ import { TasksPage } from '@/pages/TasksPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { InvoiceViewPage } from '@/pages/InvoiceViewPage';
+import { HotelsPage } from '@/pages/HotelsPage';
+import { HostPage } from '@/pages/HostPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
@@ -84,6 +86,9 @@ function AppRoutes() {
       {/* Public marketing landing — visible to everyone. */}
       <Route path="/" element={<LandingPage />} />
 
+      {/* Public agency host page (Linktree-style mini site). */}
+      <Route path="/a/:slug" element={<HostPage />} />
+
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
@@ -102,6 +107,7 @@ function AppRoutes() {
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/bookings/:id" element={<BookingDetailPage />} />
         <Route path="/packages" element={<PackagesPage />} />
+        <Route path="/hotels" element={<HotelsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />

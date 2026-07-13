@@ -32,6 +32,8 @@ export interface Organization {
   logoUrl: string | null;
   brandPrimaryColor: string;
   brandSecondaryColor: string;
+  bio: string | null;
+  hostLinks: HostLink[];
   createdAt: string;
   updatedAt: string;
 }
@@ -246,6 +248,39 @@ export interface Bill {
   status: BillStatus;
   notes: string | null;
   booking?: { id: string; bookingNumber: number; customerName: string } | null;
+}
+
+export interface HostLink {
+  label: string;
+  url: string;
+}
+
+export interface Hotel {
+  id: string;
+  organizationId: string;
+  name: string;
+  city: string;
+  address: string | null;
+  starRating: number;
+  phone: string | null;
+  email: string | null;
+  pricePerNight: number | null;
+  currency: string;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HostPagePayload {
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  brandPrimaryColor: string;
+  brandSecondaryColor: string;
+  bio: string | null;
+  hostLinks: HostLink[];
+  packages: Pick<TravelPackage, 'id' | 'name' | 'destination' | 'nights' | 'days' | 'priceAmount' | 'priceCurrency' | 'description'>[];
 }
 
 export interface AuthResponse {
