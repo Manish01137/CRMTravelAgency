@@ -119,6 +119,79 @@ async function main() {
       }
     }
 
+    // --- Phase 2 demo data (idempotent) --------------------------------------
+    const pkgCount = await prisma.package.count({ where: { organizationId: organization.id } });
+    if (pkgCount === 0) {
+      await prisma.package.createMany({
+        data: [
+          {
+            organizationId: organization.id,
+            name: `${org.name.split(' ')[0]} Bali Escape 5N/6D`,
+            destination: 'Bali, Indonesia',
+            nights: 5,
+            days: 6,
+            priceAmount: 49999,
+            priceCurrency: 'INR',
+            description: 'Beaches, temples and rice terraces — our best-selling honeymoon trip.',
+            inclusions: 'Return flights\n4-star hotel\nDaily breakfast\nAirport transfers',
+            exclusions: 'Visa on arrival\nLunch & dinner',
+          },
+          {
+            organizationId: organization.id,
+            name: 'Swiss Alps Winter 6N/7D',
+            destination: 'Interlaken, Switzerland',
+            nights: 6,
+            days: 7,
+            priceAmount: 145000,
+            priceCurrency: 'INR',
+            description: 'Snow-capped peaks, scenic trains and chocolate tours.',
+            inclusions: 'Flights\nHotels\nSwiss Travel Pass',
+            exclusions: 'Travel insurance\nMeals',
+          },
+        ],
+      });
+    }
+
+    const bookingCount = await prisma.booking.count({ where: { organizationId: organization.id } });
+    if (bookingCount === 0) {
+      const inThirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const inThirtySix = new Date(Date.now() + 36 * 24 * 60 * 60 * 1000);
+      const booking = await prisma.booking.create({
+        data: {
+          organizationId: organization.id,
+          bookingNumber: 1,
+          customerName: org.leads[org.leads.length - 1].name,
+          customerPhone: org.leads[org.leads.length - 1].phone ?? null,
+          destination: org.leads[org.leads.length - 1].destination ?? 'Bali, Indonesia',
+          startDate: inThirtyDays,
+          endDate: inThirtySix,
+          travelerCount: 2,
+          status: 'CONFIRMED',
+          totalAmount: 99999,
+          amountPaid: 40000,
+          currency: 'INR',
+          assignedToId: agent.id,
+        },
+      });
+      await prisma.itineraryItem.createMany({
+        data: [
+          { organizationId: organization.id, bookingId: booking.id, dayNumber: 1, title: 'Arrival & check-in', description: 'Airport pickup, welcome dinner.' },
+          { organizationId: organization.id, bookingId: booking.id, dayNumber: 2, title: 'City & culture tour' },
+          { organizationId: organization.id, bookingId: booking.id, dayNumber: 3, title: 'Free day / optional activities' },
+        ],
+      });
+      await prisma.task.create({
+        data: {
+          organizationId: organization.id,
+          title: `Collect balance payment from ${booking.customerName}`,
+          type: 'FOLLOW_UP',
+          dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          bookingId: booking.id,
+          assignedToId: agent.id,
+        },
+      });
+    }
+
     // eslint-disable-next-line no-console
     console.log(`✓ Seeded ${org.name} (${org.leads.length} leads)`);
   }

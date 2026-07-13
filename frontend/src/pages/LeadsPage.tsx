@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowDown,
+  CalendarCheck2,
   ArrowUp,
   ArrowUpDown,
   BellRing,
@@ -334,8 +336,16 @@ function AssigneeDropdown({
   );
 }
 
-/** Dark per-row Actions button (reference style) with Edit / Delete. */
-function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+/** Dark per-row Actions button (reference style) with Convert / Edit / Delete. */
+function RowActions({
+  onEdit,
+  onDelete,
+  onConvert,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  onConvert: () => void;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -347,6 +357,9 @@ function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => 
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={onConvert}>
+          <CalendarCheck2 /> Convert to booking
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onEdit}>
           <Pencil /> Edit
         </DropdownMenuItem>
@@ -489,6 +502,8 @@ export function LeadsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState<Lead | null>(null);
+  const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     setPage(1);
@@ -542,6 +557,19 @@ export function LeadsPage() {
       toast.success('Lead updated');
     },
     onError: () => toast.error('Could not update this lead'),
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: (leadId: string) => api.post<{ id: string }>(`/bookings/from-lead/${leadId}`, {}),
+    onSuccess: (booking) => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-stats'] });
+      toast.success('Booking created from lead');
+      setConvertingLead(null);
+      navigate(`/bookings/${booking.id}`);
+    },
+    onError: () => toast.error('Could not convert this lead'),
   });
 
   const deleteMutation = useMutation({
@@ -666,7 +694,7 @@ export function LeadsPage() {
         />
       </td>
       <td className="px-3 py-4 text-right">
-        <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} />
+        <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />
       </td>
     </>
   );
@@ -942,7 +970,7 @@ export function LeadsPage() {
                 <Card key={lead.id} className={cn('p-4', temp?.cardClass)}>
                   <div className="flex items-start justify-between gap-3">
                     <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} />
-                    <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} />
+                    <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />
                   </div>
                   <div className="mt-3">
                     <EnquiryCell lead={lead} />
@@ -1024,6 +1052,24 @@ export function LeadsPage() {
         destructive
         loading={deleteMutation.isPending}
         onConfirm={() => deletingLead && deleteMutation.mutate(deletingLead.id)}
+      />
+
+      <ConfirmDialog
+        open={!!convertingLead}
+        onOpenChange={(open) => !open && setConvertingLead(null)}
+        title="Convert to booking?"
+        description={
+          convertingLead ? (
+            <>
+              A booking will be created for{' '}
+              <span className="font-medium text-foreground">{convertingLead.name}</span> with this
+              lead's details, and the lead will be marked <span className="font-medium text-foreground">Won</span>.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Create booking"
+        loading={convertMutation.isPending}
+        onConfirm={() => convertingLead && convertMutation.mutate(convertingLead.id)}
       />
     </div>
   );

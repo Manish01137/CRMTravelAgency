@@ -107,6 +107,22 @@ async function main() {
     const afterDelete = await systemPrisma.lead.findUnique({ where: { id: leadB.id } });
     check("A: Org B's lead still exists", afterDelete !== null);
 
+    // 5b. Phase 2 tables follow the same policy — bookings as the canary.
+    const bookA = await systemPrisma.booking.create({
+      data: { organizationId: orgA.id, bookingNumber: 999901, customerName: 'Book A', destination: 'X' },
+    });
+    const bookB = await systemPrisma.booking.create({
+      data: { organizationId: orgB.id, bookingNumber: 999901, customerName: 'Book B', destination: 'Y' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const books = await tx.booking.findMany();
+      check(
+        'A: bookings (Phase 2) — sees only own rows',
+        books.some((b) => b.id === bookA.id) && books.every((b) => b.organizationId === orgA.id),
+      );
+      check('A: bookings — Org B booking invisible by id', (await tx.booking.findUnique({ where: { id: bookB.id } })) === null);
+    });
+
     // 6. Cannot forge a row into Org B (WITH CHECK).
     let forgeRejected = false;
     try {

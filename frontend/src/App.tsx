@@ -11,6 +11,13 @@ import { SignupPage } from '@/pages/SignupPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LeadsPage } from '@/pages/LeadsPage';
+import { BookingsPage } from '@/pages/BookingsPage';
+import { BookingDetailPage } from '@/pages/BookingDetailPage';
+import { PackagesPage } from '@/pages/PackagesPage';
+import { TasksPage } from '@/pages/TasksPage';
+import { CalendarPage } from '@/pages/CalendarPage';
+import { InvoicesPage } from '@/pages/InvoicesPage';
+import { InvoiceViewPage } from '@/pages/InvoiceViewPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
@@ -45,6 +52,17 @@ function ProtectedRoute() {
   );
 }
 
+/** Requires a session but renders WITHOUT the app shell (print views). */
+function ProtectedBareRoute() {
+  const { status } = useAuth();
+  const location = useLocation();
+  if (status === 'loading') return <FullPageLoader />;
+  if (status === 'unauthenticated') {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <Outlet />;
+}
+
 /** Admin-only sub-tree. */
 function AdminRoute() {
   const { isAdmin } = useAuth();
@@ -73,9 +91,20 @@ function AppRoutes() {
 
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
+      {/* Print-friendly views: authenticated but outside the app shell */}
+      <Route element={<ProtectedBareRoute />}>
+        <Route path="/invoices/:id" element={<InvoiceViewPage />} />
+      </Route>
+
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/leads" element={<LeadsPage />} />
+        <Route path="/bookings" element={<BookingsPage />} />
+        <Route path="/bookings/:id" element={<BookingDetailPage />} />
+        <Route path="/packages" element={<PackagesPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />
         <Route element={<AdminRoute />}>
           <Route path="/team" element={<UsersPage />} />

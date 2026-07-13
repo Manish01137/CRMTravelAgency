@@ -64,6 +64,51 @@ enum InvitationStatus {
   EXPIRED
 }
 
+// --- Phase 2 enums ---------------------------------------------------------
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskType {
+  FOLLOW_UP
+  CALL
+  MEETING
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  DONE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum BillCategory {
+  HOTEL
+  FLIGHT
+  TRANSPORT
+  ACTIVITY
+  VISA
+  FOOD
+  OTHER
+}
+
+enum BillStatus {
+  UNPAID
+  PAID
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -82,6 +127,13 @@ model Organization {
   users       User[]
   leads       Lead[]
   invitations Invitation[]
+  packages    Package[]
+  bookings    Booking[]
+  itineraryItems ItineraryItem[]
+  tasks       Task[]
+  events      Event[]
+  invoices    Invoice[]
+  bills       Bill[]
 
   @@map("organizations")
 }
@@ -102,6 +154,8 @@ model User {
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedLeads   Lead[]       @relation("AssignedAgent")
   invitationsSent Invitation[] @relation("Inviter")
+  bookings        Booking[]    @relation("BookingAgent")
+  tasks           Task[]       @relation("TaskAssignee")
 
   @@index([organizationId])
   @@map("users")
@@ -128,6 +182,8 @@ model Lead {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  bookings     Booking[]
+  tasks        Task[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -156,4 +212,189 @@ model Invitation {
   @@index([organizationId])
   @@index([organizationId, email])
   @@map("invitations")
+}
+
+// ===========================================================================
+// Phase 2 — Core CRM
+// ===========================================================================
+
+/// Reusable trip template ("Bali 5N/6D — ₹49,999").
+model Package {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  name           String
+  destination    String
+  nights         Int     @default(1)
+  days           Int     @default(2)
+  priceAmount    Int     @map("price_amount")
+  priceCurrency  String  @default("INR") @map("price_currency")
+  description    String?
+  inclusions     String?
+  exclusions     String?
+  isActive       Boolean @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+
+  @@index([organizationId])
+  @@map("packages")
+}
+
+/// A confirmed (or in-progress) trip for a customer. BK-#### per organization.
+model Booking {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  bookingNumber  Int           @map("booking_number")
+  customerName   String        @map("customer_name")
+  customerEmail  String?       @map("customer_email")
+  customerPhone  String?       @map("customer_phone")
+  destination    String
+  startDate      DateTime?     @map("start_date") @db.Date
+  endDate        DateTime?     @map("end_date") @db.Date
+  travelerCount  Int?          @map("traveler_count")
+  status         BookingStatus @default(PENDING)
+  totalAmount    Int           @default(0) @map("total_amount")
+  amountPaid     Int           @default(0) @map("amount_paid")
+  currency       String        @default("INR")
+  notes          String?
+  leadId         String?       @map("lead_id") @db.Uuid
+  packageId      String?       @map("package_id") @db.Uuid
+  assignedToId   String?       @map("assigned_to_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  package        Package?        @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  assignedTo     User?           @relation("BookingAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  itineraryItems ItineraryItem[]
+  tasks          Task[]
+  invoices       Invoice[]
+  bills          Bill[]
+
+  @@unique([organizationId, bookingNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, startDate])
+  @@map("bookings")
+}
+
+/// One day (or item) of a booking's itinerary.
+model ItineraryItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  bookingId      String   @map("booking_id") @db.Uuid
+  dayNumber      Int      @map("day_number")
+  title          String
+  description    String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  booking      Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([bookingId, dayNumber])
+  @@map("itinerary_items")
+}
+
+/// Scheduler entry / follow-up reminder — optionally linked to a lead or booking.
+model Task {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  title          String
+  notes          String?
+  type           TaskType   @default(FOLLOW_UP)
+  status         TaskStatus @default(PENDING)
+  dueAt          DateTime   @map("due_at")
+  leadId         String?    @map("lead_id") @db.Uuid
+  bookingId      String?    @map("booking_id") @db.Uuid
+  assignedToId   String?    @map("assigned_to_id") @db.Uuid
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  assignedTo   User?        @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, status, dueAt])
+  @@index([leadId])
+  @@index([bookingId])
+  @@map("tasks")
+}
+
+/// Manual calendar entry (the departure calendar also merges bookings + tasks).
+model Event {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  title          String
+  date           DateTime @db.Date
+  notes          String?
+  color          String   @default("#4F46E5")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, date])
+  @@map("events")
+}
+
+/// Customer invoice for a booking. INV-#### per organization; line items as JSON.
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  invoiceNumber  Int           @map("invoice_number")
+  bookingId      String?       @map("booking_id") @db.Uuid
+  customerName   String        @map("customer_name")
+  customerEmail  String?       @map("customer_email")
+  customerPhone  String?       @map("customer_phone")
+  status         InvoiceStatus @default(DRAFT)
+  issueDate      DateTime      @default(now()) @map("issue_date") @db.Date
+  dueDate        DateTime?     @map("due_date") @db.Date
+  items          Json          @default("[]")
+  subtotal       Int           @default(0)
+  taxPercent     Float         @default(0) @map("tax_percent")
+  taxAmount      Int           @default(0) @map("tax_amount")
+  total          Int           @default(0)
+  currency       String        @default("INR")
+  notes          String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([bookingId])
+  @@map("invoices")
+}
+
+/// Vendor cost (hotel, flight, transport…) tracked against a booking for margin.
+model Bill {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  bookingId      String?      @map("booking_id") @db.Uuid
+  vendorName     String       @map("vendor_name")
+  category       BillCategory @default(OTHER)
+  amount         Int
+  currency       String       @default("INR")
+  billDate       DateTime     @default(now()) @map("bill_date") @db.Date
+  status         BillStatus   @default(UNPAID)
+  notes          String?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([bookingId])
+  @@map("bills")
 }
