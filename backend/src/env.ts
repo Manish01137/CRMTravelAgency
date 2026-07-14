@@ -15,6 +15,11 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   AUTH_COOKIE_NAME: z.string().default('crm_token'),
+
+  // Supabase Storage (image uploads) — optional; upload endpoint 503s if unset.
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_STORAGE_BUCKET: z.string().default('uploads'),
 });
 
 const parsed = schema.safeParse(process.env);

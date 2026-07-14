@@ -29,6 +29,9 @@ Browser ──▶ your-app.vercel.app  (static React app)
    | Instance Type | Free |
 4. **Environment tab** → add every variable from `backend/.env.production`
    (that file is local-only; never commit it). Skip `PORT` — Render sets it.
+   This includes the **Supabase Storage** vars (`SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`) that power image
+   uploads — without them the app runs fine but the upload button returns 503.
 5. Deploy. When it's live, verify: `https://voyage-crm-api.onrender.com/health` → `{"status":"ok"}`.
 6. **If Render gave you a different URL** (name taken), edit `frontend/vercel.json` and put
    your actual URL in the `/api/:path*` destination, then commit + push.

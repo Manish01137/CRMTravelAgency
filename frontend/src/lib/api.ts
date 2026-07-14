@@ -47,10 +47,25 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
   return data as T;
 }
 
+/** Multipart file upload (returns the stored public URL). */
+async function uploadFile(path: string, file: File): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/api${path}`, { method: 'POST', body: form, credentials: 'include' });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const err = (data as { error?: { code?: string; message?: string } })?.error;
+    throw new ApiError(res.status, err?.code ?? 'ERROR', err?.message ?? 'Upload failed');
+  }
+  return data as { url: string };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
+  upload: (path: string, file: File) => uploadFile(path, file),
 };

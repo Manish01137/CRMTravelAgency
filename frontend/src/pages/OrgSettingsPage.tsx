@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import { ImageUpload } from '@/components/ui/image-upload';
 import { initials } from '@/lib/format';
 import { handleApiError } from '@/lib/formErrors';
 
@@ -248,13 +249,16 @@ export function OrgSettingsPage() {
               <Field label="Agency name" htmlFor="name" error={errors.name?.message} required>
                 <Input id="name" {...register('name')} />
               </Field>
-              <Field
-                label="Logo URL"
-                htmlFor="logoUrl"
-                error={errors.logoUrl?.message}
-                hint="Paste a link to your logo image. Direct file upload arrives later."
-              >
-                <Input id="logoUrl" placeholder="https://…/logo.png" {...register('logoUrl')} />
+              <Field label="Logo" error={errors.logoUrl?.message} hint="Upload a square image, or paste a link.">
+                <Controller
+                  control={control}
+                  name="logoUrl"
+                  render={({ field }) => (
+                    <div className="max-w-xs">
+                      <ImageUpload value={field.value} onChange={(url) => field.onChange(url ?? '')} />
+                    </div>
+                  )}
+                />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <ColorField

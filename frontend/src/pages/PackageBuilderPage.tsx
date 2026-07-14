@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   GripVertical,
   HelpCircle,
-  Image as ImageIcon,
   ListChecks,
   MapPin,
   Package as PackageIcon,
@@ -38,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
 
 /* ------------------------------- form shape -------------------------------- */
@@ -174,34 +174,6 @@ function SectionLabel({ children, hint }: { children: ReactNode; hint?: string }
   );
 }
 
-/** Image URL input with a live preview thumbnail (upload comes in a later phase). */
-function ImageUrlField({
-  label,
-  hint,
-  value,
-  ...register
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-} & ReturnType<ReturnType<typeof useForm<Values>>['register']>) {
-  const valid = /^https?:\/\//.test(value || '');
-  return (
-    <Field label={label} hint={hint}>
-      <div className="flex items-start gap-3">
-        <Input placeholder="https://…/image.jpg" defaultValue={value} {...register} className="flex-1" />
-        <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-input bg-surface">
-          {valid ? (
-            <img src={value} alt="" className="size-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
-          ) : (
-            <ImageIcon className="size-5 text-muted-foreground/50" />
-          )}
-        </div>
-      </div>
-    </Field>
-  );
-}
-
 function CategoryChips({ control }: { control: Control<Values> }) {
   const { fields, append, remove } = useFieldArray({ control, name: 'categories' });
   const [draft, setDraft] = useState('');
@@ -247,10 +219,8 @@ function CategoryChips({ control }: { control: Control<Values> }) {
 /* ------------------------------- step content ------------------------------ */
 
 function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control, watch, formState: { errors } } = form;
+  const { register, control, formState: { errors } } = form;
   const pricing = useFieldArray({ control, name: 'pricingOptions' });
-  const bannerUrl = watch('bannerImageUrl');
-  const waBannerUrl = watch('whatsappBannerUrl');
 
   return (
     <div className="space-y-8">
@@ -352,9 +322,21 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <ImageUrlField label="Banner image" value={bannerUrl} {...register('bannerImageUrl')} />
-        <ImageUrlField label="WhatsApp banner image" hint="Used when shared on WhatsApp. Leave empty to reuse the banner." value={waBannerUrl} {...register('whatsappBannerUrl')} />
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Field label="Banner image">
+          <Controller
+            control={control}
+            name="bannerImageUrl"
+            render={({ field }) => <ImageUpload value={field.value} onChange={(url) => field.onChange(url ?? '')} />}
+          />
+        </Field>
+        <Field label="WhatsApp banner image" hint="Used when shared on WhatsApp. Leave empty to reuse the banner.">
+          <Controller
+            control={control}
+            name="whatsappBannerUrl"
+            render={({ field }) => <ImageUpload value={field.value} onChange={(url) => field.onChange(url ?? '')} />}
+          />
+        </Field>
       </div>
 
       <Field label="WhatsApp description" htmlFor="waDesc" hint="Caption sent when this package is shared on WhatsApp. Plain text only.">
@@ -485,10 +467,9 @@ function FaqsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 }
 
 function ExtraStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control, watch } = form;
+  const { register, control } = form;
   const highlights = useFieldArray({ control, name: 'highlights' });
   const gallery = useFieldArray({ control, name: 'galleryImages' });
-  const galleryVals = watch('galleryImages');
   return (
     <div className="space-y-8">
       <div>
@@ -510,30 +491,37 @@ function ExtraStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 
       <div>
         <SectionLabel hint="Paste image URLs — thumbnails preview below.">Gallery images</SectionLabel>
-        <div className="space-y-2">
-          {gallery.fields.map((f, i) => {
-            const url = galleryVals?.[i]?.value ?? '';
-            const valid = /^https?:\/\//.test(url);
-            return (
-              <div key={f.id} className="flex items-center gap-2">
-                <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-input bg-surface">
-                  {valid ? (
-                    <img src={url} alt="" className="size-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                  ) : (
-                    <ImageIcon className="size-4 text-muted-foreground/50" />
-                  )}
-                </div>
-                <Input placeholder="https://…/photo.jpg" className="flex-1" {...register(`galleryImages.${i}.value`)} />
-                <Button type="button" variant="ghost" size="icon" aria-label="Remove image" onClick={() => gallery.remove(i)}>
-                  <Trash2 className="text-destructive" />
-                </Button>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {gallery.fields.map((f, i) => (
+            <div key={f.id} className="relative">
+              <Controller
+                control={control}
+                name={`galleryImages.${i}.value`}
+                render={({ field }) => (
+                  <ImageUpload tile value={field.value} onChange={(url) => field.onChange(url ?? '')} />
+                )}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove image"
+                className="absolute right-1 top-1 bg-white/90 shadow-sm"
+                onClick={() => gallery.remove(i)}
+              >
+                <Trash2 className="text-destructive" />
+              </Button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => gallery.append({ value: '' })}
+            className="flex h-28 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-input text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary"
+          >
+            <Plus className="size-5" />
+            <span className="text-xs font-semibold">Add image</span>
+          </button>
         </div>
-        <Button type="button" variant="outline" className="mt-2 w-full border-dashed" onClick={() => gallery.append({ value: '' })}>
-          <Plus /> Add image
-        </Button>
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import invoicesRoutes from './modules/invoices/invoices.routes';
 import billsRoutes from './modules/bills/bills.routes';
 import hotelsRoutes from './modules/hotels/hotels.routes';
 import publicRoutes from './modules/public/public.routes';
+import uploadsRoutes from './modules/uploads/uploads.routes';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/invoices', invoicesRoutes);
 router.use('/bills', billsRoutes);
 router.use('/hotels', hotelsRoutes);
 router.use('/public', publicRoutes);
+router.use('/uploads', uploadsRoutes);
 
 export default router;
