@@ -14,6 +14,7 @@ import { LeadsPage } from '@/pages/LeadsPage';
 import { BookingsPage } from '@/pages/BookingsPage';
 import { BookingDetailPage } from '@/pages/BookingDetailPage';
 import { PackagesPage } from '@/pages/PackagesPage';
+import { PackageBuilderPage } from '@/pages/PackageBuilderPage';
 import { TasksPage } from '@/pages/TasksPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
@@ -107,6 +108,8 @@ function AppRoutes() {
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/bookings/:id" element={<BookingDetailPage />} />
         <Route path="/packages" element={<PackagesPage />} />
+        <Route path="/packages/new" element={<PackageBuilderPage />} />
+        <Route path="/packages/:id/edit" element={<PackageBuilderPage />} />
         <Route path="/hotels" element={<HotelsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/calendar" element={<CalendarPage />} />

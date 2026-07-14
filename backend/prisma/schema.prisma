@@ -258,12 +258,39 @@ model Package {
   inclusions     String?
   exclusions     String?
   isActive       Boolean @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // --- Premium builder fields (Basics) ---
+  code                String? // package code, auto-generated if blank
+  slug                String? // public URL slug
+  viewType            String  @default("CLASSIC") @map("view_type")
+  categories          Json    @default("[]") // string[]
+  bookingTitle        String? @map("booking_title")
+  originalPrice       Int?    @map("original_price") // strike-through / discount
+  pricingOptions      Json    @default("[]") @map("pricing_options") // {label, price}[]
+  bannerImageUrl      String? @map("banner_image_url")
+  whatsappBannerUrl   String? @map("whatsapp_banner_url")
+  whatsappDescription String? @map("whatsapp_description")
+  contactNumber       String? @map("contact_number")
+  contactEmail        String? @map("contact_email")
+
+  // --- Itinerary / logistics / policies / faqs / extras ---
+  itinerary          Json    @default("[]") // {day, title, description}[]
+  thingsToCarry      String? @map("things_to_carry")
+  pickupPoints       String? @map("pickup_points")
+  cancellationPolicy String? @map("cancellation_policy")
+  paymentTerms       String? @map("payment_terms")
+  termsConditions    String? @map("terms_conditions")
+  faqs               Json    @default("[]") // {question, answer}[]
+  highlights         Json    @default("[]") // string[]
+  galleryImages      Json    @default("[]") @map("gallery_images") // string[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bookings     Booking[]
 
+  @@unique([organizationId, slug])
   @@index([organizationId])
   @@map("packages")
 }

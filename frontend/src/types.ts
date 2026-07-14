@@ -116,6 +116,22 @@ export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type BillCategory = 'HOTEL' | 'FLIGHT' | 'TRANSPORT' | 'ACTIVITY' | 'VISA' | 'FOOD' | 'OTHER';
 export type BillStatus = 'UNPAID' | 'PAID';
 
+export type PackageViewType = 'CLASSIC' | 'MODERN' | 'MINIMAL';
+
+export interface PricingOption {
+  label: string;
+  price: number;
+}
+export interface PackageItineraryDay {
+  day: number;
+  title: string;
+  description?: string;
+}
+export interface PackageFaq {
+  question: string;
+  answer: string;
+}
+
 export interface TravelPackage {
   id: string;
   organizationId: string;
@@ -129,6 +145,29 @@ export interface TravelPackage {
   inclusions: string | null;
   exclusions: string | null;
   isActive: boolean;
+
+  code: string | null;
+  slug: string | null;
+  viewType: PackageViewType;
+  categories: string[];
+  bookingTitle: string | null;
+  originalPrice: number | null;
+  pricingOptions: PricingOption[];
+  bannerImageUrl: string | null;
+  whatsappBannerUrl: string | null;
+  whatsappDescription: string | null;
+  contactNumber: string | null;
+  contactEmail: string | null;
+  itinerary: PackageItineraryDay[];
+  thingsToCarry: string | null;
+  pickupPoints: string | null;
+  cancellationPolicy: string | null;
+  paymentTerms: string | null;
+  termsConditions: string | null;
+  faqs: PackageFaq[];
+  highlights: string[];
+  galleryImages: string[];
+
   createdAt: string;
   updatedAt: string;
 }
