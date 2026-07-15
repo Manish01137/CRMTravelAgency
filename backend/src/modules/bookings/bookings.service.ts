@@ -46,13 +46,14 @@ export async function listBookings(organizationId: string, query: ListBookingsQu
         { customerPhone: { contains: query.search, mode: 'insensitive' } },
       ];
     }
-    const items = await tx.booking.findMany({
+    const rows = await tx.booking.findMany({
       where,
-      include: bookingInclude,
+      include: { ...bookingInclude, _count: { select: { itineraryItems: true } } },
       orderBy: { createdAt: 'desc' },
       skip: (query.page - 1) * query.pageSize,
       take: query.pageSize,
     });
+    const items = rows.map(({ _count, ...b }) => ({ ...b, itineraryDays: _count.itineraryItems }));
     const total = await tx.booking.count({ where });
     return {
       items,

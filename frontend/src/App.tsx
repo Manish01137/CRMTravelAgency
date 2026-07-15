@@ -13,6 +13,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { LeadsPage } from '@/pages/LeadsPage';
 import { BookingsPage } from '@/pages/BookingsPage';
 import { BookingDetailPage } from '@/pages/BookingDetailPage';
+import { ItinerariesPage } from '@/pages/ItinerariesPage';
 import { ItineraryComposerPage } from '@/pages/ItineraryComposerPage';
 import { ItineraryPrintPage } from '@/pages/ItineraryPrintPage';
 import { PackagesPage } from '@/pages/PackagesPage';
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/leads" element={<LeadsPage />} />
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/bookings/:id" element={<BookingDetailPage />} />
+        <Route path="/itineraries" element={<ItinerariesPage />} />
         <Route path="/bookings/:id/itinerary" element={<ItineraryComposerPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/packages/new" element={<PackageBuilderPage />} />

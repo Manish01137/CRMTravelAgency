@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Hotel as HotelIcon,
   ListChecks,
+  Route as RouteIcon,
   ReceiptText,
   type LucideIcon,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Contact2 },
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck2 },
+  { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
   { to: '/packages', label: 'Packages', icon: PackageIcon },
   { to: '/hotels', label: 'Hotels', icon: HotelIcon },
   { to: '/tasks', label: 'Tasks', icon: ListChecks },

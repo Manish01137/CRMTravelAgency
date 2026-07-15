@@ -206,6 +206,7 @@ export interface Booking {
   package: { id: string; name: string } | null;
   lead: { id: string; name: string } | null;
   itineraryItems?: ItineraryItem[];
+  itineraryDays?: number;
   invoices?: Invoice[];
   bills?: Bill[];
   createdAt: string;
