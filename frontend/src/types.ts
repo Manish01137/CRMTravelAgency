@@ -177,6 +177,9 @@ export interface ItineraryItem {
   bookingId: string;
   dayNumber: number;
   title: string;
+  subtitle: string | null;
+  city: string | null;
+  country: string | null;
   description: string | null;
 }
 

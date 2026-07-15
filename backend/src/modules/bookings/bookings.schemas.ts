@@ -66,6 +66,9 @@ export const itinerarySchema = z.object({
       z.object({
         dayNumber: z.coerce.number().int().min(1).max(366),
         title: z.string().trim().min(1, 'Title required').max(200),
+        subtitle: z.preprocess(emptyToUndefined, z.string().max(300).optional()),
+        city: z.preprocess(emptyToUndefined, z.string().max(120).optional()),
+        country: z.preprocess(emptyToUndefined, z.string().max(120).optional()),
         description: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
       }),
     )

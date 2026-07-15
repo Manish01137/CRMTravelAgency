@@ -25,6 +25,7 @@
     "test:isolation": "tsx tests/isolation.test.ts"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.110.3",
     "@types/multer": "^2.2.0",

@@ -8,6 +8,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronLeft,
+  FileText,
   GripVertical,
   HelpCircle,
   ListChecks,
@@ -20,7 +21,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
 
@@ -589,6 +599,144 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   );
 }
 
+/* ------------------------------ AI generation ------------------------------ */
+
+interface AiResult {
+  description: string;
+  highlights: string[];
+  inclusions: string;
+  exclusions: string;
+  itinerary: { day: number; title: string; description: string }[];
+  faqs: { question: string; answer: string }[];
+}
+
+function AiGenerateDialog({
+  form,
+  open,
+  onOpenChange,
+}: {
+  form: ReturnType<typeof useForm<Values>>;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const mutation = useMutation({
+    mutationFn: () => {
+      const v = form.getValues();
+      return api.post<AiResult>('/ai/generate-package', {
+        prompt: prompt.trim() || undefined,
+        name: v.name || undefined,
+        destination: v.destination || undefined,
+        nights: v.nights ? Number(v.nights) : undefined,
+        days: v.days ? Number(v.days) : undefined,
+        priceAmount: v.priceAmount ? Number(v.priceAmount) : undefined,
+        currency: v.priceCurrency || undefined,
+      });
+    },
+    onSuccess: (ai) => {
+      const cur = form.getValues();
+      form.reset({
+        ...cur,
+        description: ai.description || cur.description,
+        inclusions: ai.inclusions || cur.inclusions,
+        exclusions: ai.exclusions || cur.exclusions,
+        itinerary: ai.itinerary?.length
+          ? ai.itinerary.map((d) => ({ day: String(d.day), title: d.title, description: d.description ?? '' }))
+          : cur.itinerary,
+        highlights: ai.highlights?.length ? ai.highlights.map((value) => ({ value })) : cur.highlights,
+        faqs: ai.faqs?.length ? ai.faqs : cur.faqs,
+      });
+      toast.success('AI drafted the package — review and tweak across the steps');
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
+        toast.error("AI isn't set up yet — add a Gemini API key on the server to enable it.");
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
+      }
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="size-5 text-primary" /> Auto-generate with AI
+          </DialogTitle>
+          <DialogDescription>
+            Gemini drafts the description, day-by-day itinerary, inclusions, highlights and FAQs from
+            your basics. You can edit everything afterwards.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Field label="Anything specific? (optional)" htmlFor="aiPrompt">
+            <Textarea
+              id="aiPrompt"
+              rows={3}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g. luxury honeymoon, vegetarian meals, focus on adventure activities…"
+            />
+          </Field>
+          <p className="text-xs text-muted-foreground">
+            Uses your current <b>Name</b>, <b>Destination</b>, <b>Duration</b> and <b>Price</b> as context.
+          </p>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" type="button">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? <Spinner /> : <Sparkles />}
+            Generate
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AiBanner({ enabled, onOpen }: { enabled: boolean; onOpen: () => void }) {
+  if (!enabled) {
+    return (
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-dashed border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <Sparkles className="size-5" />
+          </span>
+          <div>
+            <p className="font-display text-sm font-bold text-foreground">AI drafting · setup needed</p>
+            <p className="text-xs text-muted-foreground">Add a Gemini API key on the server to auto-write packages.</p>
+          </div>
+        </div>
+        <Button type="button" variant="outline" disabled>
+          <Sparkles /> Auto-generate
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-5 flex flex-col gap-3 rounded-2xl bg-gradient-to-r from-primary to-violet-600 p-4 text-white shadow-pop sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-white/15">
+          <Sparkles className="size-5" />
+        </span>
+        <div>
+          <p className="font-display text-sm font-bold">Let AI draft this package</p>
+          <p className="text-xs text-white/75">Gemini writes the description, itinerary, inclusions, highlights & FAQs from your basics.</p>
+        </div>
+      </div>
+      <Button type="button" className="bg-white text-primary hover:bg-white/90" onClick={onOpen}>
+        <Sparkles /> Auto-generate
+      </Button>
+    </div>
+  );
+}
+
 /* ----------------------------------- page ---------------------------------- */
 
 export function PackageBuilderPage() {
@@ -597,11 +745,17 @@ export function PackageBuilderPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const pkgQuery = useQuery({
     queryKey: ['package', id],
     queryFn: () => api.get<TravelPackage>(`/packages/${id}`),
     enabled: isEdit,
+  });
+  const aiStatusQuery = useQuery({
+    queryKey: ['ai-status'],
+    queryFn: () => api.get<{ enabled: boolean }>('/ai/status'),
+    staleTime: 5 * 60 * 1000,
   });
 
   const form = useForm<Values>({ defaultValues: toValues(null) });
@@ -666,10 +820,21 @@ export function PackageBuilderPage() {
               </span>
             </div>
           </div>
-          <Button type="submit" disabled={mutation.isPending}>
-            {mutation.isPending ? <Spinner /> : <Save />}
-            Save package
-          </Button>
+          <div className="flex items-center gap-2">
+            {isEdit && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => window.open(`/packages/${id}/brochure`, '_blank')}
+              >
+                <FileText /> <span className="hidden sm:inline">Brochure</span>
+              </Button>
+            )}
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? <Spinner /> : <Save />}
+              Save package
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -692,6 +857,9 @@ export function PackageBuilderPage() {
           </button>
         ))}
       </div>
+
+      {/* AI drafting banner (Basics step) */}
+      {step === 0 && <AiBanner enabled={!!aiStatusQuery.data?.enabled} onOpen={() => setAiOpen(true)} />}
 
       {/* Step body */}
       <Card className="p-5 sm:p-7">
@@ -720,6 +888,8 @@ export function PackageBuilderPage() {
           </Button>
         )}
       </div>
+
+      <AiGenerateDialog form={form} open={aiOpen} onOpenChange={setAiOpen} />
     </form>
   );
 }

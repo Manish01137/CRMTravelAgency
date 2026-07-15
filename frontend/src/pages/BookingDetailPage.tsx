@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import {
   ArrowLeft,
   CalendarDays,
-  GripVertical,
   Mail,
   MapPin,
   Pencil,
@@ -14,17 +13,16 @@ import {
   Plus,
   Printer,
   ReceiptText,
-  Save,
   Trash2,
   UsersRound,
   Wallet,
+  Wand2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Bill, BillCategory, Booking, Invoice, ItineraryItem, TravelPackage, User } from '@/types';
+import type { Bill, BillCategory, Booking, Invoice, TravelPackage, User } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -51,102 +49,62 @@ import { formatCurrency, formatDate, formatTravelDate } from '@/lib/format';
 
 type Tab = 'itinerary' | 'invoices' | 'bills';
 
-interface DayRow {
-  dayNumber: number;
-  title: string;
-  description: string;
-}
-
 /* ------------------------------- Itinerary tab ----------------------------- */
 
 function ItineraryTab({ booking }: { booking: Booking }) {
-  const queryClient = useQueryClient();
-  const [rows, setRows] = useState<DayRow[]>(
-    (booking.itineraryItems ?? []).map((i) => ({
-      dayNumber: i.dayNumber,
-      title: i.title,
-      description: i.description ?? '',
-    })),
-  );
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      api.put<ItineraryItem[]>(`/bookings/${booking.id}/itinerary`, {
-        items: rows.map((r, i) => ({
-          dayNumber: r.dayNumber || i + 1,
-          title: r.title.trim() || `Day ${i + 1}`,
-          description: r.description.trim() || undefined,
-        })),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['booking', booking.id] });
-      toast.success('Itinerary saved');
-    },
-    onError: () => toast.error('Could not save itinerary'),
-  });
-
-  const addDay = () =>
-    setRows((prev) => [...prev, { dayNumber: prev.length + 1, title: '', description: '' }]);
-  const removeDay = (idx: number) =>
-    setRows((prev) => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, dayNumber: i + 1 })));
-  const patchRow = (idx: number, patch: Partial<DayRow>) =>
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const navigate = useNavigate();
+  const days = [...(booking.itineraryItems ?? [])].sort((a, b) => a.dayNumber - b.dayNumber);
 
   return (
     <div className="space-y-4">
-      {rows.length === 0 ? (
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {days.length ? `${days.length}-day itinerary` : 'No itinerary designed yet'}
+        </p>
+        <div className="flex gap-2">
+          {days.length > 0 && (
+            <Button variant="outline" onClick={() => window.open(`/bookings/${booking.id}/itinerary/print`, '_blank')}>
+              <Printer /> Download PDF
+            </Button>
+          )}
+          <Button onClick={() => navigate(`/bookings/${booking.id}/itinerary`)}>
+            <Wand2 /> {days.length ? 'Open Composer' : 'Design itinerary'}
+          </Button>
+        </div>
+      </div>
+
+      {days.length === 0 ? (
         <EmptyState
           icon={<MapPin />}
           title="No itinerary yet"
-          description="Build the day-by-day plan for this trip."
+          description="Use the Itinerary Composer to build a day-by-day plan you can share as a PDF."
           action={
-            <Button onClick={addDay}>
-              <Plus /> Add Day 1
+            <Button onClick={() => navigate(`/bookings/${booking.id}/itinerary`)}>
+              <Wand2 /> Open Composer
             </Button>
           }
         />
       ) : (
-        <>
-          <div className="space-y-3">
-            {rows.map((row, idx) => (
-              <Card key={idx} className="p-4">
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-500 font-display text-sm font-bold text-white">
-                    {idx + 1}
-                  </span>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <Input
-                      value={row.title}
-                      onChange={(e) => patchRow(idx, { title: e.target.value })}
-                      placeholder={`Day ${idx + 1} title — e.g. Arrival & beach sunset`}
-                    />
-                    <Textarea
-                      value={row.description}
-                      onChange={(e) => patchRow(idx, { description: e.target.value })}
-                      placeholder="Details: pickup time, hotel, activities…"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <GripVertical className="size-4 text-muted-foreground/40" />
-                    <Button variant="ghost" size="icon-sm" aria-label={`Remove day ${idx + 1}`} onClick={() => removeDay(idx)}>
-                      <Trash2 className="text-destructive" />
-                    </Button>
-                  </div>
+        <div className="space-y-3">
+          {days.map((d) => (
+            <Card key={d.id} className="p-4">
+              <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-500 font-display text-sm font-bold text-white">
+                  {d.dayNumber}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-foreground">{d.title}</p>
+                  {(d.subtitle || d.city || d.country) && (
+                    <p className="mt-0.5 text-xs font-medium text-primary">
+                      {[d.subtitle, [d.city, d.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {d.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{d.description}</p>}
                 </div>
-              </Card>
-            ))}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-            <Button variant="outline" onClick={addDay}>
-              <Plus /> Add day
-            </Button>
-            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-              {saveMutation.isPending ? <Spinner /> : <Save />}
-              Save itinerary
-            </Button>
-          </div>
-        </>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

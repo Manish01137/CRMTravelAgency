@@ -13,8 +13,11 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { LeadsPage } from '@/pages/LeadsPage';
 import { BookingsPage } from '@/pages/BookingsPage';
 import { BookingDetailPage } from '@/pages/BookingDetailPage';
+import { ItineraryComposerPage } from '@/pages/ItineraryComposerPage';
+import { ItineraryPrintPage } from '@/pages/ItineraryPrintPage';
 import { PackagesPage } from '@/pages/PackagesPage';
 import { PackageBuilderPage } from '@/pages/PackageBuilderPage';
+import { PackageBrochurePage } from '@/pages/PackageBrochurePage';
 import { TasksPage } from '@/pages/TasksPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
@@ -100,6 +103,8 @@ function AppRoutes() {
       {/* Print-friendly views: authenticated but outside the app shell */}
       <Route element={<ProtectedBareRoute />}>
         <Route path="/invoices/:id" element={<InvoiceViewPage />} />
+        <Route path="/packages/:id/brochure" element={<PackageBrochurePage />} />
+        <Route path="/bookings/:id/itinerary/print" element={<ItineraryPrintPage />} />
       </Route>
 
       <Route element={<ProtectedRoute />}>
@@ -107,6 +112,7 @@ function AppRoutes() {
         <Route path="/leads" element={<LeadsPage />} />
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/bookings/:id" element={<BookingDetailPage />} />
+        <Route path="/bookings/:id/itinerary" element={<ItineraryComposerPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/packages/new" element={<PackageBuilderPage />} />
         <Route path="/packages/:id/edit" element={<PackageBuilderPage />} />

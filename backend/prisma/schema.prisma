@@ -341,6 +341,9 @@ model ItineraryItem {
   bookingId      String   @map("booking_id") @db.Uuid
   dayNumber      Int      @map("day_number")
   title          String
+  subtitle       String? // "what's happening" one-liner
+  city           String?
+  country        String?
   description    String?
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

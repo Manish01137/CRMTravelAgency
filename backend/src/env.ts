@@ -20,6 +20,10 @@ const schema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default('uploads'),
+
+  // Google Gemini (AI package generation). Optional — feature is gated behind it.
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-1.5-flash'),
 });
 
 const parsed = schema.safeParse(process.env);

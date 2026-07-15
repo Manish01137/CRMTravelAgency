@@ -12,6 +12,7 @@ import billsRoutes from './modules/bills/bills.routes';
 import hotelsRoutes from './modules/hotels/hotels.routes';
 import publicRoutes from './modules/public/public.routes';
 import uploadsRoutes from './modules/uploads/uploads.routes';
+import aiRoutes from './modules/ai/ai.routes';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/bills', billsRoutes);
 router.use('/hotels', hotelsRoutes);
 router.use('/public', publicRoutes);
 router.use('/uploads', uploadsRoutes);
+router.use('/ai', aiRoutes);
 
 export default router;
