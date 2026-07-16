@@ -11,6 +11,7 @@ import {
   ListChecks,
   Route as RouteIcon,
   ReceiptText,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +20,8 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  /** Shows a live count badge (e.g. follow-ups due) next to the label. */
+  badge?: 'dueTasks';
 }
 
 /** Primary sidebar navigation. */
@@ -29,9 +32,10 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
   { to: '/packages', label: 'Packages', icon: PackageIcon },
   { to: '/hotels', label: 'Hotels', icon: HotelIcon },
-  { to: '/tasks', label: 'Tasks', icon: ListChecks },
+  { to: '/tasks', label: 'Follow-ups', icon: ListChecks, badge: 'dueTasks' },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/invoices', label: 'Invoices', icon: ReceiptText },
+  { to: '/bills', label: 'Bills', icon: Wallet },
   { to: '/team', label: 'Team', icon: Users2, adminOnly: true },
 ];
 

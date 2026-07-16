@@ -23,6 +23,7 @@ import { TasksPage } from '@/pages/TasksPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
 import { InvoiceViewPage } from '@/pages/InvoiceViewPage';
+import { BillsPage } from '@/pages/BillsPage';
 import { HotelsPage } from '@/pages/HotelsPage';
 import { HostPage } from '@/pages/HostPage';
 import { UsersPage } from '@/pages/UsersPage';
@@ -122,6 +123,7 @@ function AppRoutes() {
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/bills" element={<BillsPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />
         <Route element={<AdminRoute />}>
           <Route path="/team" element={<UsersPage />} />
