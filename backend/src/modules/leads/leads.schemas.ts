@@ -83,6 +83,17 @@ export const listLeadsQuerySchema = z.object({
 
 export const leadIdParam = z.object({ id: z.string().uuid('Invalid lead id') });
 
+export const LeadActivityTypeEnum = z.enum(['NOTE', 'CALL', 'WHATSAPP', 'EMAIL', 'MEETING']);
+
+/** Log an interaction; optionally move the lead to a new stage in the same call. */
+export const createActivitySchema = z.object({
+  type: LeadActivityTypeEnum.default('NOTE'),
+  outcome: z.preprocess(emptyToUndefined, z.string().trim().max(60).optional()),
+  message: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
+  moveTo: LeadStatusEnum.optional(),
+});
+
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
 export type ListLeadsQuery = z.infer<typeof listLeadsQuerySchema>;
+export type CreateActivityInput = z.infer<typeof createActivitySchema>;

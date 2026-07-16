@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Hotel as HotelIcon, Mail, MapPin, Pencil, Phone, Plus, Search, Star, Trash2 } from 'lucide-react';
+import { ImageUpload } from '@/components/ui/image-upload';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Hotel } from '@/types';
@@ -52,6 +53,7 @@ function Stars({ rating }: { rating: number }) {
 
 function HotelForm({ hotel, onDone }: { hotel: Hotel | null; onDone: () => void }) {
   const queryClient = useQueryClient();
+  const [images, setImages] = useState<string[]>(hotel?.images ?? []);
   const { register, handleSubmit, formState: { errors } } = useForm<FormValues>({
     defaultValues: {
       name: hotel?.name ?? '',
@@ -88,6 +90,7 @@ function HotelForm({ hotel, onDone }: { hotel: Hotel | null; onDone: () => void 
       pricePerNight: v.pricePerNight ? Number(v.pricePerNight) : null,
       currency: (v.currency || 'INR').toUpperCase(),
       notes: v.notes.trim() || null,
+      images,
     });
 
   return (
@@ -122,6 +125,36 @@ function HotelForm({ hotel, onDone }: { hotel: Hotel | null; onDone: () => void 
       </Field>
       <Field label="Notes" htmlFor="hotelNotes">
         <Textarea id="hotelNotes" rows={2} placeholder="Contract rates, contact person…" {...register('notes')} />
+      </Field>
+      <Field label="Photos" htmlFor="hotelPhotos" hint="Room, lobby, facade… shown in packages and itineraries (up to 8).">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {images.map((url, i) => (
+            <div key={`${url}-${i}`} className="relative">
+              <ImageUpload
+                tile
+                value={url}
+                onChange={(next) =>
+                  setImages((cur) =>
+                    next ? cur.map((u, j) => (j === i ? next : u)) : cur.filter((_, j) => j !== i),
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove photo"
+                className="absolute right-1 top-1 bg-white/90 shadow-sm"
+                onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="text-destructive" />
+              </Button>
+            </div>
+          ))}
+          {images.length < 8 && (
+            <ImageUpload tile value={null} onChange={(url) => url && setImages((cur) => [...cur, url])} />
+          )}
+        </div>
       </Field>
       <DialogFooter className="pt-2">
         <DialogClose asChild>
@@ -239,9 +272,13 @@ export function HotelsPage() {
                     <tr key={hotel.id} className="transition-colors hover:bg-muted/50">
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">
-                          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                            <HotelIcon className="size-4" />
-                          </span>
+                          {hotel.images?.[0] ? (
+                            <img src={hotel.images[0]} alt="" className="size-9 shrink-0 rounded-xl object-cover" />
+                          ) : (
+                            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                              <HotelIcon className="size-4" />
+                            </span>
+                          )}
                           <div className="min-w-0">
                             <p className="truncate font-semibold text-foreground">{hotel.name}</p>
                             {hotel.address && <p className="truncate text-xs text-muted-foreground">{hotel.address}</p>}

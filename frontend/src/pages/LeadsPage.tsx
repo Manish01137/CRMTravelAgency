@@ -29,6 +29,7 @@ import {
   UsersRound,
   Wallet,
   X,
+  MessageSquareText,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -57,6 +58,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
+import { LeadActivityBoard } from '@/components/leads/LeadActivityBoard';
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -503,6 +505,7 @@ export function LeadsPage() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
+  const [boardLead, setBoardLead] = useState<Lead | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -694,7 +697,12 @@ export function LeadsPage() {
         />
       </td>
       <td className="px-3 py-4 text-right">
-        <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />
+        <div className="flex items-center justify-end gap-1.5">
+          <Button size="sm" className="h-8 px-3 text-xs" onClick={() => setBoardLead(lead)}>
+            <MessageSquareText className="size-3.5" /> Follow up
+          </Button>
+          <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />
+        </div>
       </td>
     </>
   );
@@ -1035,6 +1043,8 @@ export function LeadsPage() {
       )}
 
       <LeadFormDialog open={formOpen} onOpenChange={setFormOpen} lead={editingLead} users={users} />
+
+      <LeadActivityBoard lead={boardLead} open={!!boardLead} onOpenChange={(o) => !o && setBoardLead(null)} />
 
       <ConfirmDialog
         open={!!deletingLead}

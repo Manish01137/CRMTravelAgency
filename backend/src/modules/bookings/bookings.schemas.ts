@@ -56,6 +56,7 @@ export const updateBookingSchema = z
 export const listBookingsQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   status: BookingStatusEnum.optional(),
+  leadId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });

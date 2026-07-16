@@ -137,6 +137,7 @@ model Organization {
   events      Event[]
   invoices    Invoice[]
   bills       Bill[]
+  leadActivities LeadActivity[]
 
   @@map("organizations")
 }
@@ -159,6 +160,7 @@ model User {
   invitationsSent Invitation[] @relation("Inviter")
   bookings        Booking[]    @relation("BookingAgent")
   tasks           Task[]       @relation("TaskAssignee")
+  leadActivities  LeadActivity[] @relation("ActivityAuthor")
 
   @@index([organizationId])
   @@map("users")
@@ -187,12 +189,45 @@ model Lead {
   assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
   bookings     Booking[]
   tasks        Task[]
+  activities   LeadActivity[]
 
   @@index([organizationId])
   @@index([organizationId, status])
   @@index([organizationId, createdAt])
   @@index([assignedToId])
   @@map("leads")
+}
+
+/// Interaction timeline for a lead: logged calls/notes/WhatsApp touches plus
+/// automatic stage-change entries. Powers the Lead Activity Board.
+model LeadActivity {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  leadId         String   @map("lead_id") @db.Uuid
+  type           LeadActivityType @default(NOTE)
+  outcome        String? // e.g. "Answered", "Call not picked"
+  message        String?
+  fromStatus     LeadStatus? @map("from_status")
+  toStatus       LeadStatus? @map("to_status")
+  createdById    String?  @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("ActivityAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([leadId, createdAt])
+  @@map("lead_activities")
+}
+
+enum LeadActivityType {
+  NOTE
+  CALL
+  WHATSAPP
+  EMAIL
+  MEETING
+  STATUS_CHANGE
 }
 
 /// Pending invitation for a new team member. Only the token HASH is stored.
@@ -234,6 +269,7 @@ model Hotel {
   pricePerNight  Int?     @map("price_per_night")
   currency       String   @default("INR")
   notes          String?
+  images         Json     @default("[]") // photo URLs (Supabase Storage)
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

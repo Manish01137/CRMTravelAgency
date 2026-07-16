@@ -4,6 +4,7 @@ import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as controller from './leads.controller';
 import {
+  createActivitySchema,
   createLeadSchema,
   leadIdParam,
   listLeadsQuerySchema,
@@ -25,5 +26,13 @@ router.patch(
   asyncHandler(controller.update),
 );
 router.delete('/:id', validate({ params: leadIdParam }), asyncHandler(controller.remove));
+
+// Activity timeline (Lead Activity Board).
+router.get('/:id/activities', validate({ params: leadIdParam }), asyncHandler(controller.listActivities));
+router.post(
+  '/:id/activities',
+  validate({ params: leadIdParam, body: createActivitySchema }),
+  asyncHandler(controller.createActivity),
+);
 
 export default router;

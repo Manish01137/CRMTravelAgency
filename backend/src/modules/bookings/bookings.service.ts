@@ -39,6 +39,7 @@ export async function listBookings(organizationId: string, query: ListBookingsQu
   return withTenant(organizationId, async (tx) => {
     const where: Prisma.BookingWhereInput = {};
     if (query.status) where.status = query.status;
+    if (query.leadId) where.leadId = query.leadId;
     if (query.search) {
       where.OR = [
         { customerName: { contains: query.search, mode: 'insensitive' } },

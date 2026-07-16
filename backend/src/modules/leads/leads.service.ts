@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { withTenant, type TenantTx } from '../../lib/prisma';
 import { BadRequest, NotFound } from '../../lib/errors';
-import type { CreateLeadInput, ListLeadsQuery, UpdateLeadInput } from './leads.schemas';
+import type { CreateActivityInput, CreateLeadInput, ListLeadsQuery, UpdateLeadInput } from './leads.schemas';
 
 const assignedToSelect = {
   assignedTo: { select: { id: true, name: true, email: true } },
@@ -71,12 +71,80 @@ export async function createLead(organizationId: string, input: CreateLeadInput)
   });
 }
 
-export async function updateLead(organizationId: string, id: string, input: UpdateLeadInput) {
+export async function updateLead(
+  organizationId: string,
+  id: string,
+  input: UpdateLeadInput,
+  actorId?: string,
+) {
   return withTenant(organizationId, async (tx) => {
     const existing = await tx.lead.findUnique({ where: { id } });
     if (!existing) throw NotFound('Lead not found');
     await assertAssigneeInOrg(tx, input.assignedToId);
-    return tx.lead.update({ where: { id }, data: input, include: assignedToSelect });
+    const updated = await tx.lead.update({ where: { id }, data: input, include: assignedToSelect });
+    // Stage moves show up in the activity timeline automatically.
+    if (input.status && input.status !== existing.status) {
+      await tx.leadActivity.create({
+        data: {
+          organizationId,
+          leadId: id,
+          type: 'STATUS_CHANGE',
+          fromStatus: existing.status,
+          toStatus: input.status,
+          createdById: actorId ?? null,
+        },
+      });
+    }
+    return updated;
+  });
+}
+
+const activityInclude = {
+  createdBy: { select: { id: true, name: true } },
+} as const;
+
+export async function listActivities(organizationId: string, leadId: string) {
+  return withTenant(organizationId, async (tx) => {
+    const lead = await tx.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw NotFound('Lead not found');
+    return tx.leadActivity.findMany({
+      where: { leadId },
+      include: activityInclude,
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  });
+}
+
+/** Log an interaction; optionally move the lead's stage in the same call. */
+export async function createActivity(
+  organizationId: string,
+  leadId: string,
+  input: CreateActivityInput,
+  actorId?: string,
+) {
+  return withTenant(organizationId, async (tx) => {
+    const lead = await tx.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw NotFound('Lead not found');
+
+    const activity = await tx.leadActivity.create({
+      data: {
+        organizationId,
+        leadId,
+        type: input.type,
+        outcome: input.outcome ?? null,
+        message: input.message ?? null,
+        ...(input.moveTo && input.moveTo !== lead.status
+          ? { fromStatus: lead.status, toStatus: input.moveTo }
+          : {}),
+        createdById: actorId ?? null,
+      },
+      include: activityInclude,
+    });
+    if (input.moveTo && input.moveTo !== lead.status) {
+      await tx.lead.update({ where: { id: leadId }, data: { status: input.moveTo } });
+    }
+    return activity;
   });
 }
 

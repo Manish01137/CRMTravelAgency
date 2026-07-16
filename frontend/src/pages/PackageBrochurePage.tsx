@@ -144,9 +144,28 @@ export function PackageBrochurePage() {
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-lg font-display text-xs font-bold text-white" style={{ backgroundColor: brand }}>
                       {d.day}
                     </span>
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-foreground">{d.title}</p>
                       {d.description && <p className="mt-0.5 text-sm text-muted-foreground">{d.description}</p>}
+                      {(d.stay || (d.activities?.length ?? 0) > 0 || d.meals) && (
+                        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          {d.stay && (
+                            <span className="text-muted-foreground">
+                              <b className="font-semibold text-foreground">Stay:</b> {d.stay}
+                            </span>
+                          )}
+                          {(d.activities?.length ?? 0) > 0 && (
+                            <span className="text-muted-foreground">
+                              <b className="font-semibold text-foreground">Activities:</b> {d.activities!.join(' · ')}
+                            </span>
+                          )}
+                          {d.meals && (
+                            <span className="text-muted-foreground">
+                              <b className="font-semibold text-foreground">Meals:</b> {d.meals}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

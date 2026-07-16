@@ -26,8 +26,28 @@ export async function create(req: Request, res: Response): Promise<void> {
 }
 
 export async function update(req: Request, res: Response): Promise<void> {
-  const lead = await leadsService.updateLead(req.auth!.organizationId, req.params.id, req.body);
+  const lead = await leadsService.updateLead(
+    req.auth!.organizationId,
+    req.params.id,
+    req.body,
+    req.auth!.userId,
+  );
   res.json(lead);
+}
+
+export async function listActivities(req: Request, res: Response): Promise<void> {
+  const activities = await leadsService.listActivities(req.auth!.organizationId, req.params.id);
+  res.json(activities);
+}
+
+export async function createActivity(req: Request, res: Response): Promise<void> {
+  const activity = await leadsService.createActivity(
+    req.auth!.organizationId,
+    req.params.id,
+    req.body,
+    req.auth!.userId,
+  );
+  res.status(201).json(activity);
 }
 
 export async function remove(req: Request, res: Response): Promise<void> {

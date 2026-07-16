@@ -21,6 +21,7 @@ const createHotelSchema = z.object({
   pricePerNight: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
   currency: z.string().trim().length(3).toUpperCase().default('INR'),
   notes: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
+  images: z.array(z.string().url().max(2000)).max(12).default([]),
   isActive: z.coerce.boolean().default(true),
 });
 
@@ -35,6 +36,7 @@ const updateHotelSchema = z
     pricePerNight: z.preprocess(emptyToNull, z.coerce.number().int().nonnegative().max(1_000_000_000).nullable()).optional(),
     currency: z.string().trim().length(3).toUpperCase().optional(),
     notes: z.preprocess(emptyToNull, z.string().max(2000).nullable()).optional(),
+    images: z.array(z.string().url().max(2000)).max(12).optional(),
     isActive: z.coerce.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });

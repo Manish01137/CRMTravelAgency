@@ -17,6 +17,11 @@ const itineraryDaySchema = z.object({
   day: z.coerce.number().int().min(1).max(366),
   title: z.string().trim().min(1).max(200),
   description: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
+  // Day-wise logistics for the detailed PDF: where the group stays + what they do.
+  hotelId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  stay: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
+  activities: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+  meals: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
 });
 const faqSchema = z.object({
   question: z.string().trim().min(1).max(300),

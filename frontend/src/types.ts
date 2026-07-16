@@ -126,6 +126,10 @@ export interface PackageItineraryDay {
   day: number;
   title: string;
   description?: string;
+  hotelId?: string;
+  stay?: string;
+  activities?: string[];
+  meals?: string;
 }
 export interface PackageFaq {
   question: string;
@@ -310,9 +314,24 @@ export interface Hotel {
   pricePerNight: number | null;
   currency: string;
   notes: string | null;
+  images: string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type LeadActivityType = 'NOTE' | 'CALL' | 'WHATSAPP' | 'EMAIL' | 'MEETING' | 'STATUS_CHANGE';
+
+export interface LeadActivity {
+  id: string;
+  leadId: string;
+  type: LeadActivityType;
+  outcome: string | null;
+  message: string | null;
+  fromStatus: LeadStatus | null;
+  toStatus: LeadStatus | null;
+  createdBy: { id: string; name: string } | null;
+  createdAt: string;
 }
 
 export interface HostPagePayload {

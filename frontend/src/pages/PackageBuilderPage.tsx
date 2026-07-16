@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { TravelPackage } from '@/types';
+import type { Hotel, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -72,7 +72,15 @@ interface Values {
   description: string;
   contactNumber: string;
   contactEmail: string;
-  itinerary: { day: string; title: string; description: string }[];
+  itinerary: {
+    day: string;
+    title: string;
+    description: string;
+    hotelId: string;
+    stay: string;
+    activities: string; // comma-separated in the form; array in the API
+    meals: string;
+  }[];
   inclusions: string;
   exclusions: string;
   thingsToCarry: string;
@@ -117,7 +125,15 @@ function toValues(pkg: TravelPackage | null): Values {
     description: pkg?.description ?? '',
     contactNumber: pkg?.contactNumber ?? '',
     contactEmail: pkg?.contactEmail ?? '',
-    itinerary: (pkg?.itinerary ?? []).map((d) => ({ day: String(d.day), title: d.title, description: d.description ?? '' })),
+    itinerary: (pkg?.itinerary ?? []).map((d) => ({
+      day: String(d.day),
+      title: d.title,
+      description: d.description ?? '',
+      hotelId: d.hotelId ?? '',
+      stay: d.stay ?? '',
+      activities: (d.activities ?? []).join(', '),
+      meals: d.meals ?? '',
+    })),
     inclusions: pkg?.inclusions ?? '',
     exclusions: pkg?.exclusions ?? '',
     thingsToCarry: pkg?.thingsToCarry ?? '',
@@ -158,7 +174,18 @@ function toPayload(v: Values): Record<string, unknown> {
     contactEmail: v.contactEmail.trim() || null,
     itinerary: v.itinerary
       .filter((d) => d.title.trim())
-      .map((d, i) => ({ day: Number(d.day) || i + 1, title: d.title.trim(), description: d.description.trim() || undefined })),
+      .map((d, i) => ({
+        day: Number(d.day) || i + 1,
+        title: d.title.trim(),
+        description: d.description.trim() || undefined,
+        hotelId: d.hotelId || undefined,
+        stay: d.stay.trim() || undefined,
+        activities: d.activities
+          .split(',')
+          .map((a) => a.trim())
+          .filter(Boolean),
+        meals: d.meals.trim() || undefined,
+      })),
     inclusions: v.inclusions.trim() || null,
     exclusions: v.exclusions.trim() || null,
     thingsToCarry: v.thingsToCarry.trim() || null,
@@ -369,12 +396,19 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   );
 }
 
+const NO_HOTEL = 'none';
+
 function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control } = form;
+  const { register, control, setValue } = form;
   const { fields, append, remove } = useFieldArray({ control, name: 'itinerary' });
+  const hotelsQuery = useQuery({ queryKey: ['hotels'], queryFn: () => api.get<Hotel[]>('/hotels') });
+  const hotels = (hotelsQuery.data ?? []).filter((h) => h.isActive);
+
   return (
     <div className="space-y-4">
-      <SectionLabel hint="Build the day-by-day plan travellers will see.">Itinerary</SectionLabel>
+      <SectionLabel hint="Build the day-by-day plan travellers will see — where they stay and what they do goes into the PDF.">
+        Itinerary
+      </SectionLabel>
       {fields.length === 0 && (
         <p className="text-sm text-muted-foreground">No days yet — add the first one below.</p>
       )}
@@ -386,7 +420,40 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
             </span>
             <div className="min-w-0 flex-1 space-y-2">
               <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
-              <Textarea rows={2} placeholder="Pickup time, hotel, activities…" {...register(`itinerary.${i}.description`)} />
+              <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Controller
+                  control={control}
+                  name={`itinerary.${i}.hotelId`}
+                  render={({ field }) => (
+                    <Select
+                      value={field.value || NO_HOTEL}
+                      onValueChange={(v) => {
+                        field.onChange(v === NO_HOTEL ? '' : v);
+                        const hotel = hotels.find((h) => h.id === v);
+                        if (hotel) setValue(`itinerary.${i}.stay`, `${hotel.name}, ${hotel.city}`);
+                      }}
+                    >
+                      <SelectTrigger aria-label="Stay at hotel">
+                        <SelectValue placeholder="Stay: pick a hotel" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_HOTEL}>No hotel / custom stay</SelectItem>
+                        {hotels.map((h) => (
+                          <SelectItem key={h.id} value={h.id}>
+                            {h.name} — {h.city} ({'★'.repeat(h.starRating)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <Input placeholder="Stay — e.g. Riverside camp, Rishikesh" {...register(`itinerary.${i}.stay`)} />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Activities — rafting, bonfire, trek… (comma separated)" {...register(`itinerary.${i}.activities`)} />
+                <Input placeholder="Meals — e.g. Breakfast, Dinner" {...register(`itinerary.${i}.meals`)} />
+              </div>
               <input type="hidden" {...register(`itinerary.${i}.day`)} value={i + 1} />
             </div>
             <div className="flex flex-col items-center gap-1">
@@ -398,7 +465,14 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           </div>
         </Card>
       ))}
-      <Button type="button" variant="outline" className="w-full border-dashed" onClick={() => append({ day: String(fields.length + 1), title: '', description: '' })}>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full border-dashed"
+        onClick={() =>
+          append({ day: String(fields.length + 1), title: '', description: '', hotelId: '', stay: '', activities: '', meals: '' })
+        }
+      >
         <Plus /> Add day
       </Button>
     </div>
@@ -641,7 +715,15 @@ function AiGenerateDialog({
         inclusions: ai.inclusions || cur.inclusions,
         exclusions: ai.exclusions || cur.exclusions,
         itinerary: ai.itinerary?.length
-          ? ai.itinerary.map((d) => ({ day: String(d.day), title: d.title, description: d.description ?? '' }))
+          ? ai.itinerary.map((d) => ({
+              day: String(d.day),
+              title: d.title,
+              description: d.description ?? '',
+              hotelId: '',
+              stay: '',
+              activities: '',
+              meals: '',
+            }))
           : cur.itinerary,
         highlights: ai.highlights?.length ? ai.highlights.map((value) => ({ value })) : cur.highlights,
         faqs: ai.faqs?.length ? ai.faqs : cur.faqs,

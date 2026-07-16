@@ -68,6 +68,8 @@ function BookingForm({
     handleSubmit,
     control,
     setError,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<Values>({
     resolver: zodResolver(schema),
@@ -194,7 +196,19 @@ function BookingForm({
             control={control}
             name="packageId"
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={(v) => {
+                  field.onChange(v);
+                  // Prefill trip facts from the package — only where nothing's typed yet.
+                  const pkg = packages.find((p) => p.id === v);
+                  if (!pkg) return;
+                  if (!getValues('destination').trim()) setValue('destination', pkg.destination);
+                  const amount = getValues('totalAmount');
+                  if (!amount || amount === '0') setValue('totalAmount', String(pkg.priceAmount));
+                  if (!getValues('currency').trim()) setValue('currency', pkg.priceCurrency);
+                }}
+              >
                 <SelectTrigger id="packageId">
                   <SelectValue placeholder="No package" />
                 </SelectTrigger>
