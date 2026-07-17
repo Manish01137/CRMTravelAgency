@@ -25,6 +25,8 @@ import { InvoicesPage } from '@/pages/InvoicesPage';
 import { InvoiceViewPage } from '@/pages/InvoiceViewPage';
 import { BillsPage } from '@/pages/BillsPage';
 import { HotelsPage } from '@/pages/HotelsPage';
+import { SightseeingPage } from '@/pages/SightseeingPage';
+import { HostPageAdminPage } from '@/pages/HostPageAdminPage';
 import { HostPage } from '@/pages/HostPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
@@ -120,12 +122,14 @@ function AppRoutes() {
         <Route path="/packages/new" element={<PackageBuilderPage />} />
         <Route path="/packages/:id/edit" element={<PackageBuilderPage />} />
         <Route path="/hotels" element={<HotelsPage />} />
+        <Route path="/sightseeing" element={<SightseeingPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />
         <Route element={<AdminRoute />}>
+          <Route path="/host-page" element={<HostPageAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
         </Route>

@@ -138,8 +138,32 @@ model Organization {
   invoices    Invoice[]
   bills       Bill[]
   leadActivities LeadActivity[]
+  sightseeing Sightseeing[]
 
   @@map("organizations")
+}
+
+/// Sightseeing / activity directory: reusable experiences (city walks, treks,
+/// transfers) that packages and itineraries reference.
+model Sightseeing {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  city           String
+  country        String   @default("India")
+  timings        String? // e.g. "09:00 AM to 06:00 PM"
+  points         Int      @default(0) // effort/interest score shown in the list
+  imageUrl       String?  @map("image_url")
+  notes          String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, city])
+  @@map("sightseeing")
 }
 
 /// A member of an organization. ADMINs manage the org + team; AGENTs work leads.

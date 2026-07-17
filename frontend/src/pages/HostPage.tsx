@@ -34,6 +34,7 @@ export function HostPage() {
   const { slug } = useParams<{ slug: string }>();
   const reduce = useReducedMotion();
   const [sent, setSent] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const hostQuery = useQuery({
     queryKey: ['host', slug],
@@ -88,6 +89,13 @@ export function HostPage() {
   const brand = host.brandPrimaryColor;
   const brand2 = host.brandSecondaryColor;
 
+  const enquiryPhone = host.contactNumber;
+  // Category filter chips (myair.link style), built from the packages' own categories.
+  const categories = [...new Set(host.packages.flatMap((p) => p.categories ?? []))].sort();
+  const shownPackages = activeCategory
+    ? host.packages.filter((p) => (p.categories ?? []).includes(activeCategory))
+    : host.packages;
+
   const rise = (delay: number) =>
     reduce
       ? { initial: { opacity: 0 }, animate: { opacity: 1 }, transition: { duration: 0.25, delay } }
@@ -134,41 +142,102 @@ export function HostPage() {
           </div>
         )}
 
-        {/* Packages showcase */}
+        {/* Packages showcase (myair.link style: category chips + rich cards) */}
         {host.packages.length > 0 && (
           <div className="mt-10">
             <motion.h2 {...rise(0.2)} className="mb-3 text-center font-display text-lg font-bold text-foreground">
-              Our trips
+              Book &amp; explore
             </motion.h2>
-            <div className="space-y-3">
-              {host.packages.map((pkg, i) => (
-                <motion.div
-                  key={pkg.id}
-                  {...rise(0.25 + i * 0.06)}
-                  className="rounded-2xl border border-border bg-card p-5 shadow-card"
+
+            {categories.length > 0 && (
+              <motion.div {...rise(0.24)} className="mb-4 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory(null)}
+                  className={cn(
+                    'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors',
+                    !activeCategory ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+                  )}
+                  style={!activeCategory ? { backgroundColor: brand } : undefined}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-display text-base font-bold text-foreground">{pkg.name}</p>
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <MapPin className="size-3" /> {pkg.destination}
-                      </p>
+                  All
+                </button>
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setActiveCategory(c)}
+                    className={cn(
+                      'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors',
+                      activeCategory === c ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+                    )}
+                    style={activeCategory === c ? { backgroundColor: brand } : undefined}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+
+            <div className="grid gap-4">
+              {shownPackages.map((pkg, i) => {
+                const discounted = pkg.originalPrice != null && pkg.originalPrice > pkg.priceAmount;
+                const waText = encodeURIComponent(
+                  `Hi ${host.name}, I'm interested in *${pkg.name}* (${pkg.destination}, ${pkg.days}D/${pkg.nights}N). Please share details.`,
+                );
+                const waHref = enquiryPhone ? `https://wa.me/${enquiryPhone}?text=${waText}` : undefined;
+                return (
+                  <motion.div
+                    key={pkg.id}
+                    {...rise(0.28 + i * 0.05)}
+                    className="overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft"
+                  >
+                    <div className="relative h-36 w-full bg-gradient-to-br from-muted to-surface">
+                      {pkg.bannerImageUrl && <img src={pkg.bannerImageUrl} alt="" className="h-full w-full object-cover" />}
+                      <span className="absolute left-2.5 top-2.5 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                        {pkg.days}D / {pkg.nights}N
+                      </span>
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                        <p className="font-display text-base font-bold text-white drop-shadow">{pkg.name}</p>
+                        <p className="flex items-center gap-1 text-xs text-white/85">
+                          <MapPin className="size-3" /> {pkg.destination}
+                        </p>
+                      </div>
                     </div>
-                    <p className="shrink-0 font-display text-lg font-bold" style={{ color: brand }}>
-                      {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
-                    </p>
-                  </div>
-                  {pkg.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{pkg.description}</p>}
-                  <div className="mt-3 flex gap-2 text-[11px] font-semibold text-muted-foreground">
-                    <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-                      <Moon className="size-3" /> {pkg.nights} nights
-                    </span>
-                    <span className="flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-                      <Sun className="size-3" /> {pkg.days} days
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
+                    <div className="p-4">
+                      <p className="font-display text-lg font-bold" style={{ color: brand }}>
+                        {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
+                        {discounted && (
+                          <span className="ml-2 text-xs font-medium text-muted-foreground line-through">
+                            {formatCurrency(pkg.originalPrice!, pkg.priceCurrency)}
+                          </span>
+                        )}
+                      </p>
+                      {pkg.description && <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">{pkg.description}</p>}
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <div className="flex gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                          <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-1">
+                            <Moon className="size-3" /> {pkg.nights}
+                          </span>
+                          <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-1">
+                            <Sun className="size-3" /> {pkg.days}
+                          </span>
+                        </div>
+                        {waHref && (
+                          <a
+                            href={waHref}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-600"
+                          >
+                            <Send className="size-3.5" /> Enquire
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           </div>
         )}

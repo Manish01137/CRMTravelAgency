@@ -95,6 +95,37 @@ function HotelForm({ hotel, onDone }: { hotel: Hotel | null; onDone: () => void 
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      {/* Photos first — upload before filling in the rest. */}
+      <Field label="Photos" htmlFor="hotelPhotos" hint="Room, lobby, facade… shown in packages and itineraries (up to 8). Add these first.">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {images.map((url, i) => (
+            <div key={`${url}-${i}`} className="relative">
+              <ImageUpload
+                tile
+                value={url}
+                onChange={(next) =>
+                  setImages((cur) =>
+                    next ? cur.map((u, j) => (j === i ? next : u)) : cur.filter((_, j) => j !== i),
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove photo"
+                className="absolute right-1 top-1 bg-white/90 shadow-sm"
+                onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="text-destructive" />
+              </Button>
+            </div>
+          ))}
+          {images.length < 8 && (
+            <ImageUpload tile value={null} onChange={(url) => url && setImages((cur) => [...cur, url])} />
+          )}
+        </div>
+      </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Hotel name" htmlFor="hotelName" error={errors.name?.message} required>
           <Input id="hotelName" placeholder="The Grand Bali Resort" {...register('name', { required: 'Name is required' })} />
@@ -125,36 +156,6 @@ function HotelForm({ hotel, onDone }: { hotel: Hotel | null; onDone: () => void 
       </Field>
       <Field label="Notes" htmlFor="hotelNotes">
         <Textarea id="hotelNotes" rows={2} placeholder="Contract rates, contact person…" {...register('notes')} />
-      </Field>
-      <Field label="Photos" htmlFor="hotelPhotos" hint="Room, lobby, facade… shown in packages and itineraries (up to 8).">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {images.map((url, i) => (
-            <div key={`${url}-${i}`} className="relative">
-              <ImageUpload
-                tile
-                value={url}
-                onChange={(next) =>
-                  setImages((cur) =>
-                    next ? cur.map((u, j) => (j === i ? next : u)) : cur.filter((_, j) => j !== i),
-                  )
-                }
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Remove photo"
-                className="absolute right-1 top-1 bg-white/90 shadow-sm"
-                onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
-              >
-                <Trash2 className="text-destructive" />
-              </Button>
-            </div>
-          ))}
-          {images.length < 8 && (
-            <ImageUpload tile value={null} onChange={(url) => url && setImages((cur) => [...cur, url])} />
-          )}
-        </div>
       </Field>
       <DialogFooter className="pt-2">
         <DialogClose asChild>

@@ -22,6 +22,7 @@ const itineraryDaySchema = z.object({
   stay: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
   activities: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   meals: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
+  images: z.array(z.string().url().max(2000)).max(6).optional(), // photo collage on the day's PDF page
 });
 const faqSchema = z.object({
   question: z.string().trim().min(1).max(300),

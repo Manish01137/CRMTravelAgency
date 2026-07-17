@@ -71,15 +71,23 @@ router.get(
           days: true,
           priceAmount: true,
           priceCurrency: true,
+          originalPrice: true,
           description: true,
+          bannerImageUrl: true,
+          categories: true,
+          contactNumber: true,
         },
         orderBy: { createdAt: 'desc' },
-        take: 12,
+        take: 24,
       }),
     );
 
+    // A WhatsApp number for the whole page: first package that has one (digits only).
+    const rawPhone = packages.find((p) => p.contactNumber)?.contactNumber ?? null;
+    const contactNumber = rawPhone ? rawPhone.replace(/\D/g, '') : null;
+
     const { id: _id, ...publicOrg } = org;
-    res.json({ ...publicOrg, packages });
+    res.json({ ...publicOrg, contactNumber, packages: packages.map(({ contactNumber: _c, ...p }) => p) });
   }),
 );
 

@@ -80,6 +80,7 @@ interface Values {
     stay: string;
     activities: string; // comma-separated in the form; array in the API
     meals: string;
+    images: string[];
   }[];
   inclusions: string;
   exclusions: string;
@@ -133,6 +134,7 @@ function toValues(pkg: TravelPackage | null): Values {
       stay: d.stay ?? '',
       activities: (d.activities ?? []).join(', '),
       meals: d.meals ?? '',
+      images: d.images ?? [],
     })),
     inclusions: pkg?.inclusions ?? '',
     exclusions: pkg?.exclusions ?? '',
@@ -185,6 +187,7 @@ function toPayload(v: Values): Record<string, unknown> {
           .map((a) => a.trim())
           .filter(Boolean),
         meals: d.meals.trim() || undefined,
+        images: d.images.filter((u) => /^https?:\/\//.test(u)),
       })),
     inclusions: v.inclusions.trim() || null,
     exclusions: v.exclusions.trim() || null,
@@ -406,7 +409,7 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 
   return (
     <div className="space-y-4">
-      <SectionLabel hint="Build the day-by-day plan travellers will see — where they stay and what they do goes into the PDF.">
+      <SectionLabel hint="Build the day-by-day plan — the stay, activities and photos on each day become its own page in the brochure PDF.">
         Itinerary
       </SectionLabel>
       {fields.length === 0 && (
@@ -454,6 +457,31 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                 <Input placeholder="Activities — rafting, bonfire, trek… (comma separated)" {...register(`itinerary.${i}.activities`)} />
                 <Input placeholder="Meals — e.g. Breakfast, Dinner" {...register(`itinerary.${i}.meals`)} />
               </div>
+              {/* Day photos → the collage on this day's brochure page */}
+              <Controller
+                control={control}
+                name={`itinerary.${i}.images`}
+                render={({ field }) => {
+                  const imgs: string[] = field.value ?? [];
+                  return (
+                    <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+                      {imgs.map((url, j) => (
+                        <ImageUpload
+                          key={`${url}-${j}`}
+                          tile
+                          value={url}
+                          onChange={(next) =>
+                            field.onChange(next ? imgs.map((u, k) => (k === j ? next : u)) : imgs.filter((_, k) => k !== j))
+                          }
+                        />
+                      ))}
+                      {imgs.length < 4 && (
+                        <ImageUpload tile value={null} onChange={(url) => url && field.onChange([...imgs, url])} />
+                      )}
+                    </div>
+                  );
+                }}
+              />
               <input type="hidden" {...register(`itinerary.${i}.day`)} value={i + 1} />
             </div>
             <div className="flex flex-col items-center gap-1">
@@ -470,7 +498,7 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
         variant="outline"
         className="w-full border-dashed"
         onClick={() =>
-          append({ day: String(fields.length + 1), title: '', description: '', hotelId: '', stay: '', activities: '', meals: '' })
+          append({ day: String(fields.length + 1), title: '', description: '', hotelId: '', stay: '', activities: '', meals: '', images: [] })
         }
       >
         <Plus /> Add day
@@ -723,6 +751,7 @@ function AiGenerateDialog({
               stay: '',
               activities: '',
               meals: '',
+              images: [],
             }))
           : cur.itinerary,
         highlights: ai.highlights?.length ? ai.highlights.map((value) => ({ value })) : cur.highlights,

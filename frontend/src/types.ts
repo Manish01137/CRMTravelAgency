@@ -130,6 +130,7 @@ export interface PackageItineraryDay {
   stay?: string;
   activities?: string[];
   meals?: string;
+  images?: string[];
 }
 export interface PackageFaq {
   question: string;
@@ -341,8 +342,37 @@ export interface HostPagePayload {
   brandPrimaryColor: string;
   brandSecondaryColor: string;
   bio: string | null;
+  contactNumber: string | null;
   hostLinks: HostLink[];
-  packages: Pick<TravelPackage, 'id' | 'name' | 'destination' | 'nights' | 'days' | 'priceAmount' | 'priceCurrency' | 'description'>[];
+  packages: Pick<
+    TravelPackage,
+    | 'id'
+    | 'name'
+    | 'destination'
+    | 'nights'
+    | 'days'
+    | 'priceAmount'
+    | 'priceCurrency'
+    | 'originalPrice'
+    | 'description'
+    | 'bannerImageUrl'
+    | 'categories'
+  >[];
+}
+
+export interface SightseeingActivity {
+  id: string;
+  organizationId: string;
+  name: string;
+  city: string;
+  country: string;
+  timings: string | null;
+  points: number;
+  imageUrl: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthResponse {
