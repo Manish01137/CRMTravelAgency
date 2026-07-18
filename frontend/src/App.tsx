@@ -19,6 +19,7 @@ import { ItineraryPrintPage } from '@/pages/ItineraryPrintPage';
 import { PackagesPage } from '@/pages/PackagesPage';
 import { PackageBuilderPage } from '@/pages/PackageBuilderPage';
 import { PackageBrochurePage } from '@/pages/PackageBrochurePage';
+import { PublicPackagePage } from '@/pages/PublicPackagePage';
 import { TasksPage } from '@/pages/TasksPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { InvoicesPage } from '@/pages/InvoicesPage';
@@ -98,8 +99,11 @@ function AppRoutes() {
       {/* Public agency host page (Linktree-style mini site). */}
       <Route path="/a/:slug" element={<HostPage />} />
 
-      {/* Public shareable package brochure — anyone with the link can view/print. */}
-      <Route path="/p/:id" element={<PackageBrochurePage />} />
+      {/* Public shareable package pages — anyone with the link can view.
+          /p/:id      = customer-facing web page (day-wise plan + Book on WhatsApp)
+          /p/:id/pdf  = printable brochure (Download PDF) */}
+      <Route path="/p/:id" element={<PublicPackagePage />} />
+      <Route path="/p/:id/pdf" element={<PackageBrochurePage />} />
 
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />

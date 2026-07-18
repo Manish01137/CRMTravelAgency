@@ -187,10 +187,11 @@ export function HostPage() {
                 );
                 const waHref = enquiryPhone ? `https://wa.me/${enquiryPhone}?text=${waText}` : undefined;
                 return (
-                  <motion.div
+                  <motion.a
                     key={pkg.id}
+                    href={`/p/${pkg.id}`}
                     {...rise(0.28 + i * 0.05)}
-                    className="overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft"
+                    className="block overflow-hidden rounded-2xl border border-border bg-card shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft"
                   >
                     <div className="relative h-36 w-full bg-gradient-to-br from-muted to-surface">
                       {pkg.bannerImageUrl && <img src={pkg.bannerImageUrl} alt="" className="h-full w-full object-cover" />}
@@ -223,19 +224,24 @@ export function HostPage() {
                             <Sun className="size-3" /> {pkg.days}
                           </span>
                         </div>
-                        {waHref && (
-                          <a
-                            href={waHref}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-600"
-                          >
-                            <Send className="size-3.5" /> Enquire
-                          </a>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground">View</span>
+                          {waHref && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                window.open(waHref, '_blank');
+                              }}
+                              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-600"
+                            >
+                              <Send className="size-3.5" /> Enquire
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </motion.a>
                 );
               })}
             </div>
