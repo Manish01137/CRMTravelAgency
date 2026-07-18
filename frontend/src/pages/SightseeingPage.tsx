@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Clock, MapPin, MapPinned, Pencil, Plus, Search, Star, Trash2 } from 'lucide-react';
+import { MapPin, MapPinned, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import type { SightseeingActivity } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -27,15 +26,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useDebounce } from '@/lib/useDebounce';
-import { shortId } from '@/lib/format';
 
 interface FormValues {
   name: string;
-  city: string;
-  country: string;
-  timings: string;
-  points: string;
-  notes: string;
+  notes: string; // description
 }
 
 function ActivityForm({ activity, onDone }: { activity: SightseeingActivity | null; onDone: () => void }) {
@@ -47,14 +41,7 @@ function ActivityForm({ activity, onDone }: { activity: SightseeingActivity | nu
     handleSubmit,
     formState: { errors },
   } = useForm<FormValues>({
-    defaultValues: {
-      name: activity?.name ?? '',
-      city: activity?.city ?? '',
-      country: activity?.country ?? 'India',
-      timings: activity?.timings ?? '',
-      points: String(activity?.points ?? 3),
-      notes: activity?.notes ?? '',
-    },
+    defaultValues: { name: activity?.name ?? '', notes: activity?.notes ?? '' },
   });
 
   const mutation = useMutation({
@@ -71,43 +58,23 @@ function ActivityForm({ activity, onDone }: { activity: SightseeingActivity | nu
   });
 
   const onSubmit = (v: FormValues) =>
-    mutation.mutate({
-      name: v.name.trim(),
-      city: v.city.trim(),
-      country: v.country.trim() || 'India',
-      timings: v.timings.trim() || null,
-      points: Math.min(100, Math.max(0, Number(v.points) || 0)),
-      imageUrl: imageUrl || null,
-      notes: v.notes.trim() || null,
-    });
+    mutation.mutate({ name: v.name.trim(), notes: v.notes.trim() || null, imageUrl: imageUrl || null });
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
-      {/* Photo first — per the requested flow. */}
-      <Field label="Photo" htmlFor="actPhoto" hint="Upload a preview image first, then fill in the details.">
+      <Field label="Cover image" htmlFor="actPhoto" hint="Optional — shown when this activity is added to a package day.">
         <ImageUpload value={imageUrl} onChange={setImageUrl} />
       </Field>
       <Field label="Activity name" htmlFor="actName" error={errors.name?.message} required>
-        <Input id="actName" placeholder="e.g. Chitkul Exploration – Khab – Nako" {...register('name', { required: 'Name is required' })} />
+        <Input id="actName" placeholder="e.g. Gulmarg Excursion" {...register('name', { required: 'Name is required' })} />
       </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="City" htmlFor="actCity" error={errors.city?.message} required>
-          <Input id="actCity" placeholder="Sangla" {...register('city', { required: 'City is required' })} />
-        </Field>
-        <Field label="Country" htmlFor="actCountry">
-          <Input id="actCountry" placeholder="India" {...register('country')} />
-        </Field>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Timings" htmlFor="actTimings">
-          <Input id="actTimings" placeholder="09:00 AM to 06:00 PM" {...register('timings')} />
-        </Field>
-        <Field label="Points" htmlFor="actPoints" hint="Interest/effort score (0–100).">
-          <Input id="actPoints" type="number" min={0} max={100} {...register('points')} />
-        </Field>
-      </div>
-      <Field label="Notes" htmlFor="actNotes">
-        <Textarea id="actNotes" rows={2} placeholder="What travellers do here, tips…" {...register('notes')} />
+      <Field label="Description" htmlFor="actNotes" hint="This text auto-fills the day when you pick this activity in a package.">
+        <Textarea
+          id="actNotes"
+          rows={4}
+          placeholder="What travellers do here — pickup, sightseeing spots, activities…"
+          {...register('notes')}
+        />
       </Field>
       <DialogFooter>
         <DialogClose asChild>
@@ -128,8 +95,6 @@ export function SightseeingPage() {
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput.trim(), 300);
-  const [city, setCity] = useState<string>('');
-  const [country, setCountry] = useState<string>('');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SightseeingActivity | null>(null);
   const [deleting, setDeleting] = useState<SightseeingActivity | null>(null);
@@ -139,14 +104,7 @@ export function SightseeingPage() {
     queryFn: () => api.get<SightseeingActivity[]>(search ? `/sightseeing?search=${encodeURIComponent(search)}` : '/sightseeing'),
   });
 
-  const all = useMemo(() => query.data ?? [], [query.data]);
-  const cities = useMemo(() => [...new Set(all.map((a) => a.city))].sort(), [all]);
-  const countries = useMemo(() => [...new Set(all.map((a) => a.country))].sort(), [all]);
-
-  const items = useMemo(
-    () => all.filter((a) => (!city || a.city === city) && (!country || a.country === country)),
-    [all, city, country],
-  );
+  const items = useMemo(() => query.data ?? [], [query.data]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/sightseeing/${id}`),
@@ -167,22 +125,9 @@ export function SightseeingPage() {
     setFormOpen(true);
   };
 
-  const Chip = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-        active ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground',
-      )}
-    >
-      {children}
-    </button>
-  );
-
   return (
     <div>
-      <PageHeader title="Sightseeing" description="Your reusable activity library — used across packages and itineraries.">
+      <PageHeader title="Activity Library" description="Reusable activities you drop into package days — write once, reuse everywhere.">
         <Button onClick={openNew}>
           <Plus /> New activity
         </Button>
@@ -201,54 +146,23 @@ export function SightseeingPage() {
         </div>
       </div>
 
-      {(cities.length > 0 || countries.length > 0) && (
-        <div className="mb-4 space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip active={!city} onClick={() => setCity('')}>
-              All Cities
-            </Chip>
-            {cities.map((c) => (
-              <Chip key={c} active={city === c} onClick={() => setCity(city === c ? '' : c)}>
-                {c}
-              </Chip>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <Chip active={!country} onClick={() => setCountry('')}>
-              All Countries
-            </Chip>
-            {countries.map((c) => (
-              <Chip key={c} active={country === c} onClick={() => setCountry(country === c ? '' : c)}>
-                {c}
-              </Chip>
-            ))}
-          </div>
-        </div>
-      )}
-
       {query.isLoading ? (
-        <Card className="divide-y divide-border p-0">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 p-4">
-              <Skeleton className="size-12 rounded-lg" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-3.5 w-56" />
-                <Skeleton className="h-3 w-32" />
-              </div>
-            </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 rounded-2xl" />
           ))}
-        </Card>
+        </div>
       ) : items.length === 0 ? (
         <EmptyState
           icon={<MapPinned />}
-          title={search || city || country ? 'No activities match' : 'No activities yet'}
+          title={search ? 'No activities match' : 'No activities yet'}
           description={
-            search || city || country
-              ? 'Try a different search or filter.'
-              : 'Add sightseeing spots and experiences to reuse when building packages and itineraries.'
+            search
+              ? 'Try a different search.'
+              : 'Add activities (with a photo and description) to reuse when building package day plans.'
           }
           action={
-            !search && !city && !country ? (
+            !search ? (
               <Button onClick={openNew}>
                 <Plus /> New activity
               </Button>
@@ -256,79 +170,39 @@ export function SightseeingPage() {
           }
         />
       ) : (
-        <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-border bg-primary/[0.04] text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-semibold">#</th>
-                  <th className="px-4 py-3 font-semibold">Preview</th>
-                  <th className="px-4 py-3 font-semibold">Activity</th>
-                  <th className="px-4 py-3 font-semibold">City</th>
-                  <th className="px-4 py-3 font-semibold">Country</th>
-                  <th className="px-4 py-3 font-semibold">Timings</th>
-                  <th className="px-4 py-3 font-semibold">Points</th>
-                  <th className="px-4 py-3">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {items.map((a, i) => (
-                  <tr key={a.id} className="transition-colors hover:bg-muted/40">
-                    <td className="px-4 py-3 text-muted-foreground">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      {a.imageUrl ? (
-                        <img src={a.imageUrl} alt="" className="size-11 rounded-lg object-cover" />
-                      ) : (
-                        <span className="flex size-11 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                          <MapPin className="size-4" />
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-foreground">{a.name}</p>
-                      <p className="text-[11px] text-muted-foreground">#{shortId(a.id)}</p>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.city}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{a.country}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {a.timings ? (
-                        <span className="flex items-center gap-1">
-                          <Clock className="size-3.5" /> {a.timings}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 font-medium text-foreground">
-                        <Star className="size-3.5 fill-amber-400 text-amber-400" /> {a.points}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" aria-label="Edit activity" onClick={() => openEdit(a)}>
-                          <Pencil />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Delete activity"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleting(a)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">Total: {items.length}</p>
-        </Card>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((a) => (
+            <Card key={a.id} className="flex flex-col overflow-hidden p-0">
+              <div className="h-32 w-full bg-muted">
+                {a.imageUrl ? (
+                  <img src={a.imageUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    <MapPin className="size-6" />
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-1 flex-col p-4">
+                <h3 className="font-display text-base font-bold text-foreground">{a.name}</h3>
+                {a.notes && <p className="mt-1 line-clamp-3 flex-1 text-sm text-muted-foreground">{a.notes}</p>}
+                <div className="mt-3 flex justify-end gap-1">
+                  <Button variant="ghost" size="icon-sm" aria-label="Edit activity" onClick={() => openEdit(a)}>
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Delete activity"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleting(a)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
@@ -336,7 +210,7 @@ export function SightseeingPage() {
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit activity' : 'New activity'}</DialogTitle>
             <DialogDescription>
-              {editing ? 'Update this sightseeing spot.' : 'Add a sightseeing spot or experience to your library.'}
+              {editing ? 'Update this activity.' : 'Add a reusable activity for your package day plans.'}
             </DialogDescription>
           </DialogHeader>
           <ActivityForm key={editing?.id ?? 'new'} activity={editing} onDone={() => setFormOpen(false)} />

@@ -16,6 +16,7 @@ import {
   Package as PackageIcon,
   Plus,
   Save,
+  Search as SearchIcon,
   Sparkles,
   Star,
   Trash2,
@@ -401,36 +402,67 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 
 const NO_HOTEL = 'none';
 
-/** One-shot picker that adds an activity from the Sightseeing library to a day. */
-function ActivityPicker({
+/** Searchable "Select Activity" combobox that pulls an activity from the library. */
+function ActivityCombobox({
   activities,
   onPick,
 }: {
   activities: SightseeingActivity[];
   onPick: (a: SightseeingActivity) => void;
 }) {
-  const [val, setVal] = useState('');
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
   if (activities.length === 0) return null;
+  const needle = q.trim().toLowerCase();
+  const filtered = activities
+    .filter((a) => !needle || a.name.toLowerCase().includes(needle))
+    .slice(0, 8);
+
   return (
-    <Select
-      value={val}
-      onValueChange={(id) => {
-        const a = activities.find((x) => x.id === id);
-        if (a) onPick(a);
-        setVal(''); // reset so it stays a picker, not a selected value
-      }}
-    >
-      <SelectTrigger aria-label="Add activity from Sightseeing library">
-        <SelectValue placeholder="+ Add from Sightseeing library" />
-      </SelectTrigger>
-      <SelectContent>
-        {activities.map((a) => (
-          <SelectItem key={a.id} value={a.id}>
-            {a.name} — {a.city}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="relative">
+      <div className="relative">
+        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Select activity — search your library…"
+          className="pl-9"
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-pop">
+          {filtered.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onMouseDown={() => {
+                onPick(a);
+                setQ('');
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+            >
+              {a.imageUrl ? (
+                <img src={a.imageUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
+              ) : (
+                <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+                  <MapPin className="size-3.5" />
+                </span>
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">{a.name}</span>
+                {a.notes && <span className="block truncate text-xs text-muted-foreground">{a.notes}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -442,12 +474,19 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
 
-  /** Add a library activity to a day: append its name + pull in its photo. */
+  /**
+   * Pull a library activity into a day — copies name → title, description and
+   * photo into THIS package's day (editing the day never touches the library).
+   */
   const addActivity = (i: number, a: SightseeingActivity) => {
-    const cur = (getValues(`itinerary.${i}.activities`) || '').trim();
-    const names = cur ? cur.split(',').map((s) => s.trim()).filter(Boolean) : [];
-    if (!names.some((n) => n.toLowerCase() === a.name.toLowerCase())) names.push(a.name);
-    setValue(`itinerary.${i}.activities`, names.join(', '), { shouldDirty: true });
+    if (!(getValues(`itinerary.${i}.title`) || '').trim()) {
+      setValue(`itinerary.${i}.title`, a.name, { shouldDirty: true });
+    }
+    if (a.notes) {
+      const cur = (getValues(`itinerary.${i}.description`) || '').trim();
+      const next = cur && !cur.includes(a.notes) ? `${cur}\n${a.notes}` : cur || a.notes;
+      setValue(`itinerary.${i}.description`, next, { shouldDirty: true });
+    }
     if (a.imageUrl) {
       const imgs = getValues(`itinerary.${i}.images`) ?? [];
       if (imgs.length < 4 && !imgs.includes(a.imageUrl)) {
@@ -471,6 +510,8 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               {i + 1}
             </span>
             <div className="min-w-0 flex-1 space-y-2">
+              {/* Pick a saved activity to auto-fill this day's title, description & photo */}
+              <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
               <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
               <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
               <div className="grid gap-2 sm:grid-cols-2">
@@ -506,8 +547,6 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                 <Input placeholder="Activities — rafting, bonfire, trek… (comma separated)" {...register(`itinerary.${i}.activities`)} />
                 <Input placeholder="Meals — e.g. Breakfast, Dinner" {...register(`itinerary.${i}.meals`)} />
               </div>
-              {/* Pick reusable activities from the Sightseeing library (adds name + photo) */}
-              <ActivityPicker activities={library} onPick={(a) => addActivity(i, a)} />
               {/* Day photos → the collage on this day's brochure page */}
               <Controller
                 control={control}

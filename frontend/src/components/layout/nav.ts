@@ -32,7 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/events', label: 'Events', icon: Ticket },
   { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
   { to: '/packages', label: 'Packages', icon: PackageIcon },
-  { to: '/sightseeing', label: 'Sightseeing', icon: MapPinned },
+  { to: '/sightseeing', label: 'Activities', icon: MapPinned },
   { to: '/hotels', label: 'Hotels', icon: HotelIcon },
   { to: '/host-page', label: 'Host Page', icon: Globe, adminOnly: true },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },

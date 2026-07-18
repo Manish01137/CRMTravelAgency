@@ -11,26 +11,28 @@ import { NotFound } from '../../lib/errors';
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
 
+// Simplified library: an activity is just Name + Cover Image + Description.
+// (city/country/timings/points columns remain for back-compat but default to blank.)
 const createSchema = z.object({
   name: z.string().trim().min(1, 'Activity name is required').max(200),
-  city: z.string().trim().min(1, 'City is required').max(100),
-  country: z.string().trim().min(1).max(100).default('India'),
+  imageUrl: z.preprocess(emptyToUndefined, z.string().url().max(2000).optional()),
+  notes: z.preprocess(emptyToUndefined, z.string().max(4000).optional()), // description
+  city: z.string().trim().max(100).default(''),
+  country: z.string().trim().max(100).default(''),
   timings: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
   points: z.coerce.number().int().min(0).max(100).default(0),
-  imageUrl: z.preprocess(emptyToUndefined, z.string().url().max(2000).optional()),
-  notes: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
   isActive: z.coerce.boolean().default(true),
 });
 
 const updateSchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
-    city: z.string().trim().min(1).max(100).optional(),
-    country: z.string().trim().min(1).max(100).optional(),
+    imageUrl: z.preprocess(emptyToNull, z.string().url().max(2000).nullable()).optional(),
+    notes: z.preprocess(emptyToNull, z.string().max(4000).nullable()).optional(),
+    city: z.string().trim().max(100).optional(),
+    country: z.string().trim().max(100).optional(),
     timings: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
     points: z.coerce.number().int().min(0).max(100).optional(),
-    imageUrl: z.preprocess(emptyToNull, z.string().url().max(2000).nullable()).optional(),
-    notes: z.preprocess(emptyToNull, z.string().max(2000).nullable()).optional(),
     isActive: z.coerce.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });
