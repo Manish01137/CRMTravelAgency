@@ -123,6 +123,12 @@ model Organization {
   brandSecondaryColor String   @default("#0D9488") @map("brand_secondary_color")
   bio                 String?
   hostLinks           Json     @default("[]") @map("host_links")
+  // --- Host Page mini-website ---
+  bannerImageUrl      String?  @map("banner_image_url")
+  aboutText           String?  @map("about_text")
+  contactPhone        String?  @map("contact_phone")
+  contactEmail        String?  @map("contact_email")
+  address             String?
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 

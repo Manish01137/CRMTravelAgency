@@ -30,7 +30,9 @@ import { EventsPage } from '@/pages/EventsPage';
 import { EventDetailPage } from '@/pages/EventDetailPage';
 import { SightseeingPage } from '@/pages/SightseeingPage';
 import { HostPageAdminPage } from '@/pages/HostPageAdminPage';
+import { HostSiteAdminPage } from '@/pages/HostSiteAdminPage';
 import { HostPage } from '@/pages/HostPage';
+import { SitePage } from '@/pages/SitePage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
@@ -101,6 +103,9 @@ function AppRoutes() {
       <Route path="/a/:slug" element={<HostPage />} />
       <Route path="/link/:slug" element={<HostPage />} />
 
+      {/* Public Host Page mini-website (company site). */}
+      <Route path="/site/:slug" element={<SitePage />} />
+
       {/* Public shareable package pages — anyone with the link can view.
           /p/:id      = customer-facing web page (day-wise plan + Book on WhatsApp)
           /p/:id/pdf  = printable brochure (Download PDF) */}
@@ -142,6 +147,7 @@ function AppRoutes() {
         <Route path="/settings/profile" element={<ProfilePage />} />
         <Route element={<AdminRoute />}>
           <Route path="/host-page" element={<HostPageAdminPage />} />
+          <Route path="/website" element={<HostSiteAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
         </Route>

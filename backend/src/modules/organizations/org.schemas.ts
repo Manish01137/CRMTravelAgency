@@ -27,6 +27,16 @@ export const updateOrgSchema = z
       )
       .max(10)
       .optional(),
+    // Host Page mini-website
+    bannerImageUrl: z
+      .preprocess((v) => (v === '' ? null : v), z.string().url('Enter a valid URL').max(2000).nullable())
+      .optional(),
+    aboutText: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
+    contactPhone: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(40).nullable()).optional(),
+    contactEmail: z
+      .preprocess((v) => (v === '' ? null : v), z.string().email('Enter a valid email').max(200).nullable())
+      .optional(),
+    address: z.preprocess((v) => (v === '' ? null : v), z.string().max(300).nullable()).optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No fields to update' });
 

@@ -34,8 +34,48 @@ export interface Organization {
   brandSecondaryColor: string;
   bio: string | null;
   hostLinks: HostLink[];
+  bannerImageUrl: string | null;
+  aboutText: string | null;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  address: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SiteDeparture {
+  id: string;
+  name: string | null;
+  departureDate: string;
+  capacity: number;
+  pricePerPerson: number;
+  priceCurrency: string;
+  pickupCity: string | null;
+  packageId: string;
+  packageName: string;
+  destination: string;
+  days: number;
+  nights: number;
+  coverImage: string | null;
+}
+
+export interface SitePayload {
+  organization: {
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    brandPrimaryColor: string;
+    brandSecondaryColor: string;
+    bio: string | null;
+    hostLinks: HostLink[];
+    bannerImageUrl: string | null;
+    aboutText: string | null;
+    contactPhone: string | null;
+    contactEmail: string | null;
+    address: string | null;
+  };
+  packages: HostPagePayload['packages'];
+  departures: SiteDeparture[];
 }
 
 export interface User {

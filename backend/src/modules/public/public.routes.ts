@@ -121,6 +121,94 @@ router.get(
   }),
 );
 
+/**
+ * Public Host Page mini-website payload: /public/site/:slug
+ * Branding + About + Contact + featured packages + upcoming departures.
+ */
+router.get(
+  '/site/:slug',
+  validate({ params: slugParam }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const org = await systemPrisma.organization.findUnique({
+      where: { slug: req.params.slug },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        brandPrimaryColor: true,
+        brandSecondaryColor: true,
+        bio: true,
+        hostLinks: true,
+        bannerImageUrl: true,
+        aboutText: true,
+        contactPhone: true,
+        contactEmail: true,
+        address: true,
+      },
+    });
+    if (!org) throw NotFound('This page does not exist');
+
+    const { packages, departures } = await withTenant(org.id, async (tx) => {
+      const packages = await tx.package.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          destination: true,
+          nights: true,
+          days: true,
+          priceAmount: true,
+          priceCurrency: true,
+          originalPrice: true,
+          description: true,
+          bannerImageUrl: true,
+          categories: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+      });
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const rawDepartures = await tx.batch.findMany({
+        where: { status: 'LIVE', departureDate: { gte: today } },
+        select: {
+          id: true,
+          name: true,
+          departureDate: true,
+          capacity: true,
+          pricePerPerson: true,
+          pickupCity: true,
+          package: { select: { id: true, name: true, destination: true, days: true, nights: true, priceAmount: true, priceCurrency: true, bannerImageUrl: true } },
+        },
+        orderBy: { departureDate: 'asc' },
+        take: 8,
+      });
+      const departures = rawDepartures.map((b) => ({
+        id: b.id,
+        name: b.name,
+        departureDate: b.departureDate,
+        capacity: b.capacity,
+        pricePerPerson: b.pricePerPerson ?? b.package.priceAmount,
+        priceCurrency: b.package.priceCurrency,
+        pickupCity: b.pickupCity,
+        packageId: b.package.id,
+        packageName: b.package.name,
+        destination: b.package.destination,
+        days: b.package.days,
+        nights: b.package.nights,
+        coverImage: b.package.bannerImageUrl,
+      }));
+
+      return { packages, departures };
+    });
+
+    const { id: _id, ...publicOrg } = org;
+    res.json({ organization: publicOrg, packages, departures });
+  }),
+);
+
 /** Public enquiry form → creates a WEBSITE lead in that agency's pipeline. */
 router.post(
   '/host/:slug/enquiry',
