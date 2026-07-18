@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Copy, ExternalLink, Eye, Globe, Settings, Users2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Eye, FileText, Globe, Link2, MapPin, Send, Settings, Users2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { TravelPackage, User } from '@/types';
@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { formatCurrency } from '@/lib/format';
+import { brochureUrl, copyToClipboard, packageWhatsAppUrl } from '@/lib/share';
 
 function Stat({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
@@ -87,6 +89,67 @@ export function HostPageAdminPage() {
           package's <b>Active</b> switch on the Packages page to show or hide it here.
         </p>
       </Card>
+
+      {/* Shareable packages — auto-listed from what you create; each with a public link */}
+      <div className="mb-6">
+        <h2 className="mb-3 font-display text-base font-semibold text-foreground">Shareable packages</h2>
+        {packages.length === 0 ? (
+          <Card className="p-8 text-center text-sm text-muted-foreground">
+            No packages yet — create one and it appears here automatically with its own shareable link.
+          </Card>
+        ) : (
+          <Card className="divide-y divide-border p-0">
+            {packages.map((pkg) => (
+              <div key={pkg.id} className="flex flex-wrap items-center gap-3 p-3.5">
+                {pkg.bannerImageUrl ? (
+                  <img src={pkg.bannerImageUrl} alt="" className="size-12 rounded-lg object-cover" />
+                ) : (
+                  <span className="flex size-12 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <MapPin className="size-4" />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-foreground">
+                    {pkg.name}
+                    {!pkg.isActive && (
+                      <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        Hidden
+                      </span>
+                    )}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {pkg.destination} · {pkg.days}D/{pkg.nights}N · {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => window.open(`/p/${pkg.id}`, '_blank')}>
+                    <FileText /> Brochure
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Copy share link"
+                    onClick={async () => {
+                      const ok = await copyToClipboard(brochureUrl(pkg.id));
+                      ok ? toast.success('Share link copied') : toast.error('Copy failed');
+                    }}
+                  >
+                    <Link2 />
+                  </Button>
+                  <Button
+                    size="icon-sm"
+                    aria-label="Send on WhatsApp"
+                    className="bg-emerald-500 text-white hover:bg-emerald-600"
+                    onClick={() => window.open(packageWhatsAppUrl(pkg, pkg.contactNumber), '_blank')}
+                  >
+                    <Send />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </Card>
+        )}
+      </div>
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-display text-base font-semibold text-foreground">Live preview</h2>

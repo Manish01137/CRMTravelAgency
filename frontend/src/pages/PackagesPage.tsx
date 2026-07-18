@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { MapPin, Moon, Package as PackageIcon, Pencil, Plus, Search, Sun, Trash2 } from 'lucide-react';
+import { FileText, Link2, MapPin, Moon, Package as PackageIcon, Pencil, Plus, Search, Send, Sun, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { TravelPackage } from '@/types';
@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { formatCurrency } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
+import { brochureUrl, copyToClipboard, packageWhatsAppUrl } from '@/lib/share';
 
 const CARD_TINTS = ['bg-[#E9E4FB]', 'bg-[#D9F2F8]', 'bg-[#FADEE5]', 'bg-[#D9F2E2]', 'bg-[#FCEFD3]', 'bg-[#DCEBFB]'];
 
@@ -164,6 +165,38 @@ export function PackagesPage() {
                       )}
                       <span className="text-xs font-medium text-foreground/50"> / person</span>
                     </p>
+                  </div>
+
+                  {/* Share row: brochure PDF, copy public link, WhatsApp */}
+                  <div className="mt-4 flex gap-2 border-t border-white/50 pt-3" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 border-white/60 bg-white/60"
+                      onClick={() => window.open(`/p/${pkg.id}`, '_blank')}
+                    >
+                      <FileText /> Brochure
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Copy share link"
+                      className="border-white/60 bg-white/60"
+                      onClick={async () => {
+                        const ok = await copyToClipboard(brochureUrl(pkg.id));
+                        ok ? toast.success('Share link copied') : toast.error('Copy failed — link: ' + brochureUrl(pkg.id));
+                      }}
+                    >
+                      <Link2 />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      aria-label="Send on WhatsApp"
+                      className="bg-emerald-500 text-white hover:bg-emerald-600"
+                      onClick={() => window.open(packageWhatsAppUrl(pkg, pkg.contactNumber), '_blank')}
+                    >
+                      <Send />
+                    </Button>
                   </div>
                 </div>
               </div>

@@ -17,10 +17,20 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { TravelPackage } from '@/types';
-import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/format';
+
+interface BrochureOrg {
+  name: string;
+  logoUrl: string | null;
+  brandPrimaryColor: string;
+  brandSecondaryColor: string;
+}
+interface PublicBrochure {
+  package: TravelPackage;
+  organization: BrochureOrg | null;
+}
 
 const lines = (s: string | null | undefined) =>
   (s ?? '')
@@ -33,12 +43,16 @@ const PAPER = '#f6f4f0';
 const INK = '#4a3a28';
 const GOLD = '#b8963e';
 
-/** One landscape brochure page; breaks onto its own sheet when printing. */
+/** One landscape brochure page; breaks onto its own sheet when printing.
+ *  NOTE: no `overflow-hidden` / forced aspect-ratio in print — those clipped
+ *  taller pages so the saved PDF came out incomplete. We break after each page
+ *  and let content define its own height instead. */
 function Page({ children, dark, className }: { children: ReactNode; dark?: boolean; className?: string }) {
   return (
     <section
       className={cn(
-        'relative mx-auto mb-6 w-full max-w-5xl overflow-hidden rounded-xl shadow-card print:mb-0 print:aspect-[297/210] print:max-w-none print:rounded-none print:shadow-none print:[break-after:page]',
+        'brochure-page relative mx-auto mb-6 w-full max-w-5xl overflow-hidden rounded-xl shadow-card',
+        'print:mb-0 print:max-w-none print:overflow-visible print:rounded-none print:shadow-none',
         className,
       )}
       style={{ backgroundColor: dark ? '#171310' : PAPER, color: dark ? '#f5efe4' : INK }}
@@ -123,15 +137,16 @@ function Collage({ images, tag }: { images: string[]; tag?: string }) {
 export function PackageBrochurePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { organization } = useAuth();
 
+  // Public endpoint — the brochure is a shareable link that works without a login.
   const pkgQuery = useQuery({
-    queryKey: ['package', id],
-    queryFn: () => api.get<TravelPackage>(`/packages/${id}`),
+    queryKey: ['public-package', id],
+    queryFn: () => api.get<PublicBrochure>(`/public/package/${id}`),
     enabled: !!id,
   });
 
-  const pkg = pkgQuery.data;
+  const pkg = pkgQuery.data?.package;
+  const organization = pkgQuery.data?.organization;
   const brand = organization?.brandPrimaryColor ?? '#4F46E5';
   const orgName = organization?.name ?? 'Travel Agency';
   const logoUrl = organization?.logoUrl;
@@ -164,7 +179,15 @@ export function PackageBrochurePage() {
 
   return (
     <div className="min-h-dvh bg-neutral-800 py-6 print:bg-white print:py-0">
-      <style>{'@media print { @page { size: A4 landscape; margin: 0; } }'}</style>
+      <style>{`
+        @page { size: A4 landscape; margin: 0; }
+        @media print {
+          html, body { background: #fff !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .brochure-page { break-after: page; min-height: 190mm; box-shadow: none !important; }
+          .brochure-page:last-child { break-after: auto; }
+        }
+      `}</style>
 
       {/* Toolbar (hidden when printing) */}
       <div className="mx-auto mb-4 flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 print:hidden">
@@ -177,7 +200,7 @@ export function PackageBrochurePage() {
       </div>
 
       {/* ---------- 1. COVER ---------- */}
-      <Page dark className="aspect-[297/195]">
+      <Page dark className="aspect-[297/195] print:aspect-auto">
         {pkg.bannerImageUrl && (
           <img src={pkg.bannerImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-80" />
         )}

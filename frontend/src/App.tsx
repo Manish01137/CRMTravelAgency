@@ -97,6 +97,9 @@ function AppRoutes() {
       {/* Public agency host page (Linktree-style mini site). */}
       <Route path="/a/:slug" element={<HostPage />} />
 
+      {/* Public shareable package brochure — anyone with the link can view/print. */}
+      <Route path="/p/:id" element={<PackageBrochurePage />} />
+
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />

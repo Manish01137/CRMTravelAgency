@@ -91,6 +91,36 @@ router.get(
   }),
 );
 
+/**
+ * PUBLIC package brochure by id — the shareable link. The UUID is the unguessable
+ * token (unlisted share). Returns the full package plus the owning agency's
+ * branding so the brochure renders without a login.
+ */
+const packageIdParam = z.object({ id: z.string().uuid('Invalid package id') });
+
+router.get(
+  '/package/:id',
+  validate({ params: packageIdParam }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const pkg = await systemPrisma.package.findUnique({ where: { id: req.params.id } });
+    if (!pkg) throw NotFound('This package does not exist');
+
+    const org = await systemPrisma.organization.findUnique({
+      where: { id: pkg.organizationId },
+      select: {
+        name: true,
+        slug: true,
+        logoUrl: true,
+        brandPrimaryColor: true,
+        brandSecondaryColor: true,
+      },
+    });
+
+    const { organizationId: _orgId, ...publicPkg } = pkg;
+    res.json({ package: publicPkg, organization: org });
+  }),
+);
+
 /** Public enquiry form → creates a WEBSITE lead in that agency's pipeline. */
 router.post(
   '/host/:slug/enquiry',
