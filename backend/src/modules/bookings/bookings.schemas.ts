@@ -19,6 +19,7 @@ const bookingBase = {
   currency: z.string().trim().length(3).toUpperCase().default('INR'),
   notes: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
   packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  batchId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   assignedToId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 };
 
@@ -49,6 +50,7 @@ export const updateBookingSchema = z
     currency: z.string().trim().length(3).toUpperCase().optional(),
     notes: z.preprocess(emptyToNull, z.string().max(5000).nullable()).optional(),
     packageId: z.preprocess(emptyToNull, z.string().uuid().nullable()).optional(),
+    batchId: z.preprocess(emptyToNull, z.string().uuid().nullable()).optional(),
     assignedToId: z.preprocess(emptyToNull, z.string().uuid().nullable()).optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });

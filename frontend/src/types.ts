@@ -206,6 +206,7 @@ export interface Booking {
   notes: string | null;
   leadId: string | null;
   packageId: string | null;
+  batchId: string | null;
   assignedToId: string | null;
   assignedTo: { id: string; name: string; email: string } | null;
   package: { id: string; name: string } | null;
@@ -358,6 +359,40 @@ export interface HostPagePayload {
     | 'bannerImageUrl'
     | 'categories'
   >[];
+}
+
+export type BatchStatus = 'ON_SALE' | 'CLOSED' | 'SOLD_OUT';
+
+export interface EventBatch {
+  id: string;
+  departureDate: string;
+  capacity: number;
+  priceOverride: number | null;
+  status: BatchStatus;
+  notes: string | null;
+  booked: number;
+}
+
+export interface EventItem {
+  id: string;
+  name: string;
+  destination: string;
+  days: number;
+  nights: number;
+  priceAmount: number;
+  priceCurrency: string;
+  bannerImageUrl: string | null;
+  categories: string[];
+  isActive: boolean;
+  batches: EventBatch[];
+}
+
+export interface EventStats {
+  liveEvents: number;
+  totalBatches: number;
+  todaysRevenue: number;
+  todaysBookings: number;
+  pendingSettlement: number;
 }
 
 export interface SightseeingActivity {

@@ -23,11 +23,15 @@ async function nextBookingNumber(tx: TenantTx): Promise<number> {
 
 async function assertRefsInOrg(
   tx: TenantTx,
-  refs: { packageId?: string | null; assignedToId?: string | null },
+  refs: { packageId?: string | null; batchId?: string | null; assignedToId?: string | null },
 ) {
   if (refs.packageId) {
     const pkg = await tx.package.findUnique({ where: { id: refs.packageId } });
     if (!pkg) throw BadRequest('Package not found in your organization');
+  }
+  if (refs.batchId) {
+    const batch = await tx.batch.findUnique({ where: { id: refs.batchId } });
+    if (!batch) throw BadRequest('Departure batch not found in your organization');
   }
   if (refs.assignedToId) {
     const member = await tx.user.findUnique({ where: { id: refs.assignedToId } });

@@ -1,10 +1,10 @@
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import type { Booking, TravelPackage, User } from '@/types';
+import type { Booking, EventItem, TravelPackage, User } from '@/types';
 import {
   Dialog,
   DialogClose,
@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/select';
 import { BOOKING_STATUSES } from '@/lib/crmMeta';
 import { handleApiError } from '@/lib/formErrors';
-import { toDateInputValue } from '@/lib/format';
+import { toDateInputValue, formatTravelDate } from '@/lib/format';
 
 const schema = z.object({
   customerName: z.string().trim().min(1, 'Customer name is required').max(120),
@@ -43,6 +43,7 @@ const schema = z.object({
   amountPaid: z.string(),
   currency: z.string().max(3),
   packageId: z.string(),
+  batchId: z.string(),
   assignedToId: z.string(),
   notes: z.string().max(5000),
 });
@@ -86,10 +87,19 @@ function BookingForm({
       amountPaid: booking != null ? String(booking.amountPaid) : '0',
       currency: booking?.currency ?? 'INR',
       packageId: booking?.packageId ?? NONE,
+      batchId: booking?.batchId ?? NONE,
       assignedToId: booking?.assignedToId ?? NONE,
       notes: booking?.notes ?? '',
     },
   });
+
+  // Departures for the chosen package, so a booking can consume a batch seat.
+  const selectedPackageId = useWatch({ control, name: 'packageId' });
+  const eventsQuery = useQuery({
+    queryKey: ['events'],
+    queryFn: () => api.get<EventItem[]>('/events'),
+  });
+  const packageBatches = (eventsQuery.data ?? []).find((e) => e.id === selectedPackageId)?.batches ?? [];
 
   const mutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -120,6 +130,7 @@ function BookingForm({
       amountPaid: values.amountPaid ? Number(values.amountPaid) : 0,
       currency: (values.currency || 'INR').toUpperCase(),
       packageId: values.packageId !== NONE ? values.packageId : null,
+      batchId: values.packageId !== NONE && values.batchId !== NONE ? values.batchId : null,
       assignedToId: values.assignedToId !== NONE ? values.assignedToId : null,
       notes: values.notes.trim() || null,
     });
@@ -200,6 +211,7 @@ function BookingForm({
                 value={field.value}
                 onValueChange={(v) => {
                   field.onChange(v);
+                  setValue('batchId', NONE); // batches belong to a package; reset on change
                   // Prefill trip facts from the package — only where nothing's typed yet.
                   const pkg = packages.find((p) => p.id === v);
                   if (!pkg) return;
@@ -246,6 +258,35 @@ function BookingForm({
           />
         </Field>
       </div>
+
+      {/* Departure batch — only when the chosen package has scheduled departures. */}
+      {packageBatches.length > 0 && (
+        <Field label="Departure" htmlFor="batchId" hint="Assign this booking to a dated departure to fill its seats.">
+          <Controller
+            control={control}
+            name="batchId"
+            render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger id="batchId">
+                  <SelectValue placeholder="No specific departure" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>No specific departure</SelectItem>
+                  {packageBatches.map((b) => {
+                    const full = b.booked >= b.capacity;
+                    return (
+                      <SelectItem key={b.id} value={b.id} disabled={full && field.value !== b.id}>
+                        {formatTravelDate(b.departureDate)} — {b.booked}/{b.capacity}
+                        {full ? ' (full)' : ''}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </Field>
+      )}
 
       <Field label="Notes" htmlFor="notes">
         <Textarea id="notes" placeholder="Anything useful about this trip…" {...register('notes')} />

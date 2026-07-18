@@ -1,62 +1,33 @@
 import { NavLink } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { isPast, isToday, parseISO } from 'date-fns';
 import { NAV_ITEMS, SETTINGS_ITEMS, type NavItem } from './nav';
 import { useAuth } from '@/context/AuthContext';
-import { api } from '@/lib/api';
-import type { Task } from '@/types';
 import { initials } from '@/lib/format';
 import { cn } from '@/lib/utils';
-
-/** Follow-ups that need attention now: due today or already overdue. */
-export function useDueTaskCount(): number {
-  const { data } = useQuery({
-    queryKey: ['tasks', 'PENDING'],
-    queryFn: () => api.get<Task[]>('/tasks?status=PENDING'),
-    refetchInterval: 5 * 60_000,
-  });
-  return (data ?? []).filter((t) => {
-    const due = parseISO(t.dueAt);
-    return isToday(due) || isPast(due);
-  }).length;
-}
 
 function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
   const { isAdmin } = useAuth();
   const visible = items.filter((item) => !item.adminOnly || isAdmin);
-  const dueTasks = useDueTaskCount();
 
   return (
     <nav className="space-y-1">
-      {visible.map((item) => {
-        const count = item.badge === 'dueTasks' ? dueTasks : 0;
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )
-            }
-          >
-            <item.icon className="size-[18px] shrink-0" />
-            <span className="flex-1">{item.label}</span>
-            {count > 0 && (
-              <span
-                className="min-w-5 rounded-full bg-destructive px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white"
-                aria-label={`${count} follow-ups due`}
-              >
-                {count > 99 ? '99+' : count}
-              </span>
-            )}
-          </NavLink>
-        );
-      })}
+      {visible.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )
+          }
+        >
+          <item.icon className="size-[18px] shrink-0" />
+          <span className="flex-1">{item.label}</span>
+        </NavLink>
+      ))}
     </nav>
   );
 }

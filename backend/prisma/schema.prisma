@@ -139,6 +139,7 @@ model Organization {
   bills       Bill[]
   leadActivities LeadActivity[]
   sightseeing Sightseeing[]
+  batches     Batch[]
 
   @@map("organizations")
 }
@@ -349,10 +350,40 @@ model Package {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bookings     Booking[]
+  batches      Batch[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
   @@map("packages")
+}
+
+/// A dated departure of a package ("event batch"): a fixed date with a seat
+/// capacity that customers book onto. Powers the Events / departures board.
+model Batch {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  packageId      String      @map("package_id") @db.Uuid
+  departureDate  DateTime    @map("departure_date") @db.Date
+  capacity       Int         @default(20)
+  priceOverride  Int?        @map("price_override") // optional per-batch price
+  status         BatchStatus @default(ON_SALE)
+  notes          String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  bookings     Booking[]
+
+  @@index([organizationId])
+  @@index([packageId, departureDate])
+  @@map("batches")
+}
+
+enum BatchStatus {
+  ON_SALE
+  CLOSED
+  SOLD_OUT
 }
 
 /// A confirmed (or in-progress) trip for a customer. BK-#### per organization.
@@ -374,6 +405,7 @@ model Booking {
   notes          String?
   leadId         String?       @map("lead_id") @db.Uuid
   packageId      String?       @map("package_id") @db.Uuid
+  batchId        String?       @map("batch_id") @db.Uuid
   assignedToId   String?       @map("assigned_to_id") @db.Uuid
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
@@ -381,6 +413,7 @@ model Booking {
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   package        Package?        @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  batch          Batch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
   assignedTo     User?           @relation("BookingAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
   itineraryItems ItineraryItem[]
   tasks          Task[]
