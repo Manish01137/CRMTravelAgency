@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Hotel, TravelPackage } from '@/types';
+import type { Hotel, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -401,11 +401,60 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 
 const NO_HOTEL = 'none';
 
+/** One-shot picker that adds an activity from the Sightseeing library to a day. */
+function ActivityPicker({
+  activities,
+  onPick,
+}: {
+  activities: SightseeingActivity[];
+  onPick: (a: SightseeingActivity) => void;
+}) {
+  const [val, setVal] = useState('');
+  if (activities.length === 0) return null;
+  return (
+    <Select
+      value={val}
+      onValueChange={(id) => {
+        const a = activities.find((x) => x.id === id);
+        if (a) onPick(a);
+        setVal(''); // reset so it stays a picker, not a selected value
+      }}
+    >
+      <SelectTrigger aria-label="Add activity from Sightseeing library">
+        <SelectValue placeholder="+ Add from Sightseeing library" />
+      </SelectTrigger>
+      <SelectContent>
+        {activities.map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            {a.name} — {a.city}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control, setValue } = form;
+  const { register, control, setValue, getValues } = form;
   const { fields, append, remove } = useFieldArray({ control, name: 'itinerary' });
   const hotelsQuery = useQuery({ queryKey: ['hotels'], queryFn: () => api.get<Hotel[]>('/hotels') });
   const hotels = (hotelsQuery.data ?? []).filter((h) => h.isActive);
+  const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
+  const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
+
+  /** Add a library activity to a day: append its name + pull in its photo. */
+  const addActivity = (i: number, a: SightseeingActivity) => {
+    const cur = (getValues(`itinerary.${i}.activities`) || '').trim();
+    const names = cur ? cur.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    if (!names.some((n) => n.toLowerCase() === a.name.toLowerCase())) names.push(a.name);
+    setValue(`itinerary.${i}.activities`, names.join(', '), { shouldDirty: true });
+    if (a.imageUrl) {
+      const imgs = getValues(`itinerary.${i}.images`) ?? [];
+      if (imgs.length < 4 && !imgs.includes(a.imageUrl)) {
+        setValue(`itinerary.${i}.images`, [...imgs, a.imageUrl], { shouldDirty: true });
+      }
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -457,6 +506,8 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                 <Input placeholder="Activities — rafting, bonfire, trek… (comma separated)" {...register(`itinerary.${i}.activities`)} />
                 <Input placeholder="Meals — e.g. Breakfast, Dinner" {...register(`itinerary.${i}.meals`)} />
               </div>
+              {/* Pick reusable activities from the Sightseeing library (adds name + photo) */}
+              <ActivityPicker activities={library} onPick={(a) => addActivity(i, a)} />
               {/* Day photos → the collage on this day's brochure page */}
               <Controller
                 control={control}
