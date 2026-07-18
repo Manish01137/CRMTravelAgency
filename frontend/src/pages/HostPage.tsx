@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
-import { ArrowUpRight, Check, MapPin, Moon, Plane, Send, Sun } from 'lucide-react';
+import { ArrowUpRight, Check, MapPin, Moon, Phone, Plane, Send, Sun } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { HostPagePayload } from '@/types';
@@ -121,6 +121,26 @@ export function HostPage() {
           )}
           <h1 className="mt-4 font-display text-2xl font-bold text-foreground sm:text-3xl">{host.name}</h1>
           {host.bio && <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{host.bio}</p>}
+
+          {/* Quick contact — Call + WhatsApp (AirLink conversion actions) */}
+          {enquiryPhone && (
+            <div className="mt-4 flex gap-2">
+              <a
+                href={`tel:+${enquiryPhone}`}
+                className="flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-card transition-colors hover:bg-muted"
+              >
+                <Phone className="size-4" /> Call
+              </a>
+              <a
+                href={`https://wa.me/${enquiryPhone}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-emerald-600"
+              >
+                <Send className="size-4" /> WhatsApp
+              </a>
+            </div>
+          )}
         </motion.div>
 
         {/* Links (Linktree style) */}

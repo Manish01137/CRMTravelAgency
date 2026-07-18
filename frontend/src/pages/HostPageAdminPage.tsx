@@ -47,7 +47,7 @@ export function HostPageAdminPage() {
 
   return (
     <div>
-      <PageHeader title="Host Page" description="Share your public page and manage which packages appear on it.">
+      <PageHeader title="AirLink" description="Your smart bio link — share it in Instagram bio or WhatsApp. Packages you publish appear here for one-tap booking.">
         <div className="flex gap-2">
           <Button variant="outline" asChild>
             <Link to="/settings/organization">
@@ -70,7 +70,7 @@ export function HostPageAdminPage() {
       </div>
 
       <Card className="mb-6 p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Public host link</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Your AirLink</p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <Input readOnly value={publicUrl} className="flex-1 font-medium" onFocus={(e) => e.currentTarget.select()} />
           <div className="flex gap-2">

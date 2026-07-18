@@ -34,7 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/packages', label: 'Packages', icon: PackageIcon },
   { to: '/sightseeing', label: 'Activities', icon: MapPinned },
   { to: '/hotels', label: 'Hotels', icon: HotelIcon },
-  { to: '/host-page', label: 'Host Page', icon: Globe, adminOnly: true },
+  { to: '/host-page', label: 'AirLink', icon: Globe, adminOnly: true },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/invoices', label: 'Invoices', icon: ReceiptText },
   { to: '/bills', label: 'Bills', icon: Wallet },
