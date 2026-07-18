@@ -1,31 +1,42 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
-import {
-  CalendarPlus,
-  CalendarRange,
-  FileText,
-  Link2,
-  MapPin,
-  Plus,
-  Search,
-  Send,
-  Ticket,
-  Trash2,
-} from 'lucide-react';
+import { CalendarRange, Link2, MapPin, Plus, Search, Settings2, Ticket, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { EventItem, EventStats } from '@/types';
+import type { EventItem, EventStats, EventStatus, TravelPackage } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Field } from '@/components/ui/field';
+import { Spinner } from '@/components/ui/spinner';
+import { ImageUpload } from '@/components/ui/image-upload';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency, formatTravelDate } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
-import { brochureUrl, copyToClipboard, packageWhatsAppUrl } from '@/lib/share';
+import { brochureUrl, copyToClipboard } from '@/lib/share';
+
+const STATUS_META: Record<EventStatus, { label: string; pill: string; dot: string }> = {
+  DRAFT: { label: 'Draft', pill: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-400' },
+  LIVE: { label: 'Live', pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' },
+  COMPLETED: { label: 'Completed', pill: 'bg-sky-50 text-sky-700 ring-sky-200', dot: 'bg-sky-500' },
+  CANCELLED: { label: 'Cancelled', pill: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
+};
+const STATUSES = Object.keys(STATUS_META) as EventStatus[];
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -37,315 +48,328 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-/** Inline "add departure" row shown under an event when expanded. */
-function AddBatch({ packageId, onDone }: { packageId: string; onDone: () => void }) {
+interface FormValues {
+  packageId: string;
+  name: string;
+  departureDate: string;
+  returnDate: string;
+  bookingCloseDate: string;
+  capacity: string;
+  pricePerPerson: string;
+  pickupCity: string;
+  status: EventStatus;
+}
+
+/** Fast create: pick a package → name/duration/cover/price auto-fill, then dates & seats. */
+function EventForm({ packages, onDone }: { packages: TravelPackage[]; onDone: () => void }) {
   const queryClient = useQueryClient();
-  const [date, setDate] = useState('');
-  const [capacity, setCapacity] = useState('20');
+  const [coverOverride, setCoverOverride] = useState<string | null>(null);
+
+  const { register, handleSubmit, control, setValue, formState: { errors } } = useForm<FormValues>({
+    defaultValues: {
+      packageId: '',
+      name: '',
+      departureDate: '',
+      returnDate: '',
+      bookingCloseDate: '',
+      capacity: '20',
+      pricePerPerson: '',
+      pickupCity: '',
+      status: 'LIVE',
+    },
+  });
+
+  const packageId = useWatch({ control, name: 'packageId' });
+  const pkg = packages.find((p) => p.id === packageId);
 
   const mutation = useMutation({
-    mutationFn: () => api.post('/events/batches', { packageId, departureDate: date, capacity: Number(capacity) || 20 }),
+    mutationFn: (v: FormValues) =>
+      api.post('/events', {
+        packageId: v.packageId,
+        name: v.name.trim() || undefined,
+        departureDate: v.departureDate,
+        returnDate: v.returnDate || undefined,
+        bookingCloseDate: v.bookingCloseDate || undefined,
+        capacity: Number(v.capacity) || 20,
+        pricePerPerson: v.pricePerPerson ? Number(v.pricePerPerson) : undefined,
+        pickupCity: v.pickupCity.trim() || undefined,
+        status: v.status,
+        coverImageOverride: coverOverride || undefined,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       queryClient.invalidateQueries({ queryKey: ['event-stats'] });
-      toast.success('Departure added');
-      setDate('');
+      toast.success('Event created');
       onDone();
     },
-    onError: () => toast.error('Could not add this departure'),
+    onError: () => toast.error('Could not create this event'),
   });
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-lg bg-muted/50 p-3">
-      <div className="flex-1">
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Departure date</label>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" />
+    <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4" noValidate>
+      <Field label="Package" htmlFor="evtPackage" error={errors.packageId?.message} required>
+        <Controller
+          control={control}
+          name="packageId"
+          rules={{ required: 'Select a package' }}
+          render={({ field }) => (
+            <Select
+              value={field.value}
+              onValueChange={(v) => {
+                field.onChange(v);
+                const p = packages.find((x) => x.id === v);
+                if (p) {
+                  setValue('pricePerPerson', String(p.priceAmount));
+                  setCoverOverride(null);
+                }
+              }}
+            >
+              <SelectTrigger id="evtPackage">
+                <SelectValue placeholder="Select a package…" />
+              </SelectTrigger>
+              <SelectContent>
+                {packages.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} · {p.days}D/{p.nights}N
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+      </Field>
+
+      {/* Auto-fetched package summary + optional cover change */}
+      {pkg && (
+        <div className="flex items-center gap-3 rounded-xl bg-muted/50 p-3">
+          <div className="size-16 shrink-0">
+            <ImageUpload tile value={coverOverride ?? pkg.bannerImageUrl ?? null} onChange={setCoverOverride} />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate font-display text-sm font-bold text-foreground">{pkg.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {pkg.destination} · {pkg.days}D/{pkg.nights}N
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Tap the image to use a different cover for this departure.</p>
+          </div>
+        </div>
+      )}
+
+      <Field label="Event name" htmlFor="evtName" hint="Optional — e.g. 'Independence Day Special'.">
+        <Input id="evtName" placeholder="Leave blank to use the package name" {...register('name')} />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Departure date" htmlFor="evtDep" error={errors.departureDate?.message} required>
+          <Input id="evtDep" type="date" {...register('departureDate', { required: 'Departure date is required' })} />
+        </Field>
+        <Field label="Return date" htmlFor="evtRet">
+          <Input id="evtRet" type="date" {...register('returnDate')} />
+        </Field>
       </div>
-      <div className="w-24">
-        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Seats</label>
-        <Input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} className="h-9" />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Booking closes" htmlFor="evtClose" hint="Optional.">
+          <Input id="evtClose" type="date" {...register('bookingCloseDate')} />
+        </Field>
+        <Field label="Total seats" htmlFor="evtSeats" required>
+          <Input id="evtSeats" type="number" min={1} {...register('capacity')} />
+        </Field>
       </div>
-      <Button size="sm" disabled={!date || mutation.isPending} onClick={() => mutation.mutate()}>
-        <Plus /> Add
-      </Button>
-    </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Price / person" htmlFor="evtPrice" hint="Auto-filled from the package; edit if needed.">
+          <Input id="evtPrice" type="number" min={0} {...register('pricePerPerson')} />
+        </Field>
+        <Field label="Pickup city" htmlFor="evtPickup">
+          <Input id="evtPickup" placeholder="e.g. Delhi" {...register('pickupCity')} />
+        </Field>
+      </div>
+
+      <Field label="Status" htmlFor="evtStatus">
+        <Controller
+          control={control}
+          name="status"
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger id="evtStatus">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_META[s].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
+      </Field>
+
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            Cancel
+          </Button>
+        </DialogClose>
+        <Button type="submit" disabled={mutation.isPending}>
+          {mutation.isPending && <Spinner className="size-4" />} Create event
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 
 export function EventsPage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput.trim().toLowerCase(), 300);
-  const [category, setCategory] = useState<string>('All');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | EventStatus>('ALL');
+  const [formOpen, setFormOpen] = useState(false);
 
   const eventsQuery = useQuery({ queryKey: ['events'], queryFn: () => api.get<EventItem[]>('/events') });
   const statsQuery = useQuery({ queryKey: ['event-stats'], queryFn: () => api.get<EventStats>('/events/stats') });
+  const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
 
   const all = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
-  const categories = useMemo(() => ['All', ...new Set(all.flatMap((e) => e.categories))], [all]);
   const events = useMemo(
     () =>
       all.filter(
         (e) =>
-          (category === 'All' || e.categories.includes(category)) &&
-          (!search || e.name.toLowerCase().includes(search) || e.destination.toLowerCase().includes(search)),
+          (statusFilter === 'ALL' || e.status === statusFilter) &&
+          (!search || e.packageName.toLowerCase().includes(search) || e.destination.toLowerCase().includes(search)),
       ),
-    [all, category, search],
+    [all, statusFilter, search],
   );
-
-  const toggleLive = useMutation({
-    mutationFn: (e: EventItem) => api.patch(`/packages/${e.id}`, { isActive: !e.isActive }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      queryClient.invalidateQueries({ queryKey: ['event-stats'] });
-    },
-    onError: () => toast.error('Could not update this event'),
-  });
-
-  const deleteBatch = useMutation({
-    mutationFn: (id: string) => api.delete(`/events/batches/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      queryClient.invalidateQueries({ queryKey: ['event-stats'] });
-      toast.success('Departure removed');
-    },
-  });
 
   const s = statsQuery.data;
   const currency = all[0]?.priceCurrency ?? 'INR';
 
   return (
     <div>
-      <PageHeader title="My Events" description="Your trips as sellable events — schedule departures and track seats booked.">
-        <Button onClick={() => navigate('/packages/new')}>
+      <PageHeader title="Events" description="Schedule package departures and track seats — one package, unlimited departures.">
+        <Button onClick={() => setFormOpen(true)}>
           <Plus /> Create event
         </Button>
       </PageHeader>
 
-      {/* Stat cards */}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="Live"
-          value={statsQuery.isLoading ? '—' : `${s?.liveEvents ?? 0} events`}
-          hint={`${s?.totalBatches ?? 0} departures`}
-        />
-        <StatCard
-          label="Today's revenue"
-          value={statsQuery.isLoading ? '—' : formatCurrency(s?.todaysRevenue ?? 0, currency)}
-          hint={`${s?.todaysBookings ?? 0} booked today`}
-        />
-        <StatCard label="Total departures" value={statsQuery.isLoading ? '—' : String(s?.totalBatches ?? 0)} />
-        <StatCard
-          label="Pending settlement"
-          value={statsQuery.isLoading ? '—' : formatCurrency(s?.pendingSettlement ?? 0, currency)}
-          hint="Collected vs trip value"
-        />
+        <StatCard label="Live" value={statsQuery.isLoading ? '—' : `${s?.liveEvents ?? 0} live`} hint={`${s?.totalEvents ?? 0} events total`} />
+        <StatCard label="Today's revenue" value={statsQuery.isLoading ? '—' : formatCurrency(s?.todaysRevenue ?? 0, currency)} hint={`${s?.todaysBookings ?? 0} booked today`} />
+        <StatCard label="Total departures" value={statsQuery.isLoading ? '—' : String(s?.totalEvents ?? 0)} />
+        <StatCard label="Pending settlement" value={statsQuery.isLoading ? '—' : formatCurrency(s?.pendingSettlement ?? 0, currency)} />
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search events…"
-            className="pl-9"
-            aria-label="Search events"
-          />
+          <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search events…" className="pl-9" aria-label="Search events" />
         </div>
-      </div>
-
-      {/* Category chips */}
-      {categories.length > 1 && (
-        <div className="mb-5 flex flex-wrap gap-1.5">
-          {categories.map((c) => (
+        <div className="flex flex-wrap gap-1.5">
+          {(['ALL', ...STATUSES] as const).map((st) => (
             <button
-              key={c}
+              key={st}
               type="button"
-              onClick={() => setCategory(c)}
+              onClick={() => setStatusFilter(st)}
               className={cn(
-                'rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
-                category === c ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground',
+                'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+                statusFilter === st ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground hover:text-foreground',
               )}
             >
-              {c}
+              {st === 'ALL' ? 'All' : STATUS_META[st].label}
             </button>
           ))}
         </div>
-      )}
+      </div>
 
       {eventsQuery.isLoading ? (
-        <div className="space-y-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-2xl" />
+            <Skeleton key={i} className="h-64 rounded-2xl" />
           ))}
         </div>
       ) : events.length === 0 ? (
         <EmptyState
           icon={<Ticket />}
-          title={search || category !== 'All' ? 'No events match' : 'No events yet'}
+          title={search || statusFilter !== 'ALL' ? 'No events match' : 'No events yet'}
           description={
-            search || category !== 'All'
-              ? 'Try a different search or category.'
-              : 'Create a package, then schedule its departure dates here to start taking bookings.'
+            search || statusFilter !== 'ALL'
+              ? 'Try a different search or status.'
+              : 'Create an event: pick a package, set the departure date and seats. One package can have unlimited departures.'
           }
           action={
-            !search && category === 'All' ? (
-              <Button onClick={() => navigate('/packages/new')}>
+            !search && statusFilter === 'ALL' ? (
+              <Button onClick={() => setFormOpen(true)}>
                 <Plus /> Create event
               </Button>
             ) : undefined
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((e) => {
-            const isOpen = expanded === e.id;
-            const nextBatches = e.batches.slice(0, isOpen ? undefined : 3);
-            const totalBooked = e.batches.reduce((sum, b) => sum + b.booked, 0);
+            const st = STATUS_META[e.status];
+            const soldOut = e.booked >= e.capacity;
             return (
-              <Card key={e.id} className="overflow-hidden p-0">
-                <div className="flex flex-col gap-4 p-4 sm:flex-row">
-                  {/* Thumbnail */}
-                  <div className="h-32 w-full shrink-0 overflow-hidden rounded-xl bg-muted sm:h-24 sm:w-32">
-                    {e.bannerImageUrl ? (
-                      <img src={e.bannerImageUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-muted-foreground">
-                        <MapPin className="size-6" />
-                      </div>
-                    )}
+              <Card key={e.id} className="flex flex-col overflow-hidden p-0">
+                <div className="relative h-36 w-full bg-muted">
+                  {e.coverImage ? (
+                    <img src={e.coverImage} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground">
+                      <MapPin className="size-6" />
+                    </div>
+                  )}
+                  <span className={cn('absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', st.pill)}>
+                    <span className={cn('size-1.5 rounded-full', st.dot)} />
+                    {st.label}
+                  </span>
+                </div>
+
+                <div className="flex flex-1 flex-col p-4">
+                  <h3 className="font-display text-base font-bold text-foreground">{e.name || e.packageName}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {e.packageName} · {e.destination}
+                  </p>
+
+                  <div className="mt-3 space-y-1.5 text-sm">
+                    <p className="flex items-center gap-2 text-foreground">
+                      <CalendarRange className="size-4 text-muted-foreground" />
+                      {formatTravelDate(e.departureDate)}
+                      {e.returnDate ? ` → ${formatTravelDate(e.returnDate)}` : ''}
+                    </p>
+                    <p className="flex items-center gap-2 text-foreground">
+                      <Users className="size-4 text-muted-foreground" />
+                      <span className={cn('font-semibold', soldOut && 'text-destructive')}>
+                        {e.booked}/{e.capacity}
+                      </span>{' '}
+                      <span className="text-muted-foreground">seats</span>
+                    </p>
+                    <p className="font-display text-lg font-bold text-foreground">
+                      {formatCurrency(e.pricePerPerson, e.priceCurrency)}
+                      <span className="text-xs font-medium text-muted-foreground"> / person</span>
+                    </p>
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h3 className="font-display text-lg font-bold text-foreground">{e.name}</h3>
-                        <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <MapPin className="size-3.5" /> {e.destination} · {e.days}D/{e.nights}N
-                        </p>
-                        {e.categories.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {e.categories.map((c) => (
-                              <span key={c} className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                                <span className="size-1.5 rounded-full bg-primary" /> {c}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {/* Live toggle */}
-                        <button
-                          type="button"
-                          onClick={() => toggleLive.mutate(e)}
-                          role="switch"
-                          aria-checked={e.isActive}
-                          className={cn(
-                            'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-                            e.isActive ? 'bg-emerald-500' : 'bg-muted-foreground/30',
-                          )}
-                          title={e.isActive ? 'Live — click to unpublish' : 'Draft — click to publish'}
-                        >
-                          <span
-                            className={cn(
-                              'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
-                              e.isActive ? 'left-0.5 translate-x-5' : 'left-0.5',
-                            )}
-                          />
-                        </button>
-                        <span className={cn('text-xs font-semibold', e.isActive ? 'text-emerald-600' : 'text-muted-foreground')}>
-                          {e.isActive ? 'Live' : 'Draft'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Batches */}
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {e.batches.length === 0 ? (
-                        <span className="text-sm text-muted-foreground">No departures yet.</span>
-                      ) : (
-                        nextBatches.map((b) => {
-                          const soldOut = b.booked >= b.capacity || b.status === 'SOLD_OUT';
-                          return (
-                            <span
-                              key={b.id}
-                              className={cn(
-                                'group inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
-                                soldOut ? 'border-destructive/30 bg-destructive/5 text-destructive' : 'border-border bg-muted/40',
-                              )}
-                            >
-                              <CalendarRange className="size-3.5" />
-                              {formatTravelDate(b.departureDate)}
-                              <span className="text-muted-foreground">
-                                {b.booked}/{b.capacity}
-                              </span>
-                              <button
-                                type="button"
-                                aria-label="Remove departure"
-                                onClick={() => deleteBatch.mutate(b.id)}
-                                className="opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                              >
-                                <Trash2 className="size-3" />
-                              </button>
-                            </span>
-                          );
-                        })
-                      )}
-                      {!isOpen && e.batches.length > 3 && (
-                        <button
-                          type="button"
-                          onClick={() => setExpanded(e.id)}
-                          className="rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-semibold text-background"
-                        >
-                          +{e.batches.length - 3} more
-                        </button>
-                      )}
-                      <span className="ml-auto text-xs font-medium text-muted-foreground">{totalBooked} booked total</span>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setExpanded(isOpen ? null : e.id)}
-                      >
-                        <CalendarPlus /> {isOpen ? 'Close' : 'Departures'}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => window.open(`/p/${e.id}`, '_blank')}>
-                        <FileText /> Brochure
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label="Copy share link"
-                        onClick={async () => {
-                          const ok = await copyToClipboard(brochureUrl(e.id));
-                          ok ? toast.success('Share link copied') : toast.error('Copy failed');
-                        }}
-                      >
-                        <Link2 />
-                      </Button>
-                      <Button
-                        size="icon-sm"
-                        aria-label="Send on WhatsApp"
-                        className="bg-emerald-500 text-white hover:bg-emerald-600"
-                        onClick={() => window.open(packageWhatsAppUrl(e), '_blank')}
-                      >
-                        <Send />
-                      </Button>
-                    </div>
-
-                    {isOpen && (
-                      <div className="mt-3">
-                        <AddBatch packageId={e.id} onDone={() => undefined} />
-                      </div>
-                    )}
+                  <div className="mt-4 flex flex-1 items-end gap-2">
+                    <Button size="sm" className="flex-1" onClick={() => navigate(`/events/${e.id}`)}>
+                      <Settings2 /> Manage
+                    </Button>
+                    <Button variant="outline" size="icon-sm" aria-label="View package page" onClick={() => window.open(`/p/${e.packageId}`, '_blank')}>
+                      <MapPin />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Copy booking link"
+                      onClick={async () => {
+                        const ok = await copyToClipboard(brochureUrl(e.packageId));
+                        ok ? toast.success('Link copied') : toast.error('Copy failed');
+                      }}
+                    >
+                      <Link2 />
+                    </Button>
                   </div>
                 </div>
               </Card>
@@ -353,6 +377,22 @@ export function EventsPage() {
           })}
         </div>
       )}
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create event</DialogTitle>
+            <DialogDescription>Pick a package and set the departure — takes about 30 seconds.</DialogDescription>
+          </DialogHeader>
+          {packagesQuery.data && packagesQuery.data.length === 0 ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              You have no packages yet. Create a package first, then schedule its departures here.
+            </div>
+          ) : (
+            <EventForm packages={packagesQuery.data ?? []} onDone={() => setFormOpen(false)} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

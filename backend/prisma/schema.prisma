@@ -357,19 +357,25 @@ model Package {
   @@map("packages")
 }
 
-/// A dated departure of a package ("event batch"): a fixed date with a seat
-/// capacity that customers book onto. Powers the Events / departures board.
+/// A dated departure ("Event") of a package: a fixed date + seat capacity that
+/// customers book onto. One package can have unlimited departures. Powers the
+/// Events board and the Manage Departure page.
 model Batch {
-  id             String      @id @default(uuid()) @db.Uuid
-  organizationId String      @map("organization_id") @db.Uuid
-  packageId      String      @map("package_id") @db.Uuid
-  departureDate  DateTime    @map("departure_date") @db.Date
-  capacity       Int         @default(20)
-  priceOverride  Int?        @map("price_override") // optional per-batch price
-  status         BatchStatus @default(ON_SALE)
-  notes          String?
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  id                String      @id @default(uuid()) @db.Uuid
+  organizationId    String      @map("organization_id") @db.Uuid
+  packageId         String      @map("package_id") @db.Uuid
+  name              String? // optional event/batch label e.g. "Independence Day Special"
+  departureDate     DateTime    @map("departure_date") @db.Date
+  returnDate        DateTime?   @map("return_date") @db.Date
+  bookingCloseDate  DateTime?   @map("booking_close_date") @db.Date
+  capacity          Int         @default(20) // total seats
+  pricePerPerson    Int?        @map("price_per_person") // defaults to package price when null
+  pickupCity        String?     @map("pickup_city")
+  coverImageOverride String?    @map("cover_image_override")
+  status            EventStatus @default(DRAFT)
+  notes             String?
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
@@ -380,10 +386,11 @@ model Batch {
   @@map("batches")
 }
 
-enum BatchStatus {
-  ON_SALE
-  CLOSED
-  SOLD_OUT
+enum EventStatus {
+  DRAFT
+  LIVE
+  COMPLETED
+  CANCELLED
 }
 
 /// A confirmed (or in-progress) trip for a customer. BK-#### per organization.

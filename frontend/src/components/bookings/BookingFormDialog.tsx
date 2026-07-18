@@ -99,7 +99,10 @@ function BookingForm({
     queryKey: ['events'],
     queryFn: () => api.get<EventItem[]>('/events'),
   });
-  const packageBatches = (eventsQuery.data ?? []).find((e) => e.id === selectedPackageId)?.batches ?? [];
+  // Departures (events) for the chosen package.
+  const packageBatches = (eventsQuery.data ?? []).filter(
+    (e) => e.packageId === selectedPackageId && e.status !== 'CANCELLED',
+  );
 
   const mutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
@@ -276,6 +279,7 @@ function BookingForm({
                     const full = b.booked >= b.capacity;
                     return (
                       <SelectItem key={b.id} value={b.id} disabled={full && field.value !== b.id}>
+                        {b.name ? `${b.name} · ` : ''}
                         {formatTravelDate(b.departureDate)} — {b.booked}/{b.capacity}
                         {full ? ' (full)' : ''}
                       </SelectItem>

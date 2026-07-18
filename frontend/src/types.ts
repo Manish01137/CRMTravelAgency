@@ -361,38 +361,59 @@ export interface HostPagePayload {
   >[];
 }
 
-export type BatchStatus = 'ON_SALE' | 'CLOSED' | 'SOLD_OUT';
+export type EventStatus = 'DRAFT' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
 
-export interface EventBatch {
+/** An Event = one dated departure of a package. */
+export interface EventItem {
   id: string;
+  packageId: string;
+  packageName: string;
+  destination: string;
+  days: number;
+  nights: number;
+  coverImage: string | null;
+  name: string | null;
   departureDate: string;
+  returnDate: string | null;
+  bookingCloseDate: string | null;
   capacity: number;
-  priceOverride: number | null;
-  status: BatchStatus;
+  pricePerPerson: number;
+  priceCurrency: string;
+  pickupCity: string | null;
+  status: EventStatus;
   notes: string | null;
   booked: number;
 }
 
-export interface EventItem {
-  id: string;
-  name: string;
-  destination: string;
-  days: number;
-  nights: number;
-  priceAmount: number;
-  priceCurrency: string;
-  bannerImageUrl: string | null;
-  categories: string[];
-  isActive: boolean;
-  batches: EventBatch[];
-}
-
 export interface EventStats {
   liveEvents: number;
-  totalBatches: number;
+  totalEvents: number;
   todaysRevenue: number;
   todaysBookings: number;
   pendingSettlement: number;
+}
+
+export interface EventPassenger {
+  id: string;
+  bookingNumber: number;
+  customerName: string;
+  customerPhone: string | null;
+  travelerCount: number | null;
+  status: BookingStatus;
+  totalAmount: number;
+  amountPaid: number;
+  currency: string;
+  assignedTo: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface EventDetail {
+  event: EventItem;
+  seatsBooked: number;
+  seatsRemaining: number;
+  revenue: number;
+  pending: number;
+  bookings: EventPassenger[];
 }
 
 export interface SightseeingActivity {

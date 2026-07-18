@@ -27,6 +27,7 @@ import { InvoiceViewPage } from '@/pages/InvoiceViewPage';
 import { BillsPage } from '@/pages/BillsPage';
 import { HotelsPage } from '@/pages/HotelsPage';
 import { EventsPage } from '@/pages/EventsPage';
+import { EventDetailPage } from '@/pages/EventDetailPage';
 import { SightseeingPage } from '@/pages/SightseeingPage';
 import { HostPageAdminPage } from '@/pages/HostPageAdminPage';
 import { HostPage } from '@/pages/HostPage';
@@ -125,6 +126,7 @@ function AppRoutes() {
         <Route path="/bookings" element={<BookingsPage />} />
         <Route path="/bookings/:id" element={<BookingDetailPage />} />
         <Route path="/events" element={<EventsPage />} />
+        <Route path="/events/:id" element={<EventDetailPage />} />
         <Route path="/itineraries" element={<ItinerariesPage />} />
         <Route path="/bookings/:id/itinerary" element={<ItineraryComposerPage />} />
         <Route path="/packages" element={<PackagesPage />} />
