@@ -40,7 +40,11 @@ const enquirySchema = z
 const router = Router();
 router.use(publicLimiter);
 
-/** Public host page payload: branding + links + active packages. */
+/**
+ * Public LinkTree payload: the agency's travel package hub.
+ * Profile (logo/cover/bio/contacts) + package cards (only packages with
+ * "Show on LinkTree" ON) with their upcoming LIVE departure dates.
+ */
 router.get(
   '/host/:slug',
   validate({ params: slugParam }),
@@ -56,13 +60,15 @@ router.get(
         brandSecondaryColor: true,
         bio: true,
         hostLinks: true,
+        linktreeCoverUrl: true,
+        contactPhone: true,
       },
     });
     if (!org) throw NotFound('This page does not exist');
 
-    const packages = await withTenant(org.id, (tx) =>
-      tx.package.findMany({
-        where: { isActive: true },
+    const { packages, departuresByPackage } = await withTenant(org.id, async (tx) => {
+      const packages = await tx.package.findMany({
+        where: { isActive: true, showOnLinktree: true },
         select: {
           id: true,
           name: true,
@@ -78,16 +84,46 @@ router.get(
           contactNumber: true,
         },
         orderBy: { createdAt: 'desc' },
-        take: 24,
-      }),
-    );
+        take: 50,
+      });
 
-    // A WhatsApp number for the whole page: first package that has one (digits only).
-    const rawPhone = packages.find((p) => p.contactNumber)?.contactNumber ?? null;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const batches = await tx.batch.findMany({
+        where: {
+          packageId: { in: packages.map((p) => p.id) },
+          status: 'LIVE',
+          departureDate: { gte: today },
+        },
+        select: { packageId: true, departureDate: true },
+        orderBy: { departureDate: 'asc' },
+      });
+      const departuresByPackage: Record<string, string[]> = {};
+      for (const b of batches) {
+        (departuresByPackage[b.packageId] ??= []).push(b.departureDate.toISOString());
+      }
+      return { packages, departuresByPackage };
+    });
+
+    // WhatsApp/Call number: the org's contact phone, else first package that has one.
+    const rawPhone = org.contactPhone ?? packages.find((p) => p.contactNumber)?.contactNumber ?? null;
     const contactNumber = rawPhone ? rawPhone.replace(/\D/g, '') : null;
 
-    const { id: _id, ...publicOrg } = org;
-    res.json({ ...publicOrg, contactNumber, packages: packages.map(({ contactNumber: _c, ...p }) => p) });
+    // Instagram from the org's links, if present.
+    const links = (org.hostLinks as Array<{ label: string; url: string }> | null) ?? [];
+    const instagramUrl = links.find((l) => /instagram\.com/i.test(l.url))?.url ?? null;
+
+    const { id: _id, contactPhone: _cp, ...publicOrg } = org;
+    res.json({
+      ...publicOrg,
+      contactNumber,
+      instagramUrl,
+      websiteUrl: `/site/${org.slug}`,
+      packages: packages.map(({ contactNumber: _c, ...p }) => ({
+        ...p,
+        departures: (departuresByPackage[p.id] ?? []).slice(0, 4),
+      })),
+    });
   }),
 );
 

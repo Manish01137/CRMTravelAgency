@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Copy, ExternalLink, Eye, FileText, Globe, Link2, MapPin, Send, Settings, Users2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
 import { brochureUrl, copyToClipboard, packageWhatsAppUrl } from '@/lib/share';
 
@@ -24,15 +26,32 @@ function Stat({ label, value, accent }: { label: string; value: string | number;
 }
 
 export function HostPageAdminPage() {
-  const { organization } = useAuth();
+  const { organization, refresh } = useAuth();
+  const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
 
   const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
 
   const packages = packagesQuery.data ?? [];
-  const visible = packages.filter((p) => p.isActive);
-  const publicUrl = organization ? `${window.location.origin}/a/${organization.slug}` : '';
+  const visible = packages.filter((p) => p.isActive && p.showOnLinktree);
+
+  const coverMutation = useMutation({
+    mutationFn: (url: string | null) => api.patch('/organization', { linktreeCoverUrl: url }),
+    onSuccess: async () => {
+      await refresh?.();
+      toast.success('Cover updated');
+    },
+    onError: () => toast.error('Could not save the cover'),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (pkg: TravelPackage) =>
+      api.patch<TravelPackage>(`/packages/${pkg.id}`, { showOnLinktree: !pkg.showOnLinktree }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['packages'] }),
+    onError: () => toast.error('Could not update this package'),
+  });
+  const publicUrl = organization ? `${window.location.origin}/link/${organization.slug}` : '';
 
   const copy = async () => {
     try {
@@ -47,7 +66,7 @@ export function HostPageAdminPage() {
 
   return (
     <div>
-      <PageHeader title="AirLink" description="Your smart bio link — share it in Instagram bio or WhatsApp. Packages you publish appear here for one-tap booking.">
+      <PageHeader title="LinkTree" description="Your travel package hub — share it in Instagram bio or WhatsApp. Packages with Show-on-LinkTree ON appear automatically.">
         <div className="flex gap-2">
           <Button variant="outline" asChild>
             <Link to="/settings/organization">
@@ -64,13 +83,13 @@ export function HostPageAdminPage() {
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Total packages" value={packages.length} />
-        <Stat label="Visible packages" value={visible.length} accent />
-        <Stat label="Hidden packages" value={packages.length - visible.length} />
+        <Stat label="On LinkTree" value={visible.length} accent />
+        <Stat label="Hidden" value={packages.length - visible.length} />
         <Stat label="Team members" value={usersQuery.data?.length ?? '—'} />
       </div>
 
       <Card className="mb-6 p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Your AirLink</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Your LinkTree link</p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <Input readOnly value={publicUrl} className="flex-1 font-medium" onFocus={(e) => e.currentTarget.select()} />
           <div className="flex gap-2">
@@ -85,14 +104,28 @@ export function HostPageAdminPage() {
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Share this on Instagram bio, WhatsApp status or ads. Every enquiry from it lands in your Leads pipeline. Toggle a
-          package's <b>Active</b> switch on the Packages page to show or hide it here.
+          Share this on Instagram bio, WhatsApp status or ads. Every enquiry from it lands in your Leads pipeline. Use each
+          package's <b>Show on LinkTree</b> switch below to control what appears — cards render automatically from the CRM.
         </p>
+      </Card>
+
+      {/* Branding: cover image behind the public page */}
+      <Card className="mb-6 p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Cover image</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Full-page background of your LinkTree. Colors come from your brand settings (Organization page).
+        </p>
+        <div className="mt-3 max-w-md">
+          <ImageUpload
+            value={organization?.linktreeCoverUrl ?? null}
+            onChange={(url) => coverMutation.mutate(url)}
+          />
+        </div>
       </Card>
 
       {/* Shareable packages — auto-listed from what you create; each with a public link */}
       <div className="mb-6">
-        <h2 className="mb-3 font-display text-base font-semibold text-foreground">Shareable packages</h2>
+        <h2 className="mb-3 font-display text-base font-semibold text-foreground">Packages on LinkTree</h2>
         {packages.length === 0 ? (
           <Card className="p-8 text-center text-sm text-muted-foreground">
             No packages yet — create one and it appears here automatically with its own shareable link.
@@ -113,7 +146,7 @@ export function HostPageAdminPage() {
                     {pkg.name}
                     {!pkg.isActive && (
                       <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                        Hidden
+                        Draft
                       </span>
                     )}
                   </p>
@@ -121,6 +154,14 @@ export function HostPageAdminPage() {
                     {pkg.destination} · {pkg.days}D/{pkg.nights}N · {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
                   </p>
                 </div>
+                <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  On LinkTree
+                  <Switch
+                    checked={pkg.showOnLinktree}
+                    onCheckedChange={() => toggleMutation.mutate(pkg)}
+                    aria-label="Show on LinkTree"
+                  />
+                </label>
                 <div className="flex gap-1.5">
                   <Button variant="outline" size="sm" onClick={() => window.open(`/p/${pkg.id}`, '_blank')}>
                     <FileText /> Brochure
@@ -163,8 +204,8 @@ export function HostPageAdminPage() {
         {organization ? (
           <iframe
             key={publicUrl}
-            title="Host page preview"
-            src={`/a/${organization.slug}`}
+            title="LinkTree preview"
+            src={`/link/${organization.slug}`}
             className="h-[640px] w-full border-0 bg-surface"
           />
         ) : null}

@@ -96,6 +96,7 @@ export interface Values {
   highlights: { value: string }[];
   galleryImages: { value: string }[];
   isActive: boolean;
+  showOnLinktree: boolean;
 }
 
 /** Public page design themes — each renders a distinct look on /p/:id. */
@@ -167,6 +168,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     highlights: (pkg?.highlights ?? []).map((value) => ({ value })),
     galleryImages: (pkg?.galleryImages ?? []).map((value) => ({ value })),
     isActive: pkg?.isActive ?? false,
+    showOnLinktree: pkg?.showOnLinktree ?? true,
   };
 }
 
@@ -220,6 +222,7 @@ function toPayload(v: Values): Record<string, unknown> {
     highlights: v.highlights.map((h) => h.value.trim()).filter(Boolean),
     galleryImages: v.galleryImages.map((g) => g.value.trim()).filter((u) => /^https?:\/\//.test(u)),
     isActive: v.isActive,
+    showOnLinktree: v.showOnLinktree,
   };
 }
 
@@ -802,6 +805,30 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               aria-checked={field.value}
               onClick={() => field.onChange(!field.value)}
               className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors', field.value ? 'bg-primary' : 'bg-muted')}
+            >
+              <span className={cn('absolute top-1 size-5 rounded-full bg-white shadow transition-all', field.value ? 'left-6' : 'left-1')} />
+            </button>
+          </div>
+        )}
+      />
+
+      <Controller
+        control={form.control}
+        name="showOnLinktree"
+        render={({ field }) => (
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface/60 p-4">
+            <div>
+              <p className="font-semibold text-foreground">Show on LinkTree</p>
+              <p className="text-sm text-muted-foreground">
+                ON = this package's card appears automatically on your public LinkTree page.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={field.value}
+              onClick={() => field.onChange(!field.value)}
+              className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors', field.value ? 'bg-emerald-500' : 'bg-muted')}
             >
               <span className={cn('absolute top-1 size-5 rounded-full bg-white shadow transition-all', field.value ? 'left-6' : 'left-1')} />
             </button>

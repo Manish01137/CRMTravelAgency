@@ -95,6 +95,7 @@ export const createPackageSchema = z.object({
   inclusions: optText(5000),
   exclusions: optText(5000),
   isActive: z.coerce.boolean().default(true),
+  showOnLinktree: z.coerce.boolean().default(true),
   ...builderFields,
 });
 
@@ -110,6 +111,7 @@ export const updatePackageSchema = z
     inclusions: nullText(5000),
     exclusions: nullText(5000),
     isActive: z.coerce.boolean().optional(),
+    showOnLinktree: z.coerce.boolean().optional(),
 
     code: nullText(60),
     slug: z.preprocess(

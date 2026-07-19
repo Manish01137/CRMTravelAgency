@@ -129,6 +129,7 @@ model Organization {
   contactPhone        String?  @map("contact_phone")
   contactEmail        String?  @map("contact_email")
   address             String?
+  linktreeCoverUrl    String?  @map("linktree_cover_url")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -325,6 +326,7 @@ model Package {
   inclusions     String?
   exclusions     String?
   isActive       Boolean @default(true) @map("is_active")
+  showOnLinktree Boolean @default(true) @map("show_on_linktree")
 
   // --- Premium builder fields (Basics) ---
   code                String? // package code, auto-generated if blank

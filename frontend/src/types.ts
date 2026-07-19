@@ -39,6 +39,7 @@ export interface Organization {
   contactPhone: string | null;
   contactEmail: string | null;
   address: string | null;
+  linktreeCoverUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,7 +75,7 @@ export interface SitePayload {
     contactEmail: string | null;
     address: string | null;
   };
-  packages: HostPagePayload['packages'];
+  packages: Omit<LinktreePackage, 'departures'>[];
   departures: SiteDeparture[];
 }
 
@@ -225,6 +226,7 @@ export interface TravelPackage {
   faqs: PackageFaq[];
   highlights: string[];
   galleryImages: string[];
+  showOnLinktree: boolean;
 
   createdAt: string;
   updatedAt: string;
@@ -389,6 +391,21 @@ export interface LeadActivity {
   createdAt: string;
 }
 
+export type LinktreePackage = Pick<
+  TravelPackage,
+  | 'id'
+  | 'name'
+  | 'destination'
+  | 'nights'
+  | 'days'
+  | 'priceAmount'
+  | 'priceCurrency'
+  | 'originalPrice'
+  | 'description'
+  | 'bannerImageUrl'
+  | 'categories'
+> & { departures: string[] };
+
 export interface HostPagePayload {
   name: string;
   slug: string;
@@ -397,21 +414,11 @@ export interface HostPagePayload {
   brandSecondaryColor: string;
   bio: string | null;
   contactNumber: string | null;
+  instagramUrl: string | null;
+  websiteUrl: string | null;
+  linktreeCoverUrl: string | null;
   hostLinks: HostLink[];
-  packages: Pick<
-    TravelPackage,
-    | 'id'
-    | 'name'
-    | 'destination'
-    | 'nights'
-    | 'days'
-    | 'priceAmount'
-    | 'priceCurrency'
-    | 'originalPrice'
-    | 'description'
-    | 'bannerImageUrl'
-    | 'categories'
-  >[];
+  packages: LinktreePackage[];
 }
 
 export type EventStatus = 'DRAFT' | 'LIVE' | 'COMPLETED' | 'CANCELLED';

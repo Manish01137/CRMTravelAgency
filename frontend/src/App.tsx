@@ -99,7 +99,7 @@ function AppRoutes() {
       {/* Public marketing landing — visible to everyone. */}
       <Route path="/" element={<LandingPage />} />
 
-      {/* Public AirLink — smart bio link (Linktree + package catalogue). */}
+      {/* Public LinkTree — the agency's travel package hub. */}
       <Route path="/a/:slug" element={<HostPage />} />
       <Route path="/link/:slug" element={<HostPage />} />
 
@@ -152,6 +152,11 @@ function AppRoutes() {
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
         </Route>
       </Route>
+
+      {/* Root-level agency slug (domain.com/dodtravels). Registered last among
+          patterns so every app route above wins; only unmatched single-segment
+          paths resolve as a LinkTree slug (unknown slugs show its 404 state). */}
+      <Route path="/:slug" element={<HostPage />} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

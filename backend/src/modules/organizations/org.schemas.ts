@@ -37,6 +37,10 @@ export const updateOrgSchema = z
       .preprocess((v) => (v === '' ? null : v), z.string().email('Enter a valid email').max(200).nullable())
       .optional(),
     address: z.preprocess((v) => (v === '' ? null : v), z.string().max(300).nullable()).optional(),
+    // LinkTree (public package hub) cover image
+    linktreeCoverUrl: z
+      .preprocess((v) => (v === '' ? null : v), z.string().url('Enter a valid URL').max(2000).nullable())
+      .optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No fields to update' });
 
