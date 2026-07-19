@@ -127,7 +127,7 @@ export function SightseeingPage() {
 
   return (
     <div>
-      <PageHeader title="Activity Library" description="Reusable activities you drop into package days — write once, reuse everywhere.">
+      <PageHeader title="Sightseeing" description="Reusable activities you drop into package days — write once, reuse everywhere.">
         <Button onClick={openNew}>
           <Plus /> New activity
         </Button>

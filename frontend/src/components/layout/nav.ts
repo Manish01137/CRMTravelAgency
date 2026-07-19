@@ -15,6 +15,7 @@ import {
   Globe,
   Globe2,
   Ticket,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,10 +34,11 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/events', label: 'Events', icon: Ticket },
   { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
   { to: '/packages', label: 'Packages', icon: PackageIcon },
-  { to: '/sightseeing', label: 'Activities', icon: MapPinned },
+  { to: '/sightseeing', label: 'Sightseeing', icon: MapPinned },
   { to: '/hotels', label: 'Hotels', icon: HotelIcon },
   { to: '/website', label: 'Host Page', icon: Globe2, adminOnly: true },
   { to: '/host-page', label: 'AirLink', icon: Globe, adminOnly: true },
+  { to: '/tasks', label: 'Follow-ups', icon: ListChecks },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/invoices', label: 'Invoices', icon: ReceiptText },
   { to: '/bills', label: 'Bills', icon: Wallet },

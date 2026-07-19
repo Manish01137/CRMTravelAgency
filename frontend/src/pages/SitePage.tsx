@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { ArrowUpRight, Check, Mail, MapPin, Moon, Phone, Plane, Send, Sun } from 'lucide-react';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import type { SitePayload } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,7 @@ export function SitePage() {
   const { slug } = useParams<{ slug: string }>();
   const reduce = useReducedMotion();
   const [sent, setSent] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const siteQuery = useQuery({
     queryKey: ['site', slug],
@@ -77,6 +79,10 @@ export function SitePage() {
   const org = site.organization;
   const brand = org.brandPrimaryColor;
   const brand2 = org.brandSecondaryColor;
+  const categories = [...new Set(site.packages.flatMap((p) => p.categories ?? []))].sort();
+  const shownPackages = activeCategory
+    ? site.packages.filter((p) => (p.categories ?? []).includes(activeCategory))
+    : site.packages;
 
   const rise = (delay: number) =>
     reduce
@@ -160,8 +166,39 @@ export function SitePage() {
           <motion.section {...rise(0.05)} id="packages" className="mt-16 scroll-mt-20">
             <h2 className="text-center font-display text-2xl font-bold text-foreground">Featured packages</h2>
             <div className="mx-auto mt-2 h-1 w-16 rounded-full" style={{ backgroundColor: brand }} />
+
+            {categories.length > 0 && (
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory(null)}
+                  className={cn(
+                    'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors',
+                    !activeCategory ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+                  )}
+                  style={!activeCategory ? { backgroundColor: brand } : undefined}
+                >
+                  All
+                </button>
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setActiveCategory(c)}
+                    className={cn(
+                      'rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors',
+                      activeCategory === c ? 'text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+                    )}
+                    style={activeCategory === c ? { backgroundColor: brand } : undefined}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {site.packages.map((p) => {
+              {shownPackages.map((p) => {
                 const discounted = p.originalPrice != null && p.originalPrice > p.priceAmount;
                 return (
                   <a
