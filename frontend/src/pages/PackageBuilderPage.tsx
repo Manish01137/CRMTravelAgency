@@ -949,9 +949,8 @@ export function PackageBuilderPage() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
-  // Templates are an option you open while filling details (via the header
-  // button or the Basics-step prompt) — not a popup forced at the start.
-  const [templateOpen, setTemplateOpen] = useState(false);
+  // Template chosen from the Basics-step dropdown (optional).
+  const [templateId, setTemplateId] = useState('');
 
   const pkgQuery = useQuery({
     queryKey: ['package', id],
@@ -983,7 +982,6 @@ export function PackageBuilderPage() {
       priceCurrency: cur.priceCurrency,
       bannerImageUrl: cur.bannerImageUrl,
     });
-    setTemplateOpen(false);
     setStep(0);
     toast.success(`${tpl.name} template applied — customise the details`);
   };
@@ -1048,9 +1046,6 @@ export function PackageBuilderPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => setTemplateOpen(true)}>
-              <LayoutTemplate /> <span className="hidden sm:inline">Templates</span>
-            </Button>
             {isEdit && (
               <Button
                 type="button"
@@ -1088,24 +1083,40 @@ export function PackageBuilderPage() {
         ))}
       </div>
 
-      {/* Optional: start from a premium template (Basics step, new packages) */}
-      {step === 0 && !isEdit && (
-        <button
-          type="button"
-          onClick={() => setTemplateOpen(true)}
-          className="mb-4 flex w-full items-center gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/[0.04] p-3.5 text-left transition-colors hover:bg-primary/[0.07]"
-        >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <LayoutTemplate className="size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-foreground">Start from a premium template</span>
-            <span className="block text-xs text-muted-foreground">
-              Adventure, Beach, Pilgrimage, Honeymoon and more — pre-fills the structure. Optional.
+      {/* Optional: start from a premium template — a simple dropdown on Basics */}
+      {step === 0 && (
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-border bg-card p-3.5 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <LayoutTemplate className="size-4" />
             </span>
-          </span>
-          <span className="shrink-0 text-sm font-semibold text-primary">Browse →</span>
-        </button>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Start from a template</p>
+              <p className="text-xs text-muted-foreground">Pre-fills the structure &amp; look. Optional.</p>
+            </div>
+          </div>
+          <div className="sm:ml-auto sm:w-64">
+            <Select
+              value={templateId}
+              onValueChange={(id) => {
+                setTemplateId(id);
+                const tpl = PACKAGE_TEMPLATES.find((t) => t.id === id);
+                if (tpl) applyTemplate(tpl);
+              }}
+            >
+              <SelectTrigger aria-label="Choose a template">
+                <SelectValue placeholder="Choose a template…" />
+              </SelectTrigger>
+              <SelectContent>
+                {PACKAGE_TEMPLATES.map((tpl) => (
+                  <SelectItem key={tpl.id} value={tpl.id}>
+                    {tpl.emoji} {tpl.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       )}
 
       {/* AI drafting banner (Basics step) */}
@@ -1140,58 +1151,6 @@ export function PackageBuilderPage() {
       </div>
 
       <AiGenerateDialog form={form} open={aiOpen} onOpenChange={setAiOpen} />
-      <TemplatePickerDialog open={templateOpen} onOpenChange={setTemplateOpen} onPick={applyTemplate} />
     </form>
-  );
-}
-
-/** Gallery of premium starting templates. */
-function TemplatePickerDialog({
-  open,
-  onOpenChange,
-  onPick,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onPick: (tpl: PackageTemplate) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Choose a premium template</DialogTitle>
-          <DialogDescription>
-            Pick a style to start with a ready-made structure — day plan, inclusions, policies and a matching public look.
-            You can edit everything after.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PACKAGE_TEMPLATES.map((tpl) => (
-            <button
-              key={tpl.id}
-              type="button"
-              onClick={() => onPick(tpl)}
-              className="group overflow-hidden rounded-2xl border border-border bg-card text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-soft"
-            >
-              <div className={cn('flex h-20 items-center justify-center bg-gradient-to-br text-3xl', tpl.gradient)}>
-                {tpl.emoji}
-              </div>
-              <div className="p-3">
-                <p className="font-display text-sm font-bold text-foreground">{tpl.name}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{tpl.tagline}</p>
-                <span className="mt-2 inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {tpl.seed.viewType} look
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Start from blank
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
