@@ -11,6 +11,7 @@ import {
   FileText,
   GripVertical,
   HelpCircle,
+  LayoutTemplate,
   ListChecks,
   MapPin,
   Package as PackageIcon,
@@ -50,10 +51,11 @@ import {
 } from '@/components/ui/dialog';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
+import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates';
 
 /* ------------------------------- form shape -------------------------------- */
 
-interface Values {
+export interface Values {
   name: string;
   code: string;
   viewType: 'CLASSIC' | 'MODERN' | 'MINIMAL';
@@ -106,7 +108,7 @@ const STEPS = [
   { key: 'review', label: 'Review', Icon: Star },
 ] as const;
 
-function toValues(pkg: TravelPackage | null): Values {
+export function toValues(pkg: TravelPackage | null): Values {
   return {
     name: pkg?.name ?? '',
     code: pkg?.code ?? '',
@@ -947,6 +949,8 @@ export function PackageBuilderPage() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
+  // New packages open on the template gallery so building starts premium & fast.
+  const [templateOpen, setTemplateOpen] = useState(!id);
 
   const pkgQuery = useQuery({
     queryKey: ['package', id],
@@ -961,6 +965,27 @@ export function PackageBuilderPage() {
 
   const form = useForm<Values>({ defaultValues: toValues(null) });
   const { reset, handleSubmit } = form;
+
+  /** Seed the builder from a premium template, keeping anything already typed. */
+  const applyTemplate = (tpl: PackageTemplate) => {
+    const cur = form.getValues();
+    reset({
+      ...toValues(null),
+      ...tpl.seed,
+      // preserve the identity fields the agent may have already entered
+      name: cur.name,
+      code: cur.code,
+      destination: cur.destination,
+      bookingTitle: cur.bookingTitle,
+      priceAmount: cur.priceAmount,
+      originalPrice: cur.originalPrice,
+      priceCurrency: cur.priceCurrency,
+      bannerImageUrl: cur.bannerImageUrl,
+    });
+    setTemplateOpen(false);
+    setStep(0);
+    toast.success(`${tpl.name} template applied — customise the details`);
+  };
 
   // Populate once the package loads (edit mode).
   const [hydrated, setHydrated] = useState(false);
@@ -1022,6 +1047,9 @@ export function PackageBuilderPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => setTemplateOpen(true)}>
+              <LayoutTemplate /> <span className="hidden sm:inline">Templates</span>
+            </Button>
             {isEdit && (
               <Button
                 type="button"
@@ -1091,6 +1119,58 @@ export function PackageBuilderPage() {
       </div>
 
       <AiGenerateDialog form={form} open={aiOpen} onOpenChange={setAiOpen} />
+      <TemplatePickerDialog open={templateOpen} onOpenChange={setTemplateOpen} onPick={applyTemplate} />
     </form>
+  );
+}
+
+/** Gallery of premium starting templates. */
+function TemplatePickerDialog({
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPick: (tpl: PackageTemplate) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Choose a premium template</DialogTitle>
+          <DialogDescription>
+            Pick a style to start with a ready-made structure — day plan, inclusions, policies and a matching public look.
+            You can edit everything after.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {PACKAGE_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              onClick={() => onPick(tpl)}
+              className="group overflow-hidden rounded-2xl border border-border bg-card text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-soft"
+            >
+              <div className={cn('flex h-20 items-center justify-center bg-gradient-to-br text-3xl', tpl.gradient)}>
+                {tpl.emoji}
+              </div>
+              <div className="p-3">
+                <p className="font-display text-sm font-bold text-foreground">{tpl.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{tpl.tagline}</p>
+                <span className="mt-2 inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {tpl.seed.viewType} look
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Start from blank
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
