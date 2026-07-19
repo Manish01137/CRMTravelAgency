@@ -949,8 +949,9 @@ export function PackageBuilderPage() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
-  // New packages open on the template gallery so building starts premium & fast.
-  const [templateOpen, setTemplateOpen] = useState(!id);
+  // Templates are an option you open while filling details (via the header
+  // button or the Basics-step prompt) — not a popup forced at the start.
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   const pkgQuery = useQuery({
     queryKey: ['package', id],
@@ -1086,6 +1087,26 @@ export function PackageBuilderPage() {
           </button>
         ))}
       </div>
+
+      {/* Optional: start from a premium template (Basics step, new packages) */}
+      {step === 0 && !isEdit && (
+        <button
+          type="button"
+          onClick={() => setTemplateOpen(true)}
+          className="mb-4 flex w-full items-center gap-3 rounded-xl border border-dashed border-primary/40 bg-primary/[0.04] p-3.5 text-left transition-colors hover:bg-primary/[0.07]"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <LayoutTemplate className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-foreground">Start from a premium template</span>
+            <span className="block text-xs text-muted-foreground">
+              Adventure, Beach, Pilgrimage, Honeymoon and more — pre-fills the structure. Optional.
+            </span>
+          </span>
+          <span className="shrink-0 text-sm font-semibold text-primary">Browse →</span>
+        </button>
+      )}
 
       {/* AI drafting banner (Basics step) */}
       {step === 0 && <AiBanner enabled={!!aiStatusQuery.data?.enabled} onOpen={() => setAiOpen(true)} />}
