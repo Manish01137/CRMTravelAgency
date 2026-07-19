@@ -32,7 +32,23 @@ const categoriesSchema = z.array(z.string().trim().min(1).max(60)).max(20);
 const highlightsSchema = z.array(z.string().trim().min(1).max(200)).max(30);
 const gallerySchema = z.array(z.string().url().max(2000)).max(30);
 
-const VIEW_TYPES = ['CLASSIC', 'MODERN', 'MINIMAL'] as const;
+// Public page design themes. The first three are the originals; the rest are
+// the premium per-template identities (each has its own palette/font/layout).
+const VIEW_TYPES = [
+  'CLASSIC',
+  'MODERN',
+  'MINIMAL',
+  'ADVENTURE',
+  'BEACH',
+  'PILGRIMAGE',
+  'ROMANCE',
+  'WILDLIFE',
+  'WEEKEND',
+  'LUXURY',
+  'BACKPACK',
+  'FAMILY',
+  'HILLS',
+] as const;
 
 // Shared shape used by create + update (create makes core fields required).
 const builderFields = {

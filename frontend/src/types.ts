@@ -156,7 +156,20 @@ export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type BillCategory = 'HOTEL' | 'FLIGHT' | 'TRANSPORT' | 'ACTIVITY' | 'VISA' | 'FOOD' | 'OTHER';
 export type BillStatus = 'UNPAID' | 'PAID';
 
-export type PackageViewType = 'CLASSIC' | 'MODERN' | 'MINIMAL';
+export type PackageViewType =
+  | 'CLASSIC'
+  | 'MODERN'
+  | 'MINIMAL'
+  | 'ADVENTURE'
+  | 'BEACH'
+  | 'PILGRIMAGE'
+  | 'ROMANCE'
+  | 'WILDLIFE'
+  | 'WEEKEND'
+  | 'LUXURY'
+  | 'BACKPACK'
+  | 'FAMILY'
+  | 'HILLS';
 
 export interface PricingOption {
   label: string;

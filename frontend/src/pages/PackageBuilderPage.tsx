@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Hotel, SightseeingActivity, TravelPackage } from '@/types';
+import type { Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -58,7 +58,7 @@ import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates'
 export interface Values {
   name: string;
   code: string;
-  viewType: 'CLASSIC' | 'MODERN' | 'MINIMAL';
+  viewType: PackageViewType;
   categories: { value: string }[];
   slug: string;
   destination: string;
@@ -97,6 +97,23 @@ export interface Values {
   galleryImages: { value: string }[];
   isActive: boolean;
 }
+
+/** Public page design themes — each renders a distinct look on /p/:id. */
+const THEME_OPTIONS: { value: PackageViewType; label: string }[] = [
+  { value: 'CLASSIC', label: 'Classic — bright & friendly' },
+  { value: 'MODERN', label: 'Modern — dark editorial' },
+  { value: 'MINIMAL', label: 'Minimal — airy white' },
+  { value: 'ADVENTURE', label: '🏔️ Adventure — rugged blaze' },
+  { value: 'BEACH', label: '🏖️ Beach — sun & surf' },
+  { value: 'PILGRIMAGE', label: '🛕 Pilgrimage — saffron heritage' },
+  { value: 'ROMANCE', label: '💞 Romance — blush elegance' },
+  { value: 'WILDLIFE', label: '🐯 Wildlife — deep jungle' },
+  { value: 'WEEKEND', label: '🚗 Weekend — vibrant pop' },
+  { value: 'LUXURY', label: '✨ Luxury — ivory & gold' },
+  { value: 'BACKPACK', label: '🎒 Backpack — indie journal' },
+  { value: 'FAMILY', label: '👨‍👩‍👧‍👦 Family — cheerful sky' },
+  { value: 'HILLS', label: '⛰️ Hills — misty pine' },
+];
 
 const STEPS = [
   { key: 'basics', label: 'Basics', Icon: PackageIcon },
@@ -291,9 +308,11 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CLASSIC">Classic</SelectItem>
-                  <SelectItem value="MODERN">Modern</SelectItem>
-                  <SelectItem value="MINIMAL">Minimal</SelectItem>
+                  {THEME_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             )}

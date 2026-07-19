@@ -66,7 +66,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Mountains, treks & adrenaline',
     gradient: 'from-orange-500 to-red-600',
     seed: {
-      viewType: 'MODERN',
+      viewType: 'ADVENTURE',
       categories: [{ value: 'Adventure Trips' }],
       nights: '4',
       days: '5',
@@ -97,7 +97,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Sun, sand & island vibes',
     gradient: 'from-sky-400 to-cyan-500',
     seed: {
-      viewType: 'CLASSIC',
+      viewType: 'BEACH',
       categories: [{ value: 'Weekend Getaways' }],
       nights: '3',
       days: '4',
@@ -124,7 +124,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Temples, faith & serenity',
     gradient: 'from-amber-500 to-orange-600',
     seed: {
-      viewType: 'CLASSIC',
+      viewType: 'PILGRIMAGE',
       categories: [{ value: 'Pilgrimage' }],
       nights: '5',
       days: '6',
@@ -153,7 +153,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Private, cosy & unforgettable',
     gradient: 'from-pink-500 to-rose-600',
     seed: {
-      viewType: 'MINIMAL',
+      viewType: 'ROMANCE',
       categories: [{ value: 'Premium Experiences' }],
       nights: '4',
       days: '5',
@@ -181,7 +181,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Jungles, safaris & the wild',
     gradient: 'from-emerald-600 to-green-700',
     seed: {
-      viewType: 'MODERN',
+      viewType: 'WILDLIFE',
       categories: [{ value: 'Nature & Wildlife' }],
       nights: '2',
       days: '3',
@@ -207,7 +207,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Quick 2–3 day escapes',
     gradient: 'from-violet-500 to-purple-600',
     seed: {
-      viewType: 'CLASSIC',
+      viewType: 'WEEKEND',
       categories: [{ value: 'Weekend Getaways' }],
       nights: '2',
       days: '3',
@@ -233,7 +233,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: '5-star stays & fine experiences',
     gradient: 'from-yellow-500 to-amber-700',
     seed: {
-      viewType: 'MINIMAL',
+      viewType: 'LUXURY',
       categories: [{ value: 'Premium Experiences' }],
       nights: '4',
       days: '5',
@@ -261,7 +261,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Budget-friendly & offbeat',
     gradient: 'from-teal-500 to-emerald-600',
     seed: {
-      viewType: 'MODERN',
+      viewType: 'BACKPACK',
       categories: [{ value: 'Adventure Trips' }],
       nights: '5',
       days: '6',
@@ -290,7 +290,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Comfortable fun for all ages',
     gradient: 'from-blue-500 to-indigo-600',
     seed: {
-      viewType: 'CLASSIC',
+      viewType: 'FAMILY',
       categories: [{ value: 'Weekend Getaways' }],
       nights: '4',
       days: '5',
@@ -318,7 +318,7 @@ export const PACKAGE_TEMPLATES: PackageTemplate[] = [
     tagline: 'Cool weather & scenic valleys',
     gradient: 'from-lime-500 to-green-600',
     seed: {
-      viewType: 'CLASSIC',
+      viewType: 'HILLS',
       categories: [{ value: 'Nature & Wildlife' }],
       nights: '3',
       days: '4',
