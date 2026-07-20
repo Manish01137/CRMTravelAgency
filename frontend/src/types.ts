@@ -81,6 +81,18 @@ export interface SiteTeamMember {
   bio: string | null;
 }
 
+export interface SitePackage {
+  id: string;
+  name: string;
+  destination: string;
+  nights: number;
+  days: number;
+  priceAmount: number;
+  priceCurrency: string;
+  originalPrice: number | null;
+  bannerImageUrl: string | null;
+}
+
 export interface SitePayload {
   organization: {
     name: string;
@@ -89,17 +101,15 @@ export interface SitePayload {
     brandPrimaryColor: string;
     brandSecondaryColor: string;
     bio: string | null;
-    hostLinks: HostLink[];
     bannerImageUrl: string | null;
     aboutText: string | null;
     contactPhone: string | null;
     contactEmail: string | null;
     address: string | null;
+    instagramUrl: string | null;
+    whatsappNumber: string | null;
   };
-  gallery: string[];
-  packages: Omit<LinktreePackage, 'departures'>[];
-  departures: SiteDeparture[];
-  team: SiteTeamMember[];
+  packages: SitePackage[];
   reviews: Omit<HostReview, 'organizationId' | 'sortOrder' | 'createdAt'>[];
 }
 

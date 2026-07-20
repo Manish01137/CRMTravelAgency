@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Check, ChevronDown, ChevronUp, Copy, ExternalLink, Globe2, Plus, Star, Trash2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Globe2, Plus, Star, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { HostReview, Organization, User } from '@/types';
+import type { HostReview, Organization } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
-import { Switch } from '@/components/ui/switch';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { copyToClipboard } from '@/lib/share';
 
@@ -68,7 +67,7 @@ export function HostSiteAdminPage() {
 
   return (
     <div>
-      <PageHeader title="Host Page" description="Your public mini-website — banner, about, packages, departures, gallery, team, reviews & contact.">
+      <PageHeader title="Host Page" description="Your public mini-website — hero banner, bio, all your packages, reviews and contact.">
         <Button asChild>
           <a href={siteUrl} target="_blank" rel="noreferrer">
             <ExternalLink /> Open website
@@ -92,7 +91,7 @@ export function HostSiteAdminPage() {
           </div>
         </div>
         <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Globe2 className="size-3.5" /> Featured packages & departures fill in automatically from packages with “Show on Host Page” on. Logo, colours and Instagram come from Organization settings.
+          <Globe2 className="size-3.5" /> Every package your org has appears automatically. Logo, colours, bio and Instagram come from Organization settings.
         </p>
       </Card>
 
@@ -129,172 +128,7 @@ export function HostSiteAdminPage() {
         </div>
       </form>
 
-      <GalleryManager />
-      <TeamManager />
       <ReviewsManager />
-    </div>
-  );
-}
-
-/* ------------------------------- Gallery ---------------------------------- */
-function GalleryManager() {
-  const { organization, refresh } = useAuth();
-  const [images, setImages] = useState<string[]>(organization?.hostGallery ?? []);
-  const [dirty, setDirty] = useState(false);
-
-  const save = useMutation({
-    mutationFn: (next: string[]) => api.patch<Organization>('/organization', { hostGallery: next }),
-    onSuccess: async () => {
-      await refresh?.();
-      setDirty(false);
-      toast.success('Gallery saved');
-    },
-    onError: () => toast.error('Could not save the gallery'),
-  });
-
-  const update = (next: string[]) => {
-    setImages(next);
-    setDirty(true);
-  };
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= images.length) return;
-    const next = [...images];
-    [next[i], next[j]] = [next[j], next[i]];
-    update(next);
-  };
-
-  return (
-    <Card className="mt-6 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="font-display text-base font-semibold text-foreground">Gallery</h2>
-        {dirty && (
-          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate(images)}>
-            {save.isPending && <Spinner className="size-4" />} Save gallery
-          </Button>
-        )}
-      </div>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {images.map((url, i) => (
-          <div key={`${url}-${i}`} className="group relative">
-            <img src={url} alt="" className="aspect-square w-full rounded-lg object-cover" />
-            <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 rounded-b-lg bg-black/50 p-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <button type="button" aria-label="Move left" onClick={() => move(i, -1)} className="text-white disabled:opacity-30" disabled={i === 0}>
-                <ChevronUp className="size-4 -rotate-90" />
-              </button>
-              <button type="button" aria-label="Move right" onClick={() => move(i, 1)} className="text-white disabled:opacity-30" disabled={i === images.length - 1}>
-                <ChevronDown className="size-4 -rotate-90" />
-              </button>
-              <button type="button" aria-label="Remove" onClick={() => update(images.filter((_, k) => k !== i))} className="text-white hover:text-red-300">
-                <X className="size-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-        {images.length < 40 && (
-          <ImageUpload tile value={null} onChange={(url) => url && update([...images, url])} />
-        )}
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">Upload photos, hover a tile to reorder or remove. Shown in the Gallery section.</p>
-    </Card>
-  );
-}
-
-/* --------------------------------- Team ----------------------------------- */
-function TeamManager() {
-  const queryClient = useQueryClient();
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
-  const users = (usersQuery.data ?? []).filter((u) => u.status === 'ACTIVE');
-  const [editing, setEditing] = useState<User | null>(null);
-
-  const toggle = useMutation({
-    mutationFn: (u: User) => api.patch<User>(`/users/${u.id}`, { featureOnHostpage: !u.featureOnHostpage }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
-    onError: () => toast.error('Could not update this member'),
-  });
-
-  return (
-    <Card className="mt-6 p-5">
-      <h2 className="mb-1 font-display text-base font-semibold text-foreground">Team</h2>
-      <p className="mb-4 text-xs text-muted-foreground">Toggle a member on to feature them on the Host Page, then add their public photo, title and bio.</p>
-      <div className="divide-y divide-border">
-        {users.map((u) => (
-          <div key={u.id} className="flex flex-wrap items-center gap-3 py-3">
-            {u.publicPhotoUrl ? (
-              <img src={u.publicPhotoUrl} alt="" className="size-10 rounded-full object-cover" />
-            ) : (
-              <span className="flex size-10 items-center justify-center rounded-full bg-muted text-sm font-bold text-muted-foreground">
-                {u.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium text-foreground">{u.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{u.publicTitle || u.email}</p>
-            </div>
-            {u.featureOnHostpage && (
-              <Button variant="outline" size="sm" onClick={() => setEditing(u)}>
-                Public profile
-              </Button>
-            )}
-            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              Feature
-              <Switch checked={u.featureOnHostpage} onCheckedChange={() => toggle.mutate(u)} aria-label="Feature on Host Page" />
-            </label>
-          </div>
-        ))}
-        {users.length === 0 && <p className="py-3 text-sm text-muted-foreground">No active team members.</p>}
-      </div>
-      {editing && <TeamMemberDialog user={editing} onClose={() => setEditing(null)} />}
-    </Card>
-  );
-}
-
-function TeamMemberDialog({ user, onClose }: { user: User; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const [photoUrl, setPhotoUrl] = useState<string | null>(user.publicPhotoUrl ?? null);
-  const { register, handleSubmit } = useForm<{ publicTitle: string; publicBio: string }>({
-    defaultValues: { publicTitle: user.publicTitle ?? '', publicBio: user.publicBio ?? '' },
-  });
-  const save = useMutation({
-    mutationFn: (v: { publicTitle: string; publicBio: string }) =>
-      api.patch<User>(`/users/${user.id}`, {
-        publicPhotoUrl: photoUrl,
-        publicTitle: v.publicTitle.trim() || null,
-        publicBio: v.publicBio.trim() || null,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Public profile saved');
-      onClose();
-    },
-    onError: () => toast.error('Could not save'),
-  });
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="mb-4 font-display text-base font-semibold text-foreground">Public profile — {user.name}</h3>
-        <form onSubmit={handleSubmit((v) => save.mutate(v))} className="space-y-4">
-          <Field label="Photo">
-            <div className="max-w-[10rem]">
-              <ImageUpload tile value={photoUrl} onChange={setPhotoUrl} />
-            </div>
-          </Field>
-          <Field label="Title" htmlFor="tmTitle">
-            <Input id="tmTitle" placeholder="Founder & Trip Leader" {...register('publicTitle')} />
-          </Field>
-          <Field label="Short bio" htmlFor="tmBio">
-            <Textarea id="tmBio" rows={3} maxLength={500} {...register('publicBio')} />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending && <Spinner className="size-4" />} Save
-            </Button>
-          </div>
-        </form>
-      </Card>
     </div>
   );
 }

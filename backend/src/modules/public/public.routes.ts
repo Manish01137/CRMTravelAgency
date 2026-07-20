@@ -243,7 +243,10 @@ router.get(
 
 /**
  * Public Host Page mini-website payload: /public/site/:slug
- * Branding + About + Contact + featured packages + upcoming departures.
+ * A premium single-page marketing site: agency brand + ALL its packages +
+ * reviews. Reuses the org's existing profile fields (logo, cover, bio, phone,
+ * email, Instagram from links). NOTE: unlike LinkTree, there is NO per-package
+ * toggle — every package for this org is returned.
  */
 router.get(
   '/site/:slug',
@@ -265,15 +268,14 @@ router.get(
         contactPhone: true,
         contactEmail: true,
         address: true,
-        hostGallery: true,
       },
     });
     if (!org) throw NotFound('This page does not exist');
 
-    const { packages, departures, team, reviews } = await withTenant(org.id, async (tx) => {
-      // Featured packages = show_on_hostpage (separate from show_on_linktree).
+    const { packages, reviews } = await withTenant(org.id, async (tx) => {
+      // Every active package for this org — no visibility toggle for Host Page.
       const packages = await tx.package.findMany({
-        where: { isActive: true, showOnHostpage: true },
+        where: { isActive: true },
         select: {
           id: true,
           name: true,
@@ -283,72 +285,27 @@ router.get(
           priceAmount: true,
           priceCurrency: true,
           originalPrice: true,
-          description: true,
           bannerImageUrl: true,
-          categories: true,
         },
         orderBy: { createdAt: 'desc' },
-        take: 12,
+        take: 60,
       });
-
-      // Upcoming departures: future LIVE departures for show_on_hostpage packages.
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const rawDepartures = await tx.batch.findMany({
-        where: { status: 'LIVE', departureDate: { gte: today }, package: { showOnHostpage: true } },
-        select: {
-          id: true,
-          name: true,
-          departureDate: true,
-          capacity: true,
-          pricePerPerson: true,
-          pickupCity: true,
-          package: { select: { id: true, name: true, destination: true, days: true, nights: true, priceAmount: true, priceCurrency: true, bannerImageUrl: true } },
-        },
-        orderBy: { departureDate: 'asc' },
-        take: 8,
-      });
-      const departures = rawDepartures.map((b) => ({
-        id: b.id,
-        name: b.name,
-        departureDate: b.departureDate,
-        capacity: b.capacity,
-        pricePerPerson: b.pricePerPerson ?? b.package.priceAmount,
-        priceCurrency: b.package.priceCurrency,
-        pickupCity: b.pickupCity,
-        packageId: b.package.id,
-        packageName: b.package.name,
-        destination: b.package.destination,
-        days: b.package.days,
-        nights: b.package.nights,
-        coverImage: b.package.bannerImageUrl,
-      }));
-
-      // Team: only members the agency chose to feature; only public fields.
-      const teamRows = await tx.user.findMany({
-        where: { featureOnHostpage: true, status: 'ACTIVE' },
-        select: { id: true, name: true, publicPhotoUrl: true, publicTitle: true, publicBio: true },
-        orderBy: { createdAt: 'asc' },
-      });
-      const team = teamRows.map((u) => ({
-        id: u.id,
-        name: u.name,
-        photoUrl: u.publicPhotoUrl,
-        title: u.publicTitle,
-        bio: u.publicBio,
-      }));
 
       const reviews = await tx.hostReview.findMany({
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         select: { id: true, reviewerName: true, photoUrl: true, quote: true, rating: true },
       });
 
-      return { packages, departures, team, reviews };
+      return { packages, reviews };
     });
 
-    const { id: _id, hostGallery, ...publicOrg } = org;
-    const gallery = Array.isArray(hostGallery) ? (hostGallery as string[]) : [];
-    res.json({ organization: publicOrg, gallery, packages, departures, team, reviews });
+    // Instagram + WhatsApp from the org's existing profile fields.
+    const links = (org.hostLinks as Array<{ label: string; url: string }> | null) ?? [];
+    const instagramUrl = links.find((l) => /instagram\.com/i.test(l.url))?.url ?? null;
+    const whatsappNumber = org.contactPhone ? org.contactPhone.replace(/\D/g, '') || null : null;
+
+    const { id: _id, hostLinks: _hl, ...publicOrg } = org;
+    res.json({ organization: { ...publicOrg, instagramUrl, whatsappNumber }, packages, reviews });
   }),
 );
 
