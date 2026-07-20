@@ -8,7 +8,7 @@ import { withTenant } from '../../lib/prisma';
 import { NotFound } from '../../lib/errors';
 
 /**
- * LinkTree categories (per-org). Categories order the tabs on the public
+ * LinkTree-specific categories (per-org). They order the tabs on the public
  * LinkTree page; packages join them through package_categories. Deleting a
  * category never deletes packages — join rows cascade away, packages remain.
  */
@@ -31,7 +31,7 @@ router.get(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
     const items = await withTenant(req.auth!.organizationId, async (tx) => {
-      const cats = await tx.category.findMany({
+      const cats = await tx.linktreeCategory.findMany({
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         include: { _count: { select: { packages: true } } },
       });
@@ -46,8 +46,8 @@ router.post(
   validate({ body: createSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const created = await withTenant(req.auth!.organizationId, async (tx) => {
-      const max = await tx.category.aggregate({ _max: { sortOrder: true } });
-      return tx.category.create({
+      const max = await tx.linktreeCategory.aggregate({ _max: { sortOrder: true } });
+      return tx.linktreeCategory.create({
         data: {
           organizationId: req.auth!.organizationId,
           name: req.body.name,
@@ -67,7 +67,7 @@ router.put(
     const ids: string[] = req.body.ids;
     await withTenant(req.auth!.organizationId, async (tx) => {
       for (let i = 0; i < ids.length; i++) {
-        await tx.category.updateMany({ where: { id: ids[i] }, data: { sortOrder: i } });
+        await tx.linktreeCategory.updateMany({ where: { id: ids[i] }, data: { sortOrder: i } });
       }
     });
     res.json({ ok: true });
@@ -79,9 +79,9 @@ router.patch(
   validate({ params: idParam, body: updateSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const updated = await withTenant(req.auth!.organizationId, async (tx) => {
-      const existing = await tx.category.findUnique({ where: { id: req.params.id } });
+      const existing = await tx.linktreeCategory.findUnique({ where: { id: req.params.id } });
       if (!existing) throw NotFound('Category not found');
-      return tx.category.update({ where: { id: req.params.id }, data: req.body });
+      return tx.linktreeCategory.update({ where: { id: req.params.id }, data: req.body });
     });
     res.json(updated);
   }),
@@ -93,7 +93,7 @@ router.delete(
   validate({ params: idParam }),
   asyncHandler(async (req: Request, res: Response) => {
     await withTenant(req.auth!.organizationId, async (tx) => {
-      const result = await tx.category.deleteMany({ where: { id: req.params.id } });
+      const result = await tx.linktreeCategory.deleteMany({ where: { id: req.params.id } });
       if (result.count === 0) throw NotFound('Category not found');
     });
     res.json({ ok: true });

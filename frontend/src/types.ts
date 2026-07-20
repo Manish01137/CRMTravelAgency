@@ -228,7 +228,7 @@ export interface TravelPackage {
   highlights: string[];
   galleryImages: string[];
   showOnLinktree: boolean;
-  categoryIds: string[];
+  linktreeCategoryIds: string[];
 
   createdAt: string;
   updatedAt: string;
@@ -395,7 +395,7 @@ export interface LeadActivity {
 
 // --- LinkTree module ---------------------------------------------------------
 
-export interface Category {
+export interface LinktreeCategory {
   id: string;
   organizationId: string;
   name: string;
@@ -433,7 +433,7 @@ export interface LinktreeModulePackage {
   priceCurrency: string;
   originalPrice: number | null;
   bannerImageUrl: string | null;
-  categoryIds: string[];
+  linktreeCategoryIds: string[];
   departures: string[];
 }
 

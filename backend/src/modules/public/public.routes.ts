@@ -195,7 +195,7 @@ router.get(
           priceCurrency: true,
           originalPrice: true,
           bannerImageUrl: true,
-          packageCategories: { select: { categoryId: true } },
+          linktreeCategoryLinks: { select: { linktreeCategoryId: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: 100,
@@ -219,18 +219,18 @@ router.get(
 
       // Tabs: only categories that contain at least one visible package, in the
       // agency's sort order. Never hardcoded — recomputed on every load.
-      const visibleCategoryIds = new Set(packages.flatMap((p) => p.packageCategories.map((pc) => pc.categoryId)));
+      const visibleCategoryIds = new Set(packages.flatMap((p) => p.linktreeCategoryLinks.map((pc) => pc.linktreeCategoryId)));
       const categories = (
-        await tx.category.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+        await tx.linktreeCategory.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
       )
         .filter((c) => visibleCategoryIds.has(c.id))
         .map((c) => ({ id: c.id, name: c.name }));
 
       return {
         categories,
-        packages: packages.map(({ packageCategories, ...p }) => ({
+        packages: packages.map(({ linktreeCategoryLinks, ...p }) => ({
           ...p,
-          categoryIds: packageCategories.map((pc) => pc.categoryId),
+          linktreeCategoryIds: linktreeCategoryLinks.map((pc) => pc.linktreeCategoryId),
           departures: (departuresByPackage[p.id] ?? []).slice(0, 4),
         })),
       };

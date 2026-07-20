@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Check, GripVertical, ListTree, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Category, TravelPackage } from '@/types';
+import type { LinktreeCategory, TravelPackage } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,66 +26,66 @@ import {
  * and assign packages to a category via checkboxes. The same PackageCategory
  * rows are also editable from each package's edit screen — both stay in sync.
  */
-export function CategoriesPage() {
+export function LinktreeCategoriesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
-  const [deleting, setDeleting] = useState<Category | null>(null);
-  const [assigning, setAssigning] = useState<Category | null>(null);
+  const [deleting, setDeleting] = useState<LinktreeCategory | null>(null);
+  const [assigning, setAssigning] = useState<LinktreeCategory | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
 
-  const categoriesQuery = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/categories') });
+  const categoriesQuery = useQuery({ queryKey: ['linktree-categories'], queryFn: () => api.get<LinktreeCategory[]>('/linktree-categories') });
   const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
 
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
   const packages = packagesQuery.data ?? [];
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['categories'] });
+    queryClient.invalidateQueries({ queryKey: ['linktree-categories'] });
     queryClient.invalidateQueries({ queryKey: ['packages'] });
   };
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => api.post<Category>('/categories', { name }),
+    mutationFn: (name: string) => api.post<LinktreeCategory>('/linktree-categories', { name }),
     onSuccess: () => {
       invalidate();
       setNewName('');
-      toast.success('Category created');
+      toast.success('LinktreeCategory created');
     },
     onError: () => toast.error('Could not create the category'),
   });
 
   const renameMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch<Category>(`/categories/${id}`, { name }),
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.patch<LinktreeCategory>(`/linktree-categories/${id}`, { name }),
     onSuccess: () => {
       invalidate();
       setEditingId(null);
-      toast.success('Category renamed');
+      toast.success('LinktreeCategory renamed');
     },
     onError: () => toast.error('Could not rename the category'),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/categories/${id}`),
+    mutationFn: (id: string) => api.delete(`/linktree-categories/${id}`),
     onSuccess: () => {
       invalidate();
       setDeleting(null);
-      toast.success('Category deleted — its packages were kept');
+      toast.success('LinktreeCategory deleted — its packages were kept');
     },
     onError: () => toast.error('Could not delete the category'),
   });
 
   const reorderMutation = useMutation({
-    mutationFn: (ids: string[]) => api.put('/categories/reorder', { ids }),
+    mutationFn: (ids: string[]) => api.put('/linktree-categories/reorder', { ids }),
     onSuccess: invalidate,
     onError: () => toast.error('Could not save the new order'),
   });
 
   const assignMutation = useMutation({
     mutationFn: ({ pkg, categoryIds }: { pkg: TravelPackage; categoryIds: string[] }) =>
-      api.patch<TravelPackage>(`/packages/${pkg.id}`, { categoryIds }),
+      api.patch<TravelPackage>(`/packages/${pkg.id}`, { linktreeCategoryIds: categoryIds }),
     onSuccess: invalidate,
     onError: () => toast.error('Could not update the assignment'),
   });
@@ -111,23 +111,23 @@ export function CategoriesPage() {
     reorderMutation.mutate(ids);
   };
 
-  const togglePackage = (pkg: TravelPackage, category: Category) => {
-    const has = pkg.categoryIds.includes(category.id);
-    const categoryIds = has ? pkg.categoryIds.filter((id) => id !== category.id) : [...pkg.categoryIds, category.id];
+  const togglePackage = (pkg: TravelPackage, category: LinktreeCategory) => {
+    const has = pkg.linktreeCategoryIds.includes(category.id);
+    const categoryIds = has ? pkg.linktreeCategoryIds.filter((id) => id !== category.id) : [...pkg.linktreeCategoryIds, category.id];
     assignMutation.mutate({ pkg, categoryIds });
   };
 
   return (
     <div>
       <button
-        onClick={() => navigate('/packages')}
+        onClick={() => navigate('/linktree')}
         className="mb-4 flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-4" /> Packages
+        <ArrowLeft className="size-4" /> LinkTree
       </button>
 
       <PageHeader
-        title="Manage Categories"
+        title="Manage LinkTree Categories"
         description="LinkTree tabs come from these categories, in this order. Drag to reorder; assign packages from here or from each package's edit screen."
       />
 
@@ -276,7 +276,7 @@ export function CategoriesPage() {
           ) : (
             <div className="space-y-1">
               {packages.map((pkg) => {
-                const checked = assigning ? pkg.categoryIds.includes(assigning.id) : false;
+                const checked = assigning ? pkg.linktreeCategoryIds.includes(assigning.id) : false;
                 return (
                   <label
                     key={pkg.id}

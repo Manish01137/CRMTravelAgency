@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Check, Copy, ExternalLink, Film, Loader2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Film, ListTree, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { LinktreeBackgroundType, LinktreeFont, LinktreeTheme, Organization } from '@/types';
@@ -126,11 +127,18 @@ export function LinktreeSettingsPage() {
         title="LinkTree"
         description="Your public travel package showcase. Packages appear via their Show-on-LinkTree switch; tabs come from Manage Categories."
       >
-        <Button asChild>
-          <a href={publicUrl} target="_blank" rel="noreferrer">
-            <ExternalLink /> Open page
-          </a>
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/linktree/categories">
+              <ListTree /> Manage Categories
+            </Link>
+          </Button>
+          <Button asChild>
+            <a href={publicUrl} target="_blank" rel="noreferrer">
+              <ExternalLink /> Open page
+            </a>
+          </Button>
+        </div>
       </PageHeader>
 
       {/* Public link */}

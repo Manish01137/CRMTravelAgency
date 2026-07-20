@@ -35,7 +35,7 @@ import { HostPage } from '@/pages/HostPage';
 import { SitePage } from '@/pages/SitePage';
 import { LinktreePage } from '@/pages/LinktreePage';
 import { LinktreeSettingsPage } from '@/pages/LinktreeSettingsPage';
-import { CategoriesPage } from '@/pages/CategoriesPage';
+import { LinktreeCategoriesPage } from '@/pages/LinktreeCategoriesPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
@@ -143,7 +143,6 @@ function AppRoutes() {
         <Route path="/bookings/:id/itinerary" element={<ItineraryComposerPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/packages/new" element={<PackageBuilderPage />} />
-        <Route path="/packages/categories" element={<CategoriesPage />} />
         <Route path="/packages/:id/edit" element={<PackageBuilderPage />} />
         <Route path="/hotels" element={<HotelsPage />} />
         <Route path="/sightseeing" element={<SightseeingPage />} />
@@ -155,6 +154,7 @@ function AppRoutes() {
         <Route element={<AdminRoute />}>
           <Route path="/host-page" element={<HostPageAdminPage />} />
           <Route path="/linktree" element={<LinktreeSettingsPage />} />
+          <Route path="/linktree/categories" element={<LinktreeCategoriesPage />} />
           <Route path="/website" element={<HostSiteAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />

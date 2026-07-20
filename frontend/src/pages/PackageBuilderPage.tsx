@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Category as CategoryType, Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
+import type { LinktreeCategory as CategoryType, Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -97,23 +97,23 @@ export interface Values {
   galleryImages: { value: string }[];
   isActive: boolean;
   showOnLinktree: boolean;
-  categoryIds: string[];
+  linktreeCategoryIds: string[];
 }
 
 /** LinkTree category multi-select (join-table based; syncs with Manage Categories). */
 function LinktreeCategoriesField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const categoriesQuery = useQuery({ queryKey: ['categories'], queryFn: () => api.get<CategoryType[]>('/categories') });
+  const categoriesQuery = useQuery({ queryKey: ['linktree-categories'], queryFn: () => api.get<CategoryType[]>('/linktree-categories') });
   const cats = categoriesQuery.data ?? [];
   return (
     <Controller
       control={form.control}
-      name="categoryIds"
+      name="linktreeCategoryIds"
       render={({ field }) => (
         <div className="rounded-xl border border-border bg-surface/60 p-4">
-          <p className="font-semibold text-foreground">LinkTree categories</p>
+          <p className="font-semibold text-foreground">LinkTree Categories</p>
           <p className="text-sm text-muted-foreground">
             Which tabs this package appears under on your LinkTree page.
-            {cats.length === 0 && ' No categories yet — create them under Packages → Manage categories.'}
+            {cats.length === 0 && ' No categories yet — create them under LinkTree → Manage Categories.'}
           </p>
           {cats.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -213,7 +213,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     galleryImages: (pkg?.galleryImages ?? []).map((value) => ({ value })),
     isActive: pkg?.isActive ?? false,
     showOnLinktree: pkg?.showOnLinktree ?? false,
-    categoryIds: pkg?.categoryIds ?? [],
+    linktreeCategoryIds: pkg?.linktreeCategoryIds ?? [],
   };
 }
 
@@ -268,7 +268,7 @@ function toPayload(v: Values): Record<string, unknown> {
     galleryImages: v.galleryImages.map((g) => g.value.trim()).filter((u) => /^https?:\/\//.test(u)),
     isActive: v.isActive,
     showOnLinktree: v.showOnLinktree,
-    categoryIds: v.categoryIds,
+    linktreeCategoryIds: v.linktreeCategoryIds,
   };
 }
 

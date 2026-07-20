@@ -22,26 +22,26 @@ async function resolveSlug(
 }
 
 const categoryIdsInclude = {
-  packageCategories: { select: { categoryId: true } },
+  linktreeCategoryLinks: { select: { linktreeCategoryId: true } },
 } satisfies Prisma.PackageInclude;
 
 type PackageWithJoins = Prisma.PackageGetPayload<{ include: typeof categoryIdsInclude }>;
 
-/** Flatten join rows into a categoryIds array for the API shape. */
-function withCategoryIds({ packageCategories, ...pkg }: PackageWithJoins) {
-  return { ...pkg, categoryIds: packageCategories.map((pc) => pc.categoryId) };
+/** Flatten join rows into a linktreeCategoryIds array for the API shape. */
+function withCategoryIds({ linktreeCategoryLinks, ...pkg }: PackageWithJoins) {
+  return { ...pkg, linktreeCategoryIds: linktreeCategoryLinks.map((pc) => pc.linktreeCategoryId) };
 }
 
 /** Replace a package's LinkTree category assignments (validates ownership via RLS). */
 async function setCategories(tx: TenantTx, organizationId: string, packageId: string, categoryIds: string[]) {
   if (categoryIds.length > 0) {
-    const owned = await tx.category.count({ where: { id: { in: categoryIds } } });
-    if (owned !== new Set(categoryIds).size) throw BadRequest('Category not found in your organization');
+    const owned = await tx.linktreeCategory.count({ where: { id: { in: categoryIds } } });
+    if (owned !== new Set(categoryIds).size) throw BadRequest('LinkTree category not found in your organization');
   }
-  await tx.packageCategory.deleteMany({ where: { packageId } });
+  await tx.packageLinktreeCategory.deleteMany({ where: { packageId } });
   if (categoryIds.length > 0) {
-    await tx.packageCategory.createMany({
-      data: [...new Set(categoryIds)].map((categoryId) => ({ organizationId, packageId, categoryId })),
+    await tx.packageLinktreeCategory.createMany({
+      data: [...new Set(categoryIds)].map((linktreeCategoryId) => ({ organizationId, packageId, linktreeCategoryId })),
       skipDuplicates: true,
     });
   }
@@ -73,7 +73,7 @@ export async function getPackage(organizationId: string, id: string) {
 
 export async function createPackage(organizationId: string, input: CreatePackageInput) {
   return withTenant(organizationId, async (tx) => {
-    const { categoryIds, ...rest } = input;
+    const { linktreeCategoryIds: categoryIds, ...rest } = input;
     const slug = await resolveSlug(tx, input.name, input.slug);
     const created = await tx.package.create({
       data: { ...rest, slug, organizationId } as Prisma.PackageUncheckedCreateInput,
@@ -89,7 +89,7 @@ export async function updatePackage(organizationId: string, id: string, input: U
     const existing = await tx.package.findUnique({ where: { id } });
     if (!existing) throw NotFound('Package not found');
 
-    const { categoryIds, ...rest } = input;
+    const { linktreeCategoryIds: categoryIds, ...rest } = input;
     const data = { ...rest } as Prisma.PackageUncheckedUpdateInput;
     // Only touch slug when the client sent one (or is renaming with no slug set).
     if (input.slug !== undefined) {

@@ -48,7 +48,7 @@ export function LinktreePage() {
     const q = search.trim().toLowerCase();
     return all.filter(
       (p) =>
-        (!activeCategory || p.categoryIds.includes(activeCategory)) &&
+        (!activeCategory || p.linktreeCategoryIds.includes(activeCategory)) &&
         (!q || p.name.toLowerCase().includes(q)),
     );
   }, [payload?.packages, search, activeCategory]);
