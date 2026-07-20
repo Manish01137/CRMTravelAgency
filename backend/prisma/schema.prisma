@@ -133,6 +133,7 @@ model Organization {
   /// LinkTree module theme (logo, bio, contacts, background, fonts) — separate
   /// from Host Page branding by design.
   linktreeTheme       Json     @default("{}") @map("linktree_theme")
+  hostGallery         Json     @default("[]") @map("host_gallery") // Host Page gallery image URLs
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -152,6 +153,7 @@ model Organization {
   batches     Batch[]
   linktreeCategories LinktreeCategory[]
   packageLinktreeCategories PackageLinktreeCategory[]
+  hostReviews HostReview[]
 
   @@map("organizations")
 }
@@ -174,6 +176,25 @@ model Sightseeing {
 
   @@index([organizationId])
   @@map("sightseeing")
+}
+
+/// A customer review shown on the Host Page mini-website. Manually added by the
+/// agency (not linked to bookings).
+model HostReview {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  reviewerName   String   @map("reviewer_name")
+  photoUrl       String?  @map("photo_url")
+  quote          String
+  rating         Int? // 1-5, optional
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, sortOrder])
+  @@map("host_reviews")
 }
 
 /// LinkTree-specific category (per-org). Orders the tabs on the public
@@ -220,6 +241,11 @@ model User {
   role           Role       @default(AGENT)
   status         UserStatus @default(ACTIVE)
   lastLoginAt    DateTime?  @map("last_login_at")
+  // Optional public profile, shown on the Host Page only when featured.
+  featureOnHostpage Boolean @default(false) @map("feature_on_hostpage")
+  publicPhotoUrl String?    @map("public_photo_url")
+  publicTitle    String?    @map("public_title")
+  publicBio      String?    @map("public_bio")
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
@@ -362,7 +388,8 @@ model Package {
   inclusions     String?
   exclusions     String?
   isActive       Boolean @default(true) @map("is_active")
-  showOnLinktree Boolean @default(true) @map("show_on_linktree")
+  showOnLinktree Boolean @default(false) @map("show_on_linktree")
+  showOnHostpage Boolean @default(false) @map("show_on_hostpage")
 
   // --- Premium builder fields (Basics) ---
   code                String? // package code, auto-generated if blank

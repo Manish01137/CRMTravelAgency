@@ -161,10 +161,11 @@ function AppRoutes() {
         </Route>
       </Route>
 
-      {/* Root-level agency slug (domain.com/dodtravels). Registered last among
-          patterns so every app route above wins; only unmatched single-segment
-          paths resolve as a LinkTree slug (unknown slugs show its 404 state). */}
-      <Route path="/:slug" element={<HostPage />} />
+      {/* Root-level agency slug (domain.com/dodtravels) → Host Page mini-website.
+          Registered last among patterns so every app route above wins; only
+          unmatched single-segment paths resolve as a Host Page slug. LinkTree has
+          its own /linktree/:slug route and is unaffected. */}
+      <Route path="/:slug" element={<SitePage />} />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

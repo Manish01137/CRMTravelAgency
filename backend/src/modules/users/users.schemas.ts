@@ -5,10 +5,17 @@ export const inviteUserSchema = z.object({
   role: z.enum(['ADMIN', 'AGENT']).default('AGENT'),
 });
 
+const emptyToNull = (v: unknown) => (v === '' ? null : v);
+
 export const updateUserSchema = z
   .object({
     role: z.enum(['ADMIN', 'AGENT']).optional(),
     status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+    // Host Page public profile (admin-set per member)
+    featureOnHostpage: z.coerce.boolean().optional(),
+    publicPhotoUrl: z.preprocess(emptyToNull, z.string().url().max(2000).nullable()).optional(),
+    publicTitle: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+    publicBio: z.preprocess(emptyToNull, z.string().max(500).nullable()).optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No changes provided' });
 

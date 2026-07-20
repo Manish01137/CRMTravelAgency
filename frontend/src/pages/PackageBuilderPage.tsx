@@ -98,6 +98,7 @@ export interface Values {
   galleryImages: { value: string }[];
   isActive: boolean;
   showOnLinktree: boolean;
+  showOnHostpage: boolean;
   linktreeCategoryIds: string[];
 }
 
@@ -219,6 +220,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     galleryImages: (pkg?.galleryImages ?? []).map((value) => ({ value })),
     isActive: pkg?.isActive ?? false,
     showOnLinktree: pkg?.showOnLinktree ?? false,
+    showOnHostpage: pkg?.showOnHostpage ?? false,
     linktreeCategoryIds: pkg?.linktreeCategoryIds ?? [],
   };
 }
@@ -281,6 +283,7 @@ function toPayload(v: Values): Record<string, unknown> {
     galleryImages: v.galleryImages.map((g) => g.value.trim()).filter((u) => /^https?:\/\//.test(u)),
     isActive: v.isActive,
     showOnLinktree: v.showOnLinktree,
+    showOnHostpage: v.showOnHostpage,
     linktreeCategoryIds: v.linktreeCategoryIds,
   };
 }
@@ -936,6 +939,30 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       />
 
       <LinktreeCategoriesField form={form} />
+
+      <Controller
+        control={form.control}
+        name="showOnHostpage"
+        render={({ field }) => (
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface/60 p-4">
+            <div>
+              <p className="font-semibold text-foreground">Show on Host Page</p>
+              <p className="text-sm text-muted-foreground">
+                ON = this package is featured on your Host Page website (separate from LinkTree).
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={field.value}
+              onClick={() => field.onChange(!field.value)}
+              className={cn('relative h-7 w-12 shrink-0 rounded-full transition-colors', field.value ? 'bg-indigo-500' : 'bg-muted')}
+            >
+              <span className={cn('absolute top-1 size-5 rounded-full bg-white shadow transition-all', field.value ? 'left-6' : 'left-1')} />
+            </button>
+          </div>
+        )}
+      />
     </div>
   );
 }

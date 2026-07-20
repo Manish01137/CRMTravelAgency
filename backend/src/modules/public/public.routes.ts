@@ -265,13 +265,15 @@ router.get(
         contactPhone: true,
         contactEmail: true,
         address: true,
+        hostGallery: true,
       },
     });
     if (!org) throw NotFound('This page does not exist');
 
-    const { packages, departures } = await withTenant(org.id, async (tx) => {
+    const { packages, departures, team, reviews } = await withTenant(org.id, async (tx) => {
+      // Featured packages = show_on_hostpage (separate from show_on_linktree).
       const packages = await tx.package.findMany({
-        where: { isActive: true },
+        where: { isActive: true, showOnHostpage: true },
         select: {
           id: true,
           name: true,
@@ -289,10 +291,11 @@ router.get(
         take: 12,
       });
 
+      // Upcoming departures: future LIVE departures for show_on_hostpage packages.
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const rawDepartures = await tx.batch.findMany({
-        where: { status: 'LIVE', departureDate: { gte: today } },
+        where: { status: 'LIVE', departureDate: { gte: today }, package: { showOnHostpage: true } },
         select: {
           id: true,
           name: true,
@@ -321,11 +324,31 @@ router.get(
         coverImage: b.package.bannerImageUrl,
       }));
 
-      return { packages, departures };
+      // Team: only members the agency chose to feature; only public fields.
+      const teamRows = await tx.user.findMany({
+        where: { featureOnHostpage: true, status: 'ACTIVE' },
+        select: { id: true, name: true, publicPhotoUrl: true, publicTitle: true, publicBio: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const team = teamRows.map((u) => ({
+        id: u.id,
+        name: u.name,
+        photoUrl: u.publicPhotoUrl,
+        title: u.publicTitle,
+        bio: u.publicBio,
+      }));
+
+      const reviews = await tx.hostReview.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true, reviewerName: true, photoUrl: true, quote: true, rating: true },
+      });
+
+      return { packages, departures, team, reviews };
     });
 
-    const { id: _id, ...publicOrg } = org;
-    res.json({ organization: publicOrg, packages, departures });
+    const { id: _id, hostGallery, ...publicOrg } = org;
+    const gallery = Array.isArray(hostGallery) ? (hostGallery as string[]) : [];
+    res.json({ organization: publicOrg, gallery, packages, departures, team, reviews });
   }),
 );
 

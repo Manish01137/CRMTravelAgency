@@ -41,6 +41,8 @@ export const updateOrgSchema = z
     linktreeCoverUrl: z
       .preprocess((v) => (v === '' ? null : v), z.string().url('Enter a valid URL').max(2000).nullable())
       .optional(),
+    // Host Page gallery (image URLs)
+    hostGallery: z.array(z.string().url().max(2000)).max(60).optional(),
     // LinkTree module theme (its own object, independent of Host Page branding)
     linktreeTheme: z
       .object({

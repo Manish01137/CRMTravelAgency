@@ -78,7 +78,8 @@ export async function updateUser(
   targetUserId: string,
   input: UpdateUserInput,
 ): Promise<User> {
-  if (targetUserId === actingUserId) {
+  // You can set your own public Host Page profile, but not your own role/status.
+  if (targetUserId === actingUserId && (input.role !== undefined || input.status !== undefined)) {
     throw BadRequest('You cannot change your own role or status here');
   }
 

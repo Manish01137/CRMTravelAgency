@@ -41,6 +41,7 @@ export interface Organization {
   address: string | null;
   linktreeCoverUrl: string | null;
   linktreeTheme: LinktreeTheme;
+  hostGallery: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -61,6 +62,25 @@ export interface SiteDeparture {
   coverImage: string | null;
 }
 
+export interface HostReview {
+  id: string;
+  organizationId?: string;
+  reviewerName: string;
+  photoUrl: string | null;
+  quote: string;
+  rating: number | null;
+  sortOrder?: number;
+  createdAt?: string;
+}
+
+export interface SiteTeamMember {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  title: string | null;
+  bio: string | null;
+}
+
 export interface SitePayload {
   organization: {
     name: string;
@@ -76,8 +96,11 @@ export interface SitePayload {
     contactEmail: string | null;
     address: string | null;
   };
+  gallery: string[];
   packages: Omit<LinktreePackage, 'departures'>[];
   departures: SiteDeparture[];
+  team: SiteTeamMember[];
+  reviews: Omit<HostReview, 'organizationId' | 'sortOrder' | 'createdAt'>[];
 }
 
 export interface User {
@@ -88,6 +111,10 @@ export interface User {
   role: Role;
   status: UserStatus;
   lastLoginAt: string | null;
+  featureOnHostpage: boolean;
+  publicPhotoUrl: string | null;
+  publicTitle: string | null;
+  publicBio: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -235,6 +262,7 @@ export interface TravelPackage {
   highlights: string[];
   galleryImages: string[];
   showOnLinktree: boolean;
+  showOnHostpage: boolean;
   linktreeCategoryIds: string[];
 
   createdAt: string;

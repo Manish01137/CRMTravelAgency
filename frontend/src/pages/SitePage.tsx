@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
-import { ArrowUpRight, Check, Mail, MapPin, Moon, Phone, Plane, Send, Sun } from 'lucide-react';
+import { ArrowUpRight, Check, Mail, MapPin, Moon, Phone, Plane, Send, Star, Sun } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { SitePayload } from '@/types';
@@ -276,6 +276,78 @@ export function SitePage() {
                     <p className="text-[11px] text-muted-foreground">per person</p>
                   </div>
                 </a>
+              ))}
+            </div>
+          </motion.section>
+        )}
+
+        {/* Gallery */}
+        {site.gallery.length > 0 && (
+          <motion.section {...rise(0.05)} id="gallery" className="mt-16 scroll-mt-20">
+            <h2 className="text-center font-display text-2xl font-bold text-foreground">Gallery</h2>
+            <div className="mx-auto mt-2 h-1 w-16 rounded-full" style={{ backgroundColor: brand }} />
+            <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {site.gallery.map((src, i) => (
+                <img key={i} src={src} alt="" loading="lazy" className="aspect-square w-full rounded-xl object-cover" />
+              ))}
+            </div>
+          </motion.section>
+        )}
+
+        {/* Team */}
+        {site.team.length > 0 && (
+          <motion.section {...rise(0.05)} id="team" className="mt-16 scroll-mt-20">
+            <h2 className="text-center font-display text-2xl font-bold text-foreground">Meet the team</h2>
+            <div className="mx-auto mt-2 h-1 w-16 rounded-full" style={{ backgroundColor: brand }} />
+            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {site.team.map((m) => (
+                <div key={m.id} className="flex flex-col items-center rounded-2xl border border-border bg-card p-6 text-center shadow-card">
+                  {m.photoUrl ? (
+                    <img src={m.photoUrl} alt="" className="size-24 rounded-full object-cover" />
+                  ) : (
+                    <span
+                      className="flex size-24 items-center justify-center rounded-full text-2xl font-bold text-white"
+                      style={{ backgroundColor: brand }}
+                    >
+                      {m.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}
+                    </span>
+                  )}
+                  <p className="mt-4 font-display text-lg font-bold text-foreground">{m.name}</p>
+                  {m.title && <p className="text-sm font-medium" style={{ color: brand }}>{m.title}</p>}
+                  {m.bio && <p className="mt-2 text-sm text-muted-foreground">{m.bio}</p>}
+                </div>
+              ))}
+            </div>
+          </motion.section>
+        )}
+
+        {/* Reviews */}
+        {site.reviews.length > 0 && (
+          <motion.section {...rise(0.05)} id="reviews" className="mt-16 scroll-mt-20">
+            <h2 className="text-center font-display text-2xl font-bold text-foreground">What travellers say</h2>
+            <div className="mx-auto mt-2 h-1 w-16 rounded-full" style={{ backgroundColor: brand }} />
+            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {site.reviews.map((r) => (
+                <div key={r.id} className="rounded-2xl border border-border bg-card p-6 shadow-card">
+                  {r.rating != null && (
+                    <div className="mb-2 flex gap-0.5" aria-label={`${r.rating} out of 5`}>
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star key={i} className={cn('size-4', i < r.rating! ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30')} />
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-[15px] leading-relaxed text-foreground">“{r.quote}”</p>
+                  <div className="mt-4 flex items-center gap-3">
+                    {r.photoUrl ? (
+                      <img src={r.photoUrl} alt="" className="size-10 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex size-10 items-center justify-center rounded-full bg-muted text-sm font-bold text-muted-foreground">
+                        {r.reviewerName.split(' ').map((w) => w[0]).slice(0, 2).join('')}
+                      </span>
+                    )}
+                    <p className="font-display text-sm font-bold text-foreground">{r.reviewerName}</p>
+                  </div>
+                </div>
               ))}
             </div>
           </motion.section>

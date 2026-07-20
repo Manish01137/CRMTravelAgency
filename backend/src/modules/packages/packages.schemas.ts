@@ -108,6 +108,7 @@ export const createPackageSchema = z.object({
   exclusions: optText(5000),
   isActive: z.coerce.boolean().default(true),
   showOnLinktree: z.coerce.boolean().default(false),
+  showOnHostpage: z.coerce.boolean().default(false),
   linktreeCategoryIds: z.array(z.string().uuid()).max(50).optional(),
   ...builderFields,
 });
@@ -125,6 +126,7 @@ export const updatePackageSchema = z
     exclusions: nullText(5000),
     isActive: z.coerce.boolean().optional(),
     showOnLinktree: z.coerce.boolean().optional(),
+    showOnHostpage: z.coerce.boolean().optional(),
     linktreeCategoryIds: z.array(z.string().uuid()).max(50).optional(),
 
     code: nullText(60),
