@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Check, Copy, ExternalLink, Globe2, Plus, Star, Trash2 } from 'lucide-react';
+import { Check, Copy, ExternalLink, Globe2, MapPin, Package as PackageIcon, Plus, Star, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { HostReview, Organization } from '@/types';
+import type { HostReview, Organization, TravelPackage } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { formatCurrency } from '@/lib/format';
 import { copyToClipboard } from '@/lib/share';
 
 interface FormValues {
@@ -106,6 +109,8 @@ export function HostSiteAdminPage() {
           </Field>
         </Card>
 
+        <PackagesPreview />
+
         <Card className="p-5">
           <h2 className="mb-4 font-display text-base font-semibold text-foreground">Contact</h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -130,6 +135,75 @@ export function HostSiteAdminPage() {
 
       <ReviewsManager />
     </div>
+  );
+}
+
+/* ------------------------------ Packages preview -------------------------- */
+/** Read-only preview of the packages that appear on the live Host Page. Host
+ *  Page always shows ALL of the org's packages — this is a shortcut/preview, not
+ *  a visibility toggle. Refetches on mount so it reflects new packages on revisit. */
+function PackagesPreview() {
+  const navigate = useNavigate();
+  const packagesQuery = useQuery({
+    queryKey: ['packages'],
+    queryFn: () => api.get<TravelPackage[]>('/packages'),
+    refetchOnMount: 'always',
+  });
+  const packages = packagesQuery.data ?? [];
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-base font-semibold text-foreground">Packages</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">All of your packages appear on your website automatically.</p>
+        </div>
+        {packages.length > 0 && (
+          <Button type="button" variant="outline" size="sm" onClick={() => navigate('/packages/new')}>
+            <Plus /> Add Package
+          </Button>
+        )}
+      </div>
+
+      {packagesQuery.isLoading ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
+          ))}
+        </div>
+      ) : packages.length === 0 ? (
+        <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-border bg-surface/60 px-6 py-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <PackageIcon className="size-6" />
+          </span>
+          <p className="mt-3 text-sm font-medium text-foreground">You don't have any packages yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add one to show it on your website.</p>
+          <Button type="button" className="mt-4" onClick={() => navigate('/packages/new')}>
+            <Plus /> Add Package
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {packages.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 rounded-xl border border-border p-2.5">
+              {p.bannerImageUrl ? (
+                <img src={p.bannerImageUrl} alt="" loading="lazy" className="size-12 shrink-0 rounded-lg object-cover" />
+              ) : (
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <MapPin className="size-5" />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  from {formatCurrency(p.priceAmount, p.priceCurrency)}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
