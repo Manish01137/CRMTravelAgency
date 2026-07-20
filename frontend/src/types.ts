@@ -185,6 +185,8 @@ export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type BillCategory = 'HOTEL' | 'FLIGHT' | 'TRANSPORT' | 'ACTIVITY' | 'VISA' | 'FOOD' | 'OTHER';
 export type BillStatus = 'UNPAID' | 'PAID';
 
+export type PdfTemplateId = 'alpine' | 'heritage' | 'beach' | 'corporate' | 'vibrant';
+
 export type PackageViewType =
   | 'CLASSIC'
   | 'MODERN'
@@ -263,6 +265,7 @@ export interface TravelPackage {
   galleryImages: string[];
   showOnLinktree: boolean;
   showOnHostpage: boolean;
+  pdfTemplateId: PdfTemplateId;
   linktreeCategoryIds: string[];
 
   createdAt: string;

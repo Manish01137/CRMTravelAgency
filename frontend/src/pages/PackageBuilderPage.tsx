@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { LinktreeCategory as CategoryType, Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
+import type { LinktreeCategory as CategoryType, Hotel, PackageViewType, PdfTemplateId, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,6 +52,7 @@ import {
 import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
 import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates';
+import { PDF_TEMPLATE_LIST } from '@/lib/pdfTemplates';
 
 /* ------------------------------- form shape -------------------------------- */
 
@@ -99,7 +100,50 @@ export interface Values {
   isActive: boolean;
   showOnLinktree: boolean;
   showOnHostpage: boolean;
+  pdfTemplateId: PdfTemplateId;
   linktreeCategoryIds: string[];
+}
+
+/** Choose the PDF brochure template — thumbnails; switchable anytime (data-safe). */
+function PdfTemplateField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
+  return (
+    <Controller
+      control={form.control}
+      name="pdfTemplateId"
+      render={({ field }) => (
+        <div className="rounded-xl border border-border bg-surface/60 p-4">
+          <p className="font-semibold text-foreground">PDF brochure template</p>
+          <p className="text-sm text-muted-foreground">
+            Choose the look of this package's PDF. Switch anytime — it only changes the design, never your content.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {PDF_TEMPLATE_LIST.map((tpl) => {
+              const on = field.value === tpl.id;
+              return (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => field.onChange(tpl.id)}
+                  className={cn(
+                    'overflow-hidden rounded-xl border-2 text-left transition-all',
+                    on ? 'border-primary shadow-pop' : 'border-transparent hover:border-border',
+                  )}
+                >
+                  <div className={cn('flex h-16 items-center justify-center bg-gradient-to-br', tpl.swatch)}>
+                    {on && <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-primary">Selected</span>}
+                  </div>
+                  <div className="bg-card p-2">
+                    <p className="text-xs font-bold text-foreground">{tpl.name}</p>
+                    <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{tpl.tagline}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    />
+  );
 }
 
 /** LinkTree category multi-select (join-table based; syncs with Manage Categories). */
@@ -221,6 +265,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     isActive: pkg?.isActive ?? false,
     showOnLinktree: pkg?.showOnLinktree ?? false,
     showOnHostpage: pkg?.showOnHostpage ?? false,
+    pdfTemplateId: pkg?.pdfTemplateId ?? 'alpine',
     linktreeCategoryIds: pkg?.linktreeCategoryIds ?? [],
   };
 }
@@ -284,6 +329,7 @@ function toPayload(v: Values): Record<string, unknown> {
     isActive: v.isActive,
     showOnLinktree: v.showOnLinktree,
     showOnHostpage: v.showOnHostpage,
+    pdfTemplateId: v.pdfTemplateId,
     linktreeCategoryIds: v.linktreeCategoryIds,
   };
 }
@@ -937,6 +983,8 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           </div>
         )}
       />
+
+      <PdfTemplateField form={form} />
 
       <LinktreeCategoriesField form={form} />
 

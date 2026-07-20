@@ -46,6 +46,8 @@ const gallerySchema = z.array(z.string().url().max(2000)).max(30);
 
 // Public page design themes. The first three are the originals; the rest are
 // the premium per-template identities (each has its own palette/font/layout).
+const PDF_TEMPLATES = ['alpine', 'heritage', 'beach', 'corporate', 'vibrant'] as const;
+
 const VIEW_TYPES = [
   'CLASSIC',
   'MODERN',
@@ -109,6 +111,7 @@ export const createPackageSchema = z.object({
   isActive: z.coerce.boolean().default(true),
   showOnLinktree: z.coerce.boolean().default(false),
   showOnHostpage: z.coerce.boolean().default(false),
+  pdfTemplateId: z.enum(PDF_TEMPLATES).default('alpine'),
   linktreeCategoryIds: z.array(z.string().uuid()).max(50).optional(),
   ...builderFields,
 });
@@ -127,6 +130,7 @@ export const updatePackageSchema = z
     isActive: z.coerce.boolean().optional(),
     showOnLinktree: z.coerce.boolean().optional(),
     showOnHostpage: z.coerce.boolean().optional(),
+    pdfTemplateId: z.enum(PDF_TEMPLATES).optional(),
     linktreeCategoryIds: z.array(z.string().uuid()).max(50).optional(),
 
     code: nullText(60),
