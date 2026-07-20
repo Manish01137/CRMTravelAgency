@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
+import type { Category as CategoryType, Hotel, PackageViewType, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -97,6 +97,50 @@ export interface Values {
   galleryImages: { value: string }[];
   isActive: boolean;
   showOnLinktree: boolean;
+  categoryIds: string[];
+}
+
+/** LinkTree category multi-select (join-table based; syncs with Manage Categories). */
+function LinktreeCategoriesField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
+  const categoriesQuery = useQuery({ queryKey: ['categories'], queryFn: () => api.get<CategoryType[]>('/categories') });
+  const cats = categoriesQuery.data ?? [];
+  return (
+    <Controller
+      control={form.control}
+      name="categoryIds"
+      render={({ field }) => (
+        <div className="rounded-xl border border-border bg-surface/60 p-4">
+          <p className="font-semibold text-foreground">LinkTree categories</p>
+          <p className="text-sm text-muted-foreground">
+            Which tabs this package appears under on your LinkTree page.
+            {cats.length === 0 && ' No categories yet — create them under Packages → Manage categories.'}
+          </p>
+          {cats.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {cats.map((c) => {
+                const on = field.value.includes(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() =>
+                      field.onChange(on ? field.value.filter((id: string) => id !== c.id) : [...field.value, c.id])
+                    }
+                    className={cn(
+                      'rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors',
+                      on ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    />
+  );
 }
 
 /** Public page design themes — each renders a distinct look on /p/:id. */
@@ -168,7 +212,8 @@ export function toValues(pkg: TravelPackage | null): Values {
     highlights: (pkg?.highlights ?? []).map((value) => ({ value })),
     galleryImages: (pkg?.galleryImages ?? []).map((value) => ({ value })),
     isActive: pkg?.isActive ?? false,
-    showOnLinktree: pkg?.showOnLinktree ?? true,
+    showOnLinktree: pkg?.showOnLinktree ?? false,
+    categoryIds: pkg?.categoryIds ?? [],
   };
 }
 
@@ -223,6 +268,7 @@ function toPayload(v: Values): Record<string, unknown> {
     galleryImages: v.galleryImages.map((g) => g.value.trim()).filter((u) => /^https?:\/\//.test(u)),
     isActive: v.isActive,
     showOnLinktree: v.showOnLinktree,
+    categoryIds: v.categoryIds,
   };
 }
 
@@ -835,6 +881,8 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           </div>
         )}
       />
+
+      <LinktreeCategoriesField form={form} />
     </div>
   );
 }

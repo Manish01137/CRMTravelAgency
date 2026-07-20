@@ -158,6 +158,90 @@ router.get(
 );
 
 /**
+ * Public LinkTree payload: /public/linktree/:slug — the LinkTree module's own
+ * endpoint (independent of the host/site payloads).
+ *
+ * SECURITY: the organization is resolved from the slug (no session). Everything
+ * tenant-scoped below runs through withTenant(org.id), so RLS confines every
+ * query to that one organization — categories, joins, packages, departures.
+ */
+router.get(
+  '/linktree/:slug',
+  validate({ params: slugParam }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const org = await systemPrisma.organization.findUnique({
+      where: { slug: req.params.slug },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        brandPrimaryColor: true,
+        linktreeTheme: true,
+      },
+    });
+    if (!org) throw NotFound('This page does not exist');
+
+    const data = await withTenant(org.id, async (tx) => {
+      const packages = await tx.package.findMany({
+        where: { showOnLinktree: true },
+        select: {
+          id: true,
+          name: true,
+          destination: true,
+          nights: true,
+          days: true,
+          priceAmount: true,
+          priceCurrency: true,
+          originalPrice: true,
+          bannerImageUrl: true,
+          packageCategories: { select: { categoryId: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const batches = await tx.batch.findMany({
+        where: {
+          packageId: { in: packages.map((p) => p.id) },
+          status: 'LIVE',
+          departureDate: { gte: today },
+        },
+        select: { packageId: true, departureDate: true },
+        orderBy: { departureDate: 'asc' },
+      });
+      const departuresByPackage: Record<string, string[]> = {};
+      for (const b of batches) {
+        (departuresByPackage[b.packageId] ??= []).push(b.departureDate.toISOString());
+      }
+
+      // Tabs: only categories that contain at least one visible package, in the
+      // agency's sort order. Never hardcoded — recomputed on every load.
+      const visibleCategoryIds = new Set(packages.flatMap((p) => p.packageCategories.map((pc) => pc.categoryId)));
+      const categories = (
+        await tx.category.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+      )
+        .filter((c) => visibleCategoryIds.has(c.id))
+        .map((c) => ({ id: c.id, name: c.name }));
+
+      return {
+        categories,
+        packages: packages.map(({ packageCategories, ...p }) => ({
+          ...p,
+          categoryIds: packageCategories.map((pc) => pc.categoryId),
+          departures: (departuresByPackage[p.id] ?? []).slice(0, 4),
+        })),
+      };
+    });
+
+    const { id: _id, ...publicOrg } = org;
+    res.json({ organization: publicOrg, ...data });
+  }),
+);
+
+/**
  * Public Host Page mini-website payload: /public/site/:slug
  * Branding + About + Contact + featured packages + upcoming departures.
  */

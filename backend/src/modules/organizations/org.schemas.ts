@@ -41,6 +41,28 @@ export const updateOrgSchema = z
     linktreeCoverUrl: z
       .preprocess((v) => (v === '' ? null : v), z.string().url('Enter a valid URL').max(2000).nullable())
       .optional(),
+    // LinkTree module theme (its own object, independent of Host Page branding)
+    linktreeTheme: z
+      .object({
+        logoUrl: z.preprocess((v) => (v === '' ? null : v), z.string().url().max(2000).nullable()).optional(),
+        agencyName: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(120).nullable()).optional(),
+        shortBio: z.preprocess((v) => (v === '' ? null : v), z.string().max(300).nullable()).optional(),
+        instagramUrl: z.preprocess((v) => (v === '' ? null : v), z.string().url().max(500).nullable()).optional(),
+        whatsappNumber: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(20).nullable()).optional(),
+        websiteUrl: z.preprocess((v) => (v === '' ? null : v), z.string().url().max(500).nullable()).optional(),
+        buttonColor: z
+          .preprocess((v) => (v === '' ? null : v), z.string().regex(/^#([0-9a-fA-F]{6})$/).nullable())
+          .optional(),
+        fontChoice: z.enum(['figtree', 'playfair', 'grotesk', 'lora', 'bebas']).optional(),
+        backgroundType: z.enum(['color', 'image', 'video']).optional(),
+        backgroundColor: z
+          .preprocess((v) => (v === '' ? null : v), z.string().regex(/^#([0-9a-fA-F]{6})$/).nullable())
+          .optional(),
+        backgroundImageUrl: z.preprocess((v) => (v === '' ? null : v), z.string().url().max(2000).nullable()).optional(),
+        backgroundVideoUrl: z.preprocess((v) => (v === '' ? null : v), z.string().url().max(2000).nullable()).optional(),
+        allowVideoOnMobile: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No fields to update' });
 

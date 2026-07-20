@@ -130,6 +130,9 @@ model Organization {
   contactEmail        String?  @map("contact_email")
   address             String?
   linktreeCoverUrl    String?  @map("linktree_cover_url")
+  /// LinkTree module theme (logo, bio, contacts, background, fonts) — separate
+  /// from Host Page branding by design.
+  linktreeTheme       Json     @default("{}") @map("linktree_theme")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -147,6 +150,8 @@ model Organization {
   leadActivities LeadActivity[]
   sightseeing Sightseeing[]
   batches     Batch[]
+  categories  Category[]
+  packageCategories PackageCategory[]
 
   @@map("organizations")
 }
@@ -172,6 +177,39 @@ model Sightseeing {
   @@index([organizationId])
   @@index([organizationId, city])
   @@map("sightseeing")
+}
+
+/// LinkTree category (per-org). Orders the tabs on the public LinkTree page.
+model Category {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  packages     PackageCategory[]
+
+  @@index([organizationId])
+  @@index([organizationId, sortOrder])
+  @@map("categories")
+}
+
+/// Many-to-many: a package can sit in several LinkTree categories.
+/// Carries organization_id so RLS scopes it like every other client table.
+model PackageCategory {
+  organizationId String @map("organization_id") @db.Uuid
+  packageId      String @map("package_id") @db.Uuid
+  categoryId     String @map("category_id") @db.Uuid
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([packageId, categoryId])
+  @@index([organizationId])
+  @@index([categoryId])
+  @@map("package_categories")
 }
 
 /// A member of an organization. ADMINs manage the org + team; AGENTs work leads.
@@ -359,6 +397,7 @@ model Package {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bookings     Booking[]
   batches      Batch[]
+  packageCategories PackageCategory[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])

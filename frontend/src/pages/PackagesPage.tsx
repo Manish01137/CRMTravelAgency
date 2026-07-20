@@ -51,9 +51,14 @@ export function PackagesPage() {
   return (
     <div>
       <PageHeader title="Packages" description="Reusable trip templates your team can sell in one click.">
-        <Button onClick={() => navigate('/packages/new')}>
-          <Plus /> New package
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate('/packages/categories')}>
+            Manage categories
+          </Button>
+          <Button onClick={() => navigate('/packages/new')}>
+            <Plus /> New package
+          </Button>
+        </div>
       </PageHeader>
 
       <div className="mb-5">

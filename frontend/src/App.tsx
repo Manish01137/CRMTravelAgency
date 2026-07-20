@@ -33,6 +33,9 @@ import { HostPageAdminPage } from '@/pages/HostPageAdminPage';
 import { HostSiteAdminPage } from '@/pages/HostSiteAdminPage';
 import { HostPage } from '@/pages/HostPage';
 import { SitePage } from '@/pages/SitePage';
+import { LinktreePage } from '@/pages/LinktreePage';
+import { LinktreeSettingsPage } from '@/pages/LinktreeSettingsPage';
+import { CategoriesPage } from '@/pages/CategoriesPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
@@ -106,6 +109,9 @@ function AppRoutes() {
       {/* Public Host Page mini-website (company site). */}
       <Route path="/site/:slug" element={<SitePage />} />
 
+      {/* Public LinkTree module — per-org travel package showcase. */}
+      <Route path="/linktree/:slug" element={<LinktreePage />} />
+
       {/* Public shareable package pages — anyone with the link can view.
           /p/:id      = customer-facing web page (day-wise plan + Book on WhatsApp)
           /p/:id/pdf  = printable brochure (Download PDF) */}
@@ -137,6 +143,7 @@ function AppRoutes() {
         <Route path="/bookings/:id/itinerary" element={<ItineraryComposerPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/packages/new" element={<PackageBuilderPage />} />
+        <Route path="/packages/categories" element={<CategoriesPage />} />
         <Route path="/packages/:id/edit" element={<PackageBuilderPage />} />
         <Route path="/hotels" element={<HotelsPage />} />
         <Route path="/sightseeing" element={<SightseeingPage />} />
@@ -147,6 +154,7 @@ function AppRoutes() {
         <Route path="/settings/profile" element={<ProfilePage />} />
         <Route element={<AdminRoute />}>
           <Route path="/host-page" element={<HostPageAdminPage />} />
+          <Route path="/linktree" element={<LinktreeSettingsPage />} />
           <Route path="/website" element={<HostSiteAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />

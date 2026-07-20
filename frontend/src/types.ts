@@ -40,6 +40,7 @@ export interface Organization {
   contactEmail: string | null;
   address: string | null;
   linktreeCoverUrl: string | null;
+  linktreeTheme: LinktreeTheme;
   createdAt: string;
   updatedAt: string;
 }
@@ -227,6 +228,7 @@ export interface TravelPackage {
   highlights: string[];
   galleryImages: string[];
   showOnLinktree: boolean;
+  categoryIds: string[];
 
   createdAt: string;
   updatedAt: string;
@@ -389,6 +391,62 @@ export interface LeadActivity {
   toStatus: LeadStatus | null;
   createdBy: { id: string; name: string } | null;
   createdAt: string;
+}
+
+// --- LinkTree module ---------------------------------------------------------
+
+export interface Category {
+  id: string;
+  organizationId: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
+  packageCount?: number;
+}
+
+export type LinktreeFont = 'figtree' | 'playfair' | 'grotesk' | 'lora' | 'bebas';
+export type LinktreeBackgroundType = 'color' | 'image' | 'video';
+
+export interface LinktreeTheme {
+  logoUrl?: string | null;
+  agencyName?: string | null;
+  shortBio?: string | null;
+  instagramUrl?: string | null;
+  whatsappNumber?: string | null;
+  websiteUrl?: string | null;
+  buttonColor?: string | null;
+  fontChoice?: LinktreeFont;
+  backgroundType?: LinktreeBackgroundType;
+  backgroundColor?: string | null;
+  backgroundImageUrl?: string | null;
+  backgroundVideoUrl?: string | null;
+  allowVideoOnMobile?: boolean;
+}
+
+export interface LinktreeModulePackage {
+  id: string;
+  name: string;
+  destination: string;
+  nights: number;
+  days: number;
+  priceAmount: number;
+  priceCurrency: string;
+  originalPrice: number | null;
+  bannerImageUrl: string | null;
+  categoryIds: string[];
+  departures: string[];
+}
+
+export interface LinktreeModulePayload {
+  organization: {
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    brandPrimaryColor: string;
+    linktreeTheme: LinktreeTheme;
+  };
+  categories: { id: string; name: string }[];
+  packages: LinktreeModulePackage[];
 }
 
 export type LinktreePackage = Pick<
