@@ -47,6 +47,7 @@ const day = (
   activities: '',
   meals: '',
   images: [],
+  activityBlocks: [],
 });
 
 const hl = (values: string[]) => values.map((value) => ({ value }));

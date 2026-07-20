@@ -156,18 +156,16 @@ model Organization {
   @@map("organizations")
 }
 
-/// Sightseeing / activity directory: reusable experiences (city walks, treks,
-/// transfers) that packages and itineraries reference.
+/// Reusable activity library. Simplified to just name + cover image + description.
+/// These entries are a *content source*: picking one copies its values into a
+/// package day (see PackageBuilder). Kept flat + searchable by name/description
+/// so a future AI itinerary generator can query them.
 model Sightseeing {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   name           String
-  city           String
-  country        String   @default("India")
-  timings        String? // e.g. "09:00 AM to 06:00 PM"
-  points         Int      @default(0) // effort/interest score shown in the list
-  imageUrl       String?  @map("image_url")
-  notes          String?
+  imageUrl       String?  @map("image_url") // cover image (optional)
+  notes          String? // description
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -175,7 +173,6 @@ model Sightseeing {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
-  @@index([organizationId, city])
   @@map("sightseeing")
 }
 

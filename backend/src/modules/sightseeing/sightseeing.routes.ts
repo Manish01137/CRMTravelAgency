@@ -11,16 +11,11 @@ import { NotFound } from '../../lib/errors';
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
 
-// Simplified library: an activity is just Name + Cover Image + Description.
-// (city/country/timings/points columns remain for back-compat but default to blank.)
+// The activity library: Name + Cover Image + Description, nothing else.
 const createSchema = z.object({
   name: z.string().trim().min(1, 'Activity name is required').max(200),
   imageUrl: z.preprocess(emptyToUndefined, z.string().url().max(2000).optional()),
   notes: z.preprocess(emptyToUndefined, z.string().max(4000).optional()), // description
-  city: z.string().trim().max(100).default(''),
-  country: z.string().trim().max(100).default(''),
-  timings: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
-  points: z.coerce.number().int().min(0).max(100).default(0),
   isActive: z.coerce.boolean().default(true),
 });
 
@@ -29,18 +24,12 @@ const updateSchema = z
     name: z.string().trim().min(1).max(200).optional(),
     imageUrl: z.preprocess(emptyToNull, z.string().url().max(2000).nullable()).optional(),
     notes: z.preprocess(emptyToNull, z.string().max(4000).nullable()).optional(),
-    city: z.string().trim().max(100).optional(),
-    country: z.string().trim().max(100).optional(),
-    timings: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
-    points: z.coerce.number().int().min(0).max(100).optional(),
     isActive: z.coerce.boolean().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });
 
 const listQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
-  city: z.string().trim().max(100).optional(),
-  country: z.string().trim().max(100).optional(),
 });
 
 const idParam = z.object({ id: z.string().uuid('Invalid activity id') });
@@ -56,13 +45,12 @@ router.get(
     const items = await withTenant(req.auth!.organizationId, (tx) => {
       const where: Prisma.SightseeingWhereInput = {};
       if (q.search) {
+        // Name + description search (the fields a future AI generator would match on).
         where.OR = [
           { name: { contains: q.search, mode: 'insensitive' } },
-          { city: { contains: q.search, mode: 'insensitive' } },
+          { notes: { contains: q.search, mode: 'insensitive' } },
         ];
       }
-      if (q.city) where.city = { equals: q.city, mode: 'insensitive' };
-      if (q.country) where.country = { equals: q.country, mode: 'insensitive' };
       return tx.sightseeing.findMany({ where, orderBy: { createdAt: 'desc' }, take: 500 });
     });
     res.json(items);

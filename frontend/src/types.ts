@@ -177,6 +177,12 @@ export interface PricingOption {
   label: string;
   price: number;
 }
+/** An activity copied from the Sightseeing library into one day of one package. */
+export interface DayActivityBlock {
+  name: string;
+  description?: string;
+  imageUrl?: string;
+}
 export interface PackageItineraryDay {
   day: number;
   title: string;
@@ -186,6 +192,7 @@ export interface PackageItineraryDay {
   activities?: string[];
   meals?: string;
   images?: string[];
+  activityBlocks?: DayActivityBlock[];
 }
 export interface PackageFaq {
   question: string;
@@ -538,10 +545,6 @@ export interface SightseeingActivity {
   id: string;
   organizationId: string;
   name: string;
-  city: string;
-  country: string;
-  timings: string | null;
-  points: number;
   imageUrl: string | null;
   notes: string | null;
   isActive: boolean;

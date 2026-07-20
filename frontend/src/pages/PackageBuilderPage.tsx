@@ -84,6 +84,7 @@ export interface Values {
     activities: string; // comma-separated in the form; array in the API
     meals: string;
     images: string[];
+    activityBlocks: { name: string; description: string; imageUrl: string }[];
   }[];
   inclusions: string;
   exclusions: string;
@@ -200,6 +201,11 @@ export function toValues(pkg: TravelPackage | null): Values {
       activities: (d.activities ?? []).join(', '),
       meals: d.meals ?? '',
       images: d.images ?? [],
+      activityBlocks: (d.activityBlocks ?? []).map((b) => ({
+        name: b.name,
+        description: b.description ?? '',
+        imageUrl: b.imageUrl ?? '',
+      })),
     })),
     inclusions: pkg?.inclusions ?? '',
     exclusions: pkg?.exclusions ?? '',
@@ -255,6 +261,13 @@ function toPayload(v: Values): Record<string, unknown> {
           .filter(Boolean),
         meals: d.meals.trim() || undefined,
         images: d.images.filter((u) => /^https?:\/\//.test(u)),
+        activityBlocks: d.activityBlocks
+          .filter((b) => b.name.trim())
+          .map((b) => ({
+            name: b.name.trim(),
+            description: b.description.trim() || undefined,
+            imageUrl: b.imageUrl.trim() || undefined,
+          })),
       })),
     inclusions: v.inclusions.trim() || null,
     exclusions: v.exclusions.trim() || null,
@@ -545,24 +558,17 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
 
   /**
-   * Pull a library activity into a day — copies name → title, description and
-   * photo into THIS package's day (editing the day never touches the library).
+   * Pull a library activity into a day as an INDEPENDENT COPY. Its name,
+   * description and image are snapshotted into this package/day right now — from
+   * then on it is editable here and NEVER writes back to the Sightseeing entry.
    */
   const addActivity = (i: number, a: SightseeingActivity) => {
-    if (!(getValues(`itinerary.${i}.title`) || '').trim()) {
-      setValue(`itinerary.${i}.title`, a.name, { shouldDirty: true });
-    }
-    if (a.notes) {
-      const cur = (getValues(`itinerary.${i}.description`) || '').trim();
-      const next = cur && !cur.includes(a.notes) ? `${cur}\n${a.notes}` : cur || a.notes;
-      setValue(`itinerary.${i}.description`, next, { shouldDirty: true });
-    }
-    if (a.imageUrl) {
-      const imgs = getValues(`itinerary.${i}.images`) ?? [];
-      if (imgs.length < 4 && !imgs.includes(a.imageUrl)) {
-        setValue(`itinerary.${i}.images`, [...imgs, a.imageUrl], { shouldDirty: true });
-      }
-    }
+    const cur = getValues(`itinerary.${i}.activityBlocks`) ?? [];
+    setValue(
+      `itinerary.${i}.activityBlocks`,
+      [...cur, { name: a.name, description: a.notes ?? '', imageUrl: a.imageUrl ?? '' }],
+      { shouldDirty: true },
+    );
   };
 
   return (
@@ -580,8 +586,55 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               {i + 1}
             </span>
             <div className="min-w-0 flex-1 space-y-2">
-              {/* Pick a saved activity to auto-fill this day's title, description & photo */}
+              {/* Select Activity — searches the library; each pick is copied in below */}
               <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
+
+              {/* Stacked list of selected activities — each an independent, editable copy */}
+              <Controller
+                control={control}
+                name={`itinerary.${i}.activityBlocks`}
+                render={({ field }) => {
+                  const blocks = field.value ?? [];
+                  if (blocks.length === 0) return <></>;
+                  const update = (j: number, patch: Partial<(typeof blocks)[number]>) =>
+                    field.onChange(blocks.map((b, k) => (k === j ? { ...b, ...patch } : b)));
+                  return (
+                    <div className="space-y-2">
+                      {blocks.map((b, j) => (
+                        <div key={j} className="flex gap-3 rounded-lg border border-border bg-surface/50 p-2.5">
+                          <div className="w-20 shrink-0">
+                            <ImageUpload tile value={b.imageUrl || null} onChange={(url) => update(j, { imageUrl: url ?? '' })} />
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <Input
+                              value={b.name}
+                              onChange={(e) => update(j, { name: e.target.value })}
+                              placeholder="Activity name"
+                              className="h-8 font-medium"
+                            />
+                            <Textarea
+                              value={b.description}
+                              onChange={(e) => update(j, { description: e.target.value })}
+                              rows={2}
+                              placeholder="Description (edit freely — the original activity stays unchanged)"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remove activity"
+                            onClick={() => field.onChange(blocks.filter((_, k) => k !== j))}
+                          >
+                            <Trash2 className="text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }}
+              />
+
               <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
               <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
               <div className="grid gap-2 sm:grid-cols-2">
@@ -658,7 +711,7 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
         variant="outline"
         className="w-full border-dashed"
         onClick={() =>
-          append({ day: String(fields.length + 1), title: '', description: '', hotelId: '', stay: '', activities: '', meals: '', images: [] })
+          append({ day: String(fields.length + 1), title: '', description: '', hotelId: '', stay: '', activities: '', meals: '', images: [], activityBlocks: [] })
         }
       >
         <Plus /> Add day
@@ -938,6 +991,7 @@ function AiGenerateDialog({
               activities: '',
               meals: '',
               images: [],
+              activityBlocks: [],
             }))
           : cur.itinerary,
         highlights: ai.highlights?.length ? ai.highlights.map((value) => ({ value })) : cur.highlights,

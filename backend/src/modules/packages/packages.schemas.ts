@@ -23,6 +23,18 @@ const itineraryDaySchema = z.object({
   activities: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   meals: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
   images: z.array(z.string().url().max(2000)).max(6).optional(), // photo collage on the day's PDF page
+  // Activity blocks pulled from the Sightseeing library — INDEPENDENT COPIES.
+  // Editing these here never writes back to the Sightseeing entry.
+  activityBlocks: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        description: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
+        imageUrl: z.preprocess(emptyToUndefined, z.string().url().max(2000).optional()),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 const faqSchema = z.object({
   question: z.string().trim().min(1).max(300),

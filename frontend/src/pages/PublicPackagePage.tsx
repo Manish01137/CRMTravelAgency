@@ -508,6 +508,22 @@ export function PublicPackagePage() {
                         ))}
                       </div>
                     )}
+                    {/* Selected activities (copied from the library) */}
+                    {(d.activityBlocks?.length ?? 0) > 0 && (
+                      <div className="mt-3 space-y-2.5">
+                        {d.activityBlocks!.map((b, k) => (
+                          <div key={k} className="flex gap-3">
+                            {b.imageUrl && (
+                              <img src={b.imageUrl} alt="" className="size-16 shrink-0 rounded-lg object-cover" />
+                            )}
+                            <div className="min-w-0">
+                              <p className={cn('text-sm font-semibold', t.body)}>{b.name}</p>
+                              {b.description && <p className={cn('mt-0.5 text-xs', t.muted)}>{b.description}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className={cn('mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-medium', t.muted)}>
                       {d.stay && (
                         <span className="flex items-center gap-1.5">
