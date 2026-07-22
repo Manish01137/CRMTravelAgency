@@ -52,7 +52,6 @@ import {
 import { ImageUpload } from '@/components/ui/image-upload';
 import { formatCurrency } from '@/lib/format';
 import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates';
-import { PDF_TEMPLATE_LIST } from '@/lib/pdfTemplates';
 
 /* ------------------------------- form shape -------------------------------- */
 
@@ -102,48 +101,6 @@ export interface Values {
   showOnHostpage: boolean;
   pdfTemplateId: PdfTemplateId;
   linktreeCategoryIds: string[];
-}
-
-/** Choose the PDF brochure template — thumbnails; switchable anytime (data-safe). */
-function PdfTemplateField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  return (
-    <Controller
-      control={form.control}
-      name="pdfTemplateId"
-      render={({ field }) => (
-        <div className="rounded-xl border border-border bg-surface/60 p-4">
-          <p className="font-semibold text-foreground">PDF brochure template</p>
-          <p className="text-sm text-muted-foreground">
-            Choose the look of this package's PDF. Switch anytime — it only changes the design, never your content.
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {PDF_TEMPLATE_LIST.map((tpl) => {
-              const on = field.value === tpl.id;
-              return (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => field.onChange(tpl.id)}
-                  className={cn(
-                    'overflow-hidden rounded-xl border-2 text-left transition-all',
-                    on ? 'border-primary shadow-pop' : 'border-transparent hover:border-border',
-                  )}
-                >
-                  <div className={cn('flex h-16 items-center justify-center bg-gradient-to-br', tpl.swatch)}>
-                    {on && <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold text-primary">Selected</span>}
-                  </div>
-                  <div className="bg-card p-2">
-                    <p className="text-xs font-bold text-foreground">{tpl.name}</p>
-                    <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{tpl.tagline}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    />
-  );
 }
 
 /** LinkTree category multi-select (join-table based; syncs with Manage Categories). */
@@ -983,8 +940,6 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           </div>
         )}
       />
-
-      <PdfTemplateField form={form} />
 
       <LinktreeCategoriesField form={form} />
 
