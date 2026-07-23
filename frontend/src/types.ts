@@ -195,7 +195,8 @@ export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type BillCategory = 'HOTEL' | 'FLIGHT' | 'TRANSPORT' | 'ACTIVITY' | 'VISA' | 'FOOD' | 'OTHER';
 export type BillStatus = 'UNPAID' | 'PAID';
 
-export type PdfTemplateId = 'alpine' | 'heritage' | 'beach' | 'corporate' | 'vibrant';
+/** The package PDF brochure has a single fixed design — every package uses it. */
+export type PdfTemplateId = 'signature';
 
 export type PackageViewType =
   | 'CLASSIC'

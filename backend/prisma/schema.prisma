@@ -390,7 +390,7 @@ model Package {
   isActive       Boolean @default(true) @map("is_active")
   showOnLinktree Boolean @default(false) @map("show_on_linktree")
   showOnHostpage Boolean @default(false) @map("show_on_hostpage")
-  pdfTemplateId  String  @default("alpine") @map("pdf_template_id")
+  pdfTemplateId  String  @default("signature") @map("pdf_template_id") // fixed — single "Signature" PDF design for every package
 
   // --- Premium builder fields (Basics) ---
   code                String? // package code, auto-generated if blank

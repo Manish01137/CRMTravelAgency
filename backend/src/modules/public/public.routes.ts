@@ -149,11 +149,17 @@ router.get(
         logoUrl: true,
         brandPrimaryColor: true,
         brandSecondaryColor: true,
+        hostLinks: true,
       },
     });
 
+    // Instagram from the org's existing links (same derivation as LinkTree/Host Page).
+    const links = (org?.hostLinks as Array<{ label: string; url: string }> | null) ?? [];
+    const instagramUrl = links.find((l) => /instagram\.com/i.test(l.url))?.url ?? null;
+    const { hostLinks: _hl, ...publicOrg } = org ?? {};
+
     const { organizationId: _orgId, ...publicPkg } = pkg;
-    res.json({ package: publicPkg, organization: org });
+    res.json({ package: publicPkg, organization: org ? { ...publicOrg, instagramUrl } : null });
   }),
 );
 

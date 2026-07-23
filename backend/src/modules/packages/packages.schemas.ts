@@ -44,9 +44,10 @@ const categoriesSchema = z.array(z.string().trim().min(1).max(60)).max(20);
 const highlightsSchema = z.array(z.string().trim().min(1).max(200)).max(30);
 const gallerySchema = z.array(z.string().url().max(2000)).max(30);
 
-// Public page design themes. The first three are the originals; the rest are
-// the premium per-template identities (each has its own palette/font/layout).
-const PDF_TEMPLATES = ['alpine', 'heritage', 'beach', 'corporate', 'vibrant'] as const;
+// The package PDF brochure has a single fixed design — "Signature" — used for
+// every package. This field is kept (rather than removed) so existing rows
+// stay valid; the renderer no longer branches on it.
+const PDF_TEMPLATES = ['signature'] as const;
 
 const VIEW_TYPES = [
   'CLASSIC',
@@ -111,7 +112,7 @@ export const createPackageSchema = z.object({
   isActive: z.coerce.boolean().default(true),
   showOnLinktree: z.coerce.boolean().default(false),
   showOnHostpage: z.coerce.boolean().default(false),
-  pdfTemplateId: z.enum(PDF_TEMPLATES).default('alpine'),
+  pdfTemplateId: z.enum(PDF_TEMPLATES).default('signature'),
   linktreeCategoryIds: z.array(z.string().uuid()).max(50).optional(),
   ...builderFields,
 });

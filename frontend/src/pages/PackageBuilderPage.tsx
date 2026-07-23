@@ -222,7 +222,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     isActive: pkg?.isActive ?? false,
     showOnLinktree: pkg?.showOnLinktree ?? false,
     showOnHostpage: pkg?.showOnHostpage ?? false,
-    pdfTemplateId: pkg?.pdfTemplateId ?? 'alpine',
+    pdfTemplateId: pkg?.pdfTemplateId ?? 'signature',
     linktreeCategoryIds: pkg?.linktreeCategoryIds ?? [],
   };
 }
