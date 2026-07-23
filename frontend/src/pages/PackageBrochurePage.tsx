@@ -40,7 +40,13 @@ const PAPER = '#ffffff'; // content-page background
 const NAVY = '#1c2b52'; // deep navy — eyebrows/markers on light pages
 const ACCENT = '#dd9a45'; // warm amber — bullet squares, FAQ bars, cover/closing eyebrow, footer icons
 const SCRIPT = "'Alex Brush', cursive"; // flowing script eyebrow labels
-const HEAD = "'Poppins', sans-serif"; // bold condensed-ish sans headings
+// Anton ships a single (already very heavy) weight and no italic — every
+// place this is used renders with font-normal/non-italic so the browser
+// never has to synthesize a faux-bold or faux-italic face.
+const HEAD = "'Anton', sans-serif"; // tall condensed-impact headings — matches the reference cover exactly
+// Anton is caps-only in spirit (single heavy weight, no italic) — sentence-style
+// bold text (day titles, FAQ questions) uses this instead so it stays readable.
+const BODY_BOLD = "'Poppins', sans-serif";
 
 // --- Small text helpers ------------------------------------------------------
 /** Split a textarea field into trimmed, non-empty lines (bullet lists). */
@@ -163,7 +169,7 @@ function PageHeading({
   return (
     <div className={align === 'center' ? 'text-center' : ''}>
       <Eyebrow color={eyebrowColor}>{eyebrow}</Eyebrow>
-      <h2 className="mt-1 text-5xl font-black uppercase tracking-tight" style={{ fontFamily: HEAD, color: titleColor }}>
+      <h2 className="mt-1 text-5xl font-normal uppercase tracking-tight" style={{ fontFamily: HEAD, color: titleColor }}>
         {title}
       </h2>
     </div>
@@ -270,7 +276,7 @@ export function PackageBrochurePage() {
       // w-auto has nothing to size against on a <span>, which otherwise
       // collapses this into a narrow vertical pill.
       <span
-        className={cn('flex aspect-square items-center justify-center rounded-xl text-xl font-black text-white', className)}
+        className={cn('flex aspect-square items-center justify-center rounded-xl text-xl font-normal text-white', className)}
         style={{ backgroundColor: ACCENT, fontFamily: HEAD }}
       >
         {orgName.slice(0, 1)}
@@ -351,11 +357,11 @@ export function PackageBrochurePage() {
         <div className="relative flex min-h-[297mm] flex-col">
           <div className="flex flex-1 flex-col items-center px-10 pt-14 text-center">
             <Logo className="h-28 w-auto max-w-[75%]" />
-            <h1 className="mt-8 text-7xl font-black uppercase leading-[0.95] tracking-tight" style={{ fontFamily: HEAD }}>
+            <h1 className="mt-8 text-7xl font-normal uppercase leading-[0.95] tracking-tight" style={{ fontFamily: HEAD }}>
               {title}
             </h1>
             {/* white rectangular price box */}
-            <div className="mt-8 rounded-lg bg-white px-9 py-3.5 text-2xl font-bold shadow-lg" style={{ color: NAVY }}>
+            <div className="mt-8 rounded-lg bg-white px-9 py-3.5 text-2xl font-bold shadow-lg" style={{ color: NAVY, fontFamily: BODY_BOLD }}>
               {duration} : {price}/Person
             </div>
           </div>
@@ -403,10 +409,10 @@ export function PackageBrochurePage() {
               const photoLeft = i % 2 === 0;
               const Info = (
                 <div className={cn('flex flex-col justify-center', photoLeft ? 'pl-6 text-left' : 'items-end pr-6 text-right')}>
-                  <span className="text-sm font-bold uppercase tracking-widest text-neutral-800" style={{ fontFamily: HEAD }}>
+                  <span className="text-sm font-normal uppercase tracking-widest text-neutral-800" style={{ fontFamily: HEAD }}>
                     Day {d.day}
                   </span>
-                  <h3 className="text-xl font-bold italic" style={{ fontFamily: HEAD }}>
+                  <h3 className="text-xl font-bold" style={{ fontFamily: BODY_BOLD }}>
                     {d.title}
                   </h3>
                   {stats.length > 0 && (
@@ -472,10 +478,10 @@ export function PackageBrochurePage() {
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/20" />
               {/* bottom-left: light "Day n" label + bold title */}
               <div className="absolute bottom-6 left-7 text-white">
-                <span className="text-3xl font-light" style={{ fontFamily: HEAD }}>
+                <span className="text-3xl font-light" style={{ fontFamily: BODY_BOLD }}>
                   Day {d.day}
                 </span>
-                <p className="text-xl font-medium leading-tight" style={{ fontFamily: HEAD }}>
+                <p className="text-xl font-medium leading-tight" style={{ fontFamily: BODY_BOLD }}>
                   {d.title}
                 </p>
               </div>
@@ -504,7 +510,7 @@ export function PackageBrochurePage() {
               <div className="space-y-8">
                 {inclusions.length > 0 && (
                   <div>
-                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold" style={{ fontFamily: HEAD }}>
+                    <h3 className="mb-3 flex items-center gap-2 text-lg font-normal uppercase" style={{ fontFamily: HEAD }}>
                       <span className="size-2.5 shrink-0" style={{ backgroundColor: ACCENT }} /> What&apos;s Included:
                     </h3>
                     <div className="space-y-2.5">
@@ -518,7 +524,7 @@ export function PackageBrochurePage() {
                 )}
                 {exclusions.length > 0 && (
                   <div>
-                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold" style={{ fontFamily: HEAD }}>
+                    <h3 className="mb-3 flex items-center gap-2 text-lg font-normal uppercase" style={{ fontFamily: HEAD }}>
                       <span className="size-2.5 shrink-0" style={{ backgroundColor: ACCENT }} /> What&apos;s NOT Included:
                     </h3>
                     <div className="space-y-2.5">
@@ -566,7 +572,7 @@ export function PackageBrochurePage() {
               <div key={i} className="flex gap-4">
                 <div className="mt-1 w-1 shrink-0" style={{ backgroundColor: ACCENT }} />
                 <div>
-                  <p className="text-base font-bold" style={{ fontFamily: HEAD }}>
+                  <p className="text-base font-bold" style={{ fontFamily: BODY_BOLD }}>
                     {f.question}
                   </p>
                   <p className="mt-1 text-sm leading-relaxed text-neutral-500">{f.answer}</p>
@@ -586,7 +592,7 @@ export function PackageBrochurePage() {
           <Eyebrow className="mt-8" color={ACCENT}>
             Let&apos;s plan your journey
           </Eyebrow>
-          <h2 className="mt-1 text-6xl font-black uppercase leading-tight tracking-tight" style={{ fontFamily: HEAD }}>
+          <h2 className="mt-1 text-6xl font-normal uppercase leading-tight tracking-tight" style={{ fontFamily: HEAD }}>
             Book {title}
           </h2>
           <p className="mt-5 max-w-md text-base text-white/85">
