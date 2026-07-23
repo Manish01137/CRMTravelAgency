@@ -140,7 +140,7 @@ function Sheet({
  *  flat dark gradient (cancellation/terms) pages. */
 function Eyebrow({ children, className, color = NAVY }: { children: ReactNode; className?: string; color?: string }) {
   return (
-    <span className={cn('block text-3xl leading-none', className)} style={{ fontFamily: SCRIPT, color }}>
+    <span className={cn('block text-4xl leading-none', className)} style={{ fontFamily: SCRIPT, color }}>
       {children}
     </span>
   );
@@ -163,7 +163,7 @@ function PageHeading({
   return (
     <div className={align === 'center' ? 'text-center' : ''}>
       <Eyebrow color={eyebrowColor}>{eyebrow}</Eyebrow>
-      <h2 className="mt-1 text-4xl font-black uppercase tracking-tight sm:text-5xl" style={{ fontFamily: HEAD, color: titleColor }}>
+      <h2 className="mt-1 text-5xl font-black uppercase tracking-tight" style={{ fontFamily: HEAD, color: titleColor }}>
         {title}
       </h2>
     </div>
@@ -350,12 +350,12 @@ export function PackageBrochurePage() {
         />
         <div className="relative flex min-h-[297mm] flex-col">
           <div className="flex flex-1 flex-col items-center px-10 pt-14 text-center">
-            <Logo className="h-24 w-auto max-w-[70%]" />
-            <h1 className="mt-8 text-6xl font-black uppercase leading-[0.95] tracking-tight sm:text-7xl" style={{ fontFamily: HEAD }}>
+            <Logo className="h-28 w-auto max-w-[75%]" />
+            <h1 className="mt-8 text-7xl font-black uppercase leading-[0.95] tracking-tight" style={{ fontFamily: HEAD }}>
               {title}
             </h1>
             {/* white rectangular price box */}
-            <div className="mt-8 rounded-lg bg-white px-8 py-3 text-lg font-bold shadow-lg" style={{ color: NAVY }}>
+            <div className="mt-8 rounded-lg bg-white px-9 py-3.5 text-2xl font-bold shadow-lg" style={{ color: NAVY }}>
               {duration} : {price}/Person
             </div>
           </div>
@@ -364,7 +364,7 @@ export function PackageBrochurePage() {
           {coverStrip.length > 0 && (
             <div className="relative flex items-end justify-center gap-3 px-10 pb-12">
               {coverStrip.map((src, i) => (
-                <ArchPhoto key={i} src={src} className="flex-1" style={{ height: i % 2 === 0 ? '8.5rem' : '7rem' }} />
+                <ArchPhoto key={i} src={src} className="flex-1" style={{ height: i % 2 === 0 ? '10rem' : '8.5rem' }} />
               ))}
             </div>
           )}
@@ -420,7 +420,7 @@ export function PackageBrochurePage() {
                   )}
                 </div>
               );
-              const Photo = cover ? <ArchPhoto src={cover} className="h-36 w-full" /> : <div />;
+              const Photo = cover ? <ArchPhoto src={cover} className="h-40 w-full" /> : <div />;
               return (
                 <div key={d.day} className="grid grid-cols-[1fr_40px_1fr] items-center pb-10">
                   <div>{photoLeft ? Photo : Info}</div>
@@ -450,7 +450,7 @@ export function PackageBrochurePage() {
               <PageHeading eyebrow="Detailed" title="Itinerary" align="center" />
             ) : (
               <div className="flex justify-center">
-                <Logo className="h-16 w-auto max-w-[60%]" />
+                <Logo className="h-20 w-auto max-w-[65%]" />
               </div>
             )}
 
@@ -467,15 +467,15 @@ export function PackageBrochurePage() {
 
             {/* full-width photo banner with overlays (or a charcoal bar if no photo).
                 Fixed height keeps every day on exactly one A4 page (no print overflow). */}
-            <div className="relative mt-8 h-[26rem] w-full overflow-hidden rounded-3xl" style={{ backgroundColor: '#2a2521' }}>
+            <div className="relative mt-8 h-[28rem] w-full overflow-hidden rounded-3xl" style={{ backgroundColor: '#2a2521' }}>
               {cover && <img src={cover} alt="" className="h-full w-full object-cover" />}
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/20" />
               {/* bottom-left: light "Day n" label + bold title */}
-              <div className="absolute bottom-5 left-6 text-white">
-                <span className="text-2xl font-light" style={{ fontFamily: HEAD }}>
+              <div className="absolute bottom-6 left-7 text-white">
+                <span className="text-3xl font-light" style={{ fontFamily: HEAD }}>
                   Day {d.day}
                 </span>
-                <p className="text-lg font-medium leading-tight" style={{ fontFamily: HEAD }}>
+                <p className="text-xl font-medium leading-tight" style={{ fontFamily: HEAD }}>
                   {d.title}
                 </p>
               </div>
@@ -533,7 +533,7 @@ export function PackageBrochurePage() {
               </div>
               {inclusionsPhoto && (
                 <div className="overflow-hidden rounded-lg">
-                  <img src={inclusionsPhoto} alt="" className="h-full min-h-[24rem] w-full object-cover" />
+                  <img src={inclusionsPhoto} alt="" className="h-full min-h-[27rem] w-full object-cover" />
                 </div>
               )}
             </div>
@@ -556,7 +556,7 @@ export function PackageBrochurePage() {
       {pkg.faqs.length > 0 && (
         <Sheet framed footerBar style={{ backgroundColor: PAPER, color: INK }} className="px-12 py-14">
           <div className="flex justify-center">
-            <Logo className="h-10 w-auto max-w-[50%]" />
+            <Logo className="h-14 w-auto max-w-[55%]" />
           </div>
           <div className="mt-8">
             <PageHeading eyebrow="Good to" title="Know" align="center" />
@@ -582,11 +582,11 @@ export function PackageBrochurePage() {
         {heroPhoto && <img src={heroPhoto} alt="" className="absolute inset-0 h-full w-full object-cover" />}
         <div className="absolute inset-0 bg-black/60" />
         <div className="relative flex min-h-[297mm] flex-col items-center justify-center px-12 text-center">
-          <Logo className="h-20 w-auto max-w-[60%]" />
-          <Eyebrow className="mt-8 text-3xl" color={ACCENT}>
+          <Logo className="h-24 w-auto max-w-[65%]" />
+          <Eyebrow className="mt-8" color={ACCENT}>
             Let&apos;s plan your journey
           </Eyebrow>
-          <h2 className="mt-1 text-5xl font-black uppercase leading-tight tracking-tight sm:text-6xl" style={{ fontFamily: HEAD }}>
+          <h2 className="mt-1 text-6xl font-black uppercase leading-tight tracking-tight" style={{ fontFamily: HEAD }}>
             Book {title}
           </h2>
           <p className="mt-5 max-w-md text-base text-white/85">
