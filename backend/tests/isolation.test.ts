@@ -123,7 +123,100 @@ async function main() {
       check('A: bookings — Org B booking invisible by id', (await tx.booking.findUnique({ where: { id: bookB.id } })) === null);
     });
 
-    // 6. Cannot forge a row into Org B (WITH CHECK).
+    // 5c. Phase 3 (Communication) tables — same policy, one canary row per org each.
+    const connA = await systemPrisma.channelConnection.create({
+      data: { organizationId: orgA.id, channel: 'WHATSAPP', status: 'CONNECTED', displayName: 'A number' },
+    });
+    const connB = await systemPrisma.channelConnection.create({
+      data: { organizationId: orgB.id, channel: 'WHATSAPP', status: 'CONNECTED', displayName: 'B number' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const conns = await tx.channelConnection.findMany();
+      check(
+        'A: channel_connections — sees only own rows',
+        conns.some((c) => c.id === connA.id) && conns.every((c) => c.organizationId === orgA.id),
+      );
+      check('A: channel_connections — Org B row invisible by id', (await tx.channelConnection.findUnique({ where: { id: connB.id } })) === null);
+    });
+
+    const convA = await systemPrisma.conversation.create({
+      data: { organizationId: orgA.id, channel: 'WHATSAPP', externalContactId: `wa-a-${suffix}`, contactName: 'A contact' },
+    });
+    const convB = await systemPrisma.conversation.create({
+      data: { organizationId: orgB.id, channel: 'WHATSAPP', externalContactId: `wa-b-${suffix}`, contactName: 'B contact' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const convs = await tx.conversation.findMany();
+      check(
+        'A: conversations — sees only own rows',
+        convs.some((c) => c.id === convA.id) && convs.every((c) => c.organizationId === orgA.id),
+      );
+      check('A: conversations — Org B row invisible by id', (await tx.conversation.findUnique({ where: { id: convB.id } })) === null);
+    });
+
+    const msgA = await systemPrisma.message.create({
+      data: { organizationId: orgA.id, conversationId: convA.id, direction: 'INBOUND', body: 'Hi from A contact' },
+    });
+    const msgB = await systemPrisma.message.create({
+      data: { organizationId: orgB.id, conversationId: convB.id, direction: 'INBOUND', body: 'Hi from B contact' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const msgs = await tx.message.findMany();
+      check(
+        'A: messages — sees only own rows',
+        msgs.some((m) => m.id === msgA.id) && msgs.every((m) => m.organizationId === orgA.id),
+      );
+      check('A: messages — Org B row invisible by id', (await tx.message.findUnique({ where: { id: msgB.id } })) === null);
+    });
+
+    const tplA = await systemPrisma.messageTemplate.create({
+      data: { organizationId: orgA.id, name: `tpl_a_${suffix}`, bodyText: 'Hello {{1}}' },
+    });
+    const tplB = await systemPrisma.messageTemplate.create({
+      data: { organizationId: orgB.id, name: `tpl_b_${suffix}`, bodyText: 'Hello {{1}}' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const tpls = await tx.messageTemplate.findMany();
+      check(
+        'A: message_templates — sees only own rows',
+        tpls.some((t) => t.id === tplA.id) && tpls.every((t) => t.organizationId === orgA.id),
+      );
+      check('A: message_templates — Org B row invisible by id', (await tx.messageTemplate.findUnique({ where: { id: tplB.id } })) === null);
+    });
+
+    const commA = await systemPrisma.communicationLog.create({
+      data: { organizationId: orgA.id, leadId: leadA.id, channel: 'EMAIL', toAddress: 'a@example.com', body: 'Hi A' },
+    });
+    const commB = await systemPrisma.communicationLog.create({
+      data: { organizationId: orgB.id, leadId: leadB.id, channel: 'EMAIL', toAddress: 'b@example.com', body: 'Hi B' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const logs = await tx.communicationLog.findMany();
+      check(
+        'A: communication_logs — sees only own rows',
+        logs.some((l) => l.id === commA.id) && logs.every((l) => l.organizationId === orgA.id),
+      );
+      check('A: communication_logs — Org B row invisible by id', (await tx.communicationLog.findUnique({ where: { id: commB.id } })) === null);
+    });
+
+    // Call Log has no new table — it's a read view over LeadActivity(type=CALL).
+    const callA = await systemPrisma.leadActivity.create({
+      data: { organizationId: orgA.id, leadId: leadA.id, type: 'CALL', outcome: 'Connected', message: 'Call re: A' },
+    });
+    const callB = await systemPrisma.leadActivity.create({
+      data: { organizationId: orgB.id, leadId: leadB.id, type: 'CALL', outcome: 'Connected', message: 'Call re: B' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const calls = await tx.leadActivity.findMany({ where: { type: 'CALL' } });
+      check(
+        'A: call log (lead_activities type=CALL) — sees only own rows',
+        calls.some((c) => c.id === callA.id) && calls.every((c) => c.organizationId === orgA.id),
+      );
+      check('A: call log — Org B call invisible by id', (await tx.leadActivity.findUnique({ where: { id: callB.id } })) === null);
+    });
+
+    // 6. Cannot forge a row into Org B (WITH CHECK) — Phase 1 canary (leads) + one
+    // Phase 3 canary (conversations, since it carries real customer message data).
     let forgeRejected = false;
     try {
       await withTenant(orgA.id, async (tx) => {
@@ -133,6 +226,18 @@ async function main() {
       forgeRejected = true;
     }
     check('A: inserting a lead with Org B id is rejected by RLS WITH CHECK', forgeRejected);
+
+    let conversationForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.conversation.create({
+          data: { organizationId: orgB.id, channel: 'WHATSAPP', externalContactId: `wa-forge-${suffix}` },
+        });
+      });
+    } catch {
+      conversationForgeRejected = true;
+    }
+    check('A: inserting a conversation with Org B id is rejected by RLS WITH CHECK', conversationForgeRejected);
 
     // 7. Fail-closed: no org context set => zero rows visible.
     const noContext = await tenantPrisma.$transaction((tx) => tx.lead.findMany());

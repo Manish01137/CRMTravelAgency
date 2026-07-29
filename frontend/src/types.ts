@@ -616,3 +616,101 @@ export interface InviteResult {
   token: string;
   acceptUrl: string;
 }
+
+// --- Phase 3: Communication ---------------------------------------------------
+
+export type ChannelType = 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL' | 'SMS';
+export type ChannelConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'FAILED';
+
+export interface ChannelStatus {
+  channel: ChannelType;
+  status: ChannelConnectionStatus;
+  displayName: string | null;
+  lastError: string | null;
+  connectedAt: string | null;
+}
+
+export interface ChannelsPlatformConfig {
+  whatsappEnabled: boolean;
+  instagramEnabled: boolean;
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+  metaAppId: string | null;
+  whatsappConfigId: string | null;
+  instagramAppId: string | null;
+}
+
+export type ConversationChannel = 'WHATSAPP' | 'INSTAGRAM';
+
+export interface Conversation {
+  id: string;
+  organizationId: string;
+  channel: ConversationChannel;
+  externalContactId: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  leadId: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastInboundAt: string | null;
+  unreadCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageDirection = 'INBOUND' | 'OUTBOUND';
+export type MessageStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
+
+export interface ChannelMessage {
+  id: string;
+  conversationId: string;
+  direction: MessageDirection;
+  externalMessageId: string | null;
+  body: string | null;
+  mediaUrl: string | null;
+  templateName: string | null;
+  status: MessageStatus;
+  errorMessage: string | null;
+  sentById: string | null;
+  createdAt: string;
+}
+
+export type TemplateStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  category: string;
+  language: string;
+  bodyText: string;
+  status: TemplateStatus;
+  externalTemplateId: string | null;
+  createdAt: string;
+}
+
+export type CommChannel = 'EMAIL' | 'SMS';
+export type CommStatus = 'SENT' | 'FAILED';
+
+export interface CommunicationLog {
+  id: string;
+  leadId: string;
+  channel: CommChannel;
+  toAddress: string;
+  subject: string | null;
+  body: string;
+  status: CommStatus;
+  providerMessageId: string | null;
+  errorMessage: string | null;
+  sentById: string | null;
+  createdAt: string;
+}
+
+/** One row of the org-wide Call Log — a LeadActivity of type CALL, with its lead + author joined in. */
+export interface CallLogEntry {
+  id: string;
+  outcome: string | null;
+  message: string | null;
+  createdAt: string;
+  lead: { id: string; name: string; phone: string | null } | null;
+  createdBy: { id: string; name: string } | null;
+}

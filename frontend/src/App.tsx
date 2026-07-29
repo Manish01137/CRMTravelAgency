@@ -39,6 +39,11 @@ import { LinktreeCategoriesPage } from '@/pages/LinktreeCategoriesPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
+import { ChannelsSettingsPage } from '@/pages/ChannelsSettingsPage';
+import { InstagramCallbackPage } from '@/pages/InstagramCallbackPage';
+import { InboxPage } from '@/pages/InboxPage';
+import { CommunicationsPage } from '@/pages/CommunicationsPage';
+import { CallLogPage } from '@/pages/CallLogPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 const queryClient = new QueryClient({
@@ -148,6 +153,9 @@ function AppRoutes() {
         <Route path="/sightseeing" element={<SightseeingPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/communications" element={<CommunicationsPage />} />
+        <Route path="/call-log" element={<CallLogPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />
@@ -158,6 +166,8 @@ function AppRoutes() {
           <Route path="/website" element={<HostSiteAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
+          <Route path="/settings/channels" element={<ChannelsSettingsPage />} />
+          <Route path="/settings/channels/instagram/callback" element={<InstagramCallbackPage />} />
         </Route>
       </Route>
 

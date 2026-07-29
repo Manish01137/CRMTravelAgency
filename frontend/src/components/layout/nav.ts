@@ -16,6 +16,10 @@ import {
   Globe2,
   Ticket,
   ListChecks,
+  Inbox,
+  Send,
+  PhoneCall,
+  Plug,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -30,6 +34,9 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/leads', label: 'Leads', icon: Contact2 },
+  { to: '/inbox', label: 'Inbox', icon: Inbox },
+  { to: '/communications', label: 'Communications', icon: Send },
+  { to: '/call-log', label: 'Call Log', icon: PhoneCall },
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck2 },
   { to: '/events', label: 'Events', icon: Ticket },
   { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
@@ -48,4 +55,5 @@ export const NAV_ITEMS: NavItem[] = [
 export const SETTINGS_ITEMS: NavItem[] = [
   { to: '/settings/profile', label: 'My profile', icon: UserRound },
   { to: '/settings/organization', label: 'Organization', icon: Building2, adminOnly: true },
+  { to: '/settings/channels', label: 'Channels', icon: Plug, adminOnly: true },
 ];

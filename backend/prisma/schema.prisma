@@ -109,6 +109,55 @@ enum BillStatus {
   PAID
 }
 
+// --- Phase 3 enums (Communication) ------------------------------------------
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+  EMAIL
+  SMS
+}
+
+enum ChannelConnectionStatus {
+  NOT_CONNECTED
+  CONNECTED
+  FAILED
+}
+
+enum ConversationChannel {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum TemplateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CommChannel {
+  EMAIL
+  SMS
+}
+
+enum CommStatus {
+  SENT
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -154,6 +203,11 @@ model Organization {
   linktreeCategories LinktreeCategory[]
   packageLinktreeCategories PackageLinktreeCategory[]
   hostReviews HostReview[]
+  channelConnections ChannelConnection[]
+  conversations      Conversation[]
+  messages           Message[]
+  messageTemplates   MessageTemplate[]
+  communicationLogs  CommunicationLog[]
 
   @@map("organizations")
 }
@@ -255,6 +309,8 @@ model User {
   bookings        Booking[]    @relation("BookingAgent")
   tasks           Task[]       @relation("TaskAssignee")
   leadActivities  LeadActivity[] @relation("ActivityAuthor")
+  sentMessages       Message[]          @relation("MessageSender")
+  sentCommunications CommunicationLog[] @relation("CommSender")
 
   @@index([organizationId])
   @@map("users")
@@ -284,6 +340,10 @@ model Lead {
   bookings     Booking[]
   tasks        Task[]
   activities   LeadActivity[]
+  // Phase 3 (Communication) — inbound channel messages/sends land against a lead.
+  // Purely additive back-relations; no column added to `leads` itself.
+  conversations     Conversation[]
+  communicationLogs CommunicationLog[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -626,4 +686,136 @@ model Bill {
   @@index([organizationId])
   @@index([bookingId])
   @@map("bills")
+}
+
+// ===========================================================================
+// Phase 3 — Communication (WhatsApp Inbox, Instagram Inbox, Email, SMS, Calls)
+// ===========================================================================
+//
+// Call Log deliberately has NO new table — it reuses the existing LeadActivity
+// model (type=CALL, which already carries outcome/message/createdBy/leadId).
+// See modules/call-log for the org-wide list view over that same data.
+
+/// One row per organization per channel: connection status + encrypted
+/// credentials. WhatsApp/Instagram store an OAuth access token (from Meta's
+/// Embedded Signup / Instagram Login); Email/SMS store a provider API key.
+/// `credentials` is always encrypted at rest (see src/lib/encryption.ts) and is
+/// never serialized back to the client.
+model ChannelConnection {
+  id             String                  @id @default(uuid()) @db.Uuid
+  organizationId String                  @map("organization_id") @db.Uuid
+  channel        ChannelType
+  status         ChannelConnectionStatus @default(NOT_CONNECTED)
+  displayName    String?                 @map("display_name") // phone number / IG handle / from-address / sender id shown in Settings
+  externalId     String?                 @map("external_id") // WABA id / IG-scoped account id — routes inbound webhooks to this org
+  credentials    String?                 // AES-256-GCM encrypted JSON blob
+  lastError      String?                 @map("last_error")
+  connectedAt    DateTime?               @map("connected_at")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, channel])
+  @@index([organizationId])
+  @@index([channel, externalId])
+  @@map("channel_connections")
+}
+
+/// One inbox thread per external contact per channel per organization. Powers
+/// the unified WhatsApp/Instagram Inbox (one screen, filtered by channel tab).
+model Conversation {
+  id                 String              @id @default(uuid()) @db.Uuid
+  organizationId     String              @map("organization_id") @db.Uuid
+  channel            ConversationChannel
+  externalContactId  String              @map("external_contact_id") // WhatsApp wa_id (phone) or Instagram IGSID
+  contactName        String?             @map("contact_name")
+  contactPhone       String?             @map("contact_phone") // WhatsApp only
+  leadId             String?             @map("lead_id") @db.Uuid
+  lastMessageAt      DateTime?           @map("last_message_at")
+  lastMessagePreview String?             @map("last_message_preview")
+  lastInboundAt      DateTime?           @map("last_inbound_at") // start of WhatsApp's 24h free-form reply window
+  unreadCount        Int                 @default(0) @map("unread_count")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages     Message[]
+
+  @@unique([organizationId, channel, externalContactId])
+  @@index([organizationId])
+  @@index([organizationId, channel, lastMessageAt])
+  @@index([leadId])
+  @@map("conversations")
+}
+
+/// One inbound or outbound message within a conversation.
+model Message {
+  id                String           @id @default(uuid()) @db.Uuid
+  organizationId    String           @map("organization_id") @db.Uuid
+  conversationId     String          @map("conversation_id") @db.Uuid
+  direction         MessageDirection
+  externalMessageId String?          @map("external_message_id")
+  body              String?
+  mediaUrl          String?          @map("media_url")
+  templateName      String?          @map("template_name") // set when sent as a WhatsApp template (outside the 24h window)
+  status            MessageStatus    @default(SENT)
+  errorMessage      String?          @map("error_message")
+  sentById          String?          @map("sent_by_id") @db.Uuid // agent who sent it (outbound only)
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("MessageSender", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+/// WhatsApp message template (needed to message a contact outside the 24h
+/// window). Created against Meta and mirrored here with its approval status.
+model MessageTemplate {
+  id                 String         @id @default(uuid()) @db.Uuid
+  organizationId     String         @map("organization_id") @db.Uuid
+  name               String
+  category           String         @default("UTILITY")
+  language           String         @default("en_US")
+  bodyText           String         @map("body_text")
+  status             TemplateStatus @default(PENDING)
+  externalTemplateId String?        @map("external_template_id")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name, language])
+  @@index([organizationId])
+  @@map("message_templates")
+}
+
+/// Send history for Email + SMS, against a lead (e.g. emailing a package PDF,
+/// a booking confirmation SMS). One shared log shape for both channels.
+model CommunicationLog {
+  id                String      @id @default(uuid()) @db.Uuid
+  organizationId    String      @map("organization_id") @db.Uuid
+  leadId            String      @map("lead_id") @db.Uuid
+  channel           CommChannel
+  toAddress         String      @map("to_address") // email address or phone number
+  subject           String?
+  body              String
+  status            CommStatus  @default(SENT)
+  providerMessageId String?     @map("provider_message_id")
+  errorMessage      String?     @map("error_message")
+  sentById          String?     @map("sent_by_id") @db.Uuid
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("CommSender", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([leadId, createdAt])
+  @@map("communication_logs")
 }
