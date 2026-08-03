@@ -619,7 +619,7 @@ export interface InviteResult {
 
 // --- Phase 3: Communication ---------------------------------------------------
 
-export type ChannelType = 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL' | 'SMS';
+export type ChannelType = 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL';
 export type ChannelConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'FAILED';
 
 export interface ChannelStatus {
@@ -634,7 +634,6 @@ export interface ChannelsPlatformConfig {
   whatsappEnabled: boolean;
   instagramEnabled: boolean;
   emailEnabled: boolean;
-  smsEnabled: boolean;
   metaAppId: string | null;
   whatsappConfigId: string | null;
   instagramAppId: string | null;
@@ -688,7 +687,7 @@ export interface MessageTemplate {
   createdAt: string;
 }
 
-export type CommChannel = 'EMAIL' | 'SMS';
+export type CommChannel = 'EMAIL';
 export type CommStatus = 'SENT' | 'FAILED';
 
 export interface CommunicationLog {

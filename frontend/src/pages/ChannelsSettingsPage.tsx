@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Instagram, Mail, MessageCircle, Phone, Plug, Unplug } from 'lucide-react';
+import { AlertTriangle, Instagram, Mail, MessageCircle, Plug, Unplug } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import type { ChannelsPlatformConfig, ChannelStatus, ChannelType } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -172,86 +172,6 @@ function EmailChannelCard({ status }: { status: ChannelStatus }) {
   );
 }
 
-/** SMS card — plain API key form (Twilio/MSG91, no OAuth equivalent). */
-function SmsChannelCard({ status }: { status: ChannelStatus }) {
-  const queryClient = useQueryClient();
-  const [accountSid, setAccountSid] = useState('');
-  const [authToken, setAuthToken] = useState('');
-  const [senderId, setSenderId] = useState(status.status === 'CONNECTED' ? status.displayName ?? '' : '');
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const saveMutation = useMutation({
-    mutationFn: () => api.patch<ChannelStatus>('/channels/sms', { accountSid, authToken, senderId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['channels'] });
-      toast.success('SMS connected');
-      setAccountSid('');
-      setAuthToken('');
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save SMS settings'),
-  });
-  const disconnectMutation = useMutation({
-    mutationFn: () => api.delete('/channels/SMS'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['channels'] });
-      toast.success('SMS disconnected');
-    },
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2">
-            <Phone className="size-5 text-primary" /> SMS
-          </CardTitle>
-          {statusBadge(status.status)}
-        </div>
-        <CardDescription>Twilio (or MSG91) — booking confirmations and follow-up nudges as a fallback to WhatsApp.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {status.status === 'CONNECTED' && <p className="text-sm font-medium text-foreground">Sending as {status.displayName}</p>}
-        <Field label="Sender ID / phone number" htmlFor="smsSender">
-          <Input id="smsSender" placeholder="+15551234567" value={senderId} onChange={(e) => setSenderId(e.target.value)} />
-        </Field>
-        <Field label="Account SID" htmlFor="smsSid">
-          <Input id="smsSid" placeholder="ACxxxxxxxxxxxxxxxx" value={accountSid} onChange={(e) => setAccountSid(e.target.value)} />
-        </Field>
-        <Field label="Auth token" htmlFor="smsToken" hint="Stored encrypted — never shown again after saving.">
-          <Input id="smsToken" type="password" value={authToken} onChange={(e) => setAuthToken(e.target.value)} />
-        </Field>
-        <div className="flex gap-2 pt-1">
-          <Button
-            size="sm"
-            disabled={!accountSid.trim() || !authToken.trim() || !senderId.trim() || saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-          >
-            {saveMutation.isPending && <Spinner className="size-4" />} Save
-          </Button>
-          {status.status === 'CONNECTED' && (
-            <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)} disabled={disconnectMutation.isPending}>
-              <Unplug className="size-4" /> Disconnect
-            </Button>
-          )}
-        </div>
-      </CardContent>
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Disconnect SMS?"
-        description="Your team won't be able to send SMS from leads until you reconnect."
-        confirmLabel="Disconnect"
-        destructive
-        loading={disconnectMutation.isPending}
-        onConfirm={() => {
-          disconnectMutation.mutate();
-          setConfirmOpen(false);
-        }}
-      />
-    </Card>
-  );
-}
-
 export function ChannelsSettingsPage() {
   const queryClient = useQueryClient();
   const [connectingChannel, setConnectingChannel] = useState<ChannelType | null>(null);
@@ -264,7 +184,6 @@ export function ChannelsSettingsPage() {
   const whatsapp = channelsQuery.data?.find((c) => c.channel === 'WHATSAPP');
   const instagram = channelsQuery.data?.find((c) => c.channel === 'INSTAGRAM');
   const email = channelsQuery.data?.find((c) => c.channel === 'EMAIL');
-  const sms = channelsQuery.data?.find((c) => c.channel === 'SMS');
 
   const disconnectMutation = useMutation({
     mutationFn: (channel: ChannelType) => api.delete(`/channels/${channel}`),
@@ -310,11 +229,11 @@ export function ChannelsSettingsPage() {
     <div>
       <PageHeader
         title="Channels"
-        description="Connect WhatsApp, Instagram, Email and SMS — each organization connects its own accounts."
+        description="Connect WhatsApp, Instagram and Email — each organization connects its own accounts."
       />
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-64 rounded-xl" />
           ))}
         </div>
@@ -343,7 +262,6 @@ export function ChannelsSettingsPage() {
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'INSTAGRAM'}
           />
           <EmailChannelCard status={email ?? { channel: 'EMAIL', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
-          <SmsChannelCard status={sms ?? { channel: 'SMS', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
         </div>
       )}
     </div>

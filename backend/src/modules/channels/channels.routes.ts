@@ -4,7 +4,7 @@ import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { requireRole } from '../../middleware/requireRole';
 import * as controller from './channels.controller';
-import { channelParam, connectEmailSchema, connectInstagramSchema, connectSmsSchema, connectWhatsAppSchema } from './channels.schemas';
+import { channelParam, connectEmailSchema, connectInstagramSchema, connectWhatsAppSchema } from './channels.schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -31,12 +31,6 @@ router.patch(
   requireRole('ADMIN'),
   validate({ body: connectEmailSchema }),
   asyncHandler(controller.connectEmail),
-);
-router.patch(
-  '/sms',
-  requireRole('ADMIN'),
-  validate({ body: connectSmsSchema }),
-  asyncHandler(controller.connectSms),
 );
 router.delete(
   '/:channel',

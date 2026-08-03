@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertCircle, Check, Mail, MessageSquareText, Send } from 'lucide-react';
+import { AlertCircle, Check, Mail, Send } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { ChannelStatus, CommunicationLog, Lead } from '@/types';
@@ -68,47 +68,6 @@ function EmailPanel({ lead, connected }: { lead: Lead; connected: boolean }) {
   );
 }
 
-function SmsPanel({ lead, connected }: { lead: Lead; connected: boolean }) {
-  const queryClient = useQueryClient();
-  const [to, setTo] = useState(lead.phone ?? '');
-  const [body, setBody] = useState('');
-
-  const mutation = useMutation({
-    mutationFn: () => api.post<CommunicationLog>(`/communications/leads/${lead.id}/sms`, { to: to.trim(), body: body.trim() }),
-    onSuccess: () => {
-      toast.success('SMS sent');
-      setBody('');
-      queryClient.invalidateQueries({ queryKey: ['comm-log', lead.id] });
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Send failed'),
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MessageSquareText className="size-5 text-primary" /> SMS
-        </CardTitle>
-        <CardDescription>Booking confirmations and follow-up nudges — a fallback to WhatsApp.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {!connected && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Connect SMS in Settings → Channels first.</p>
-        )}
-        <Field label="To" htmlFor="commSmsTo">
-          <Input id="commSmsTo" value={to} onChange={(e) => setTo(e.target.value)} placeholder="+91 98200 55012" />
-        </Field>
-        <Field label="Message" htmlFor="commSmsBody" hint={`${body.length}/1600`}>
-          <Textarea id="commSmsBody" rows={5} maxLength={1600} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message…" />
-        </Field>
-        <Button size="sm" disabled={!connected || !to.trim() || !body.trim() || mutation.isPending} onClick={() => mutation.mutate()}>
-          {mutation.isPending ? <Spinner className="size-4" /> : <Send className="size-4" />} Send SMS
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
 function SendLog({ leadId }: { leadId: string }) {
   const logQuery = useQuery({
     queryKey: ['comm-log', leadId],
@@ -120,7 +79,7 @@ function SendLog({ leadId }: { leadId: string }) {
     <Card>
       <CardHeader>
         <CardTitle>Send history</CardTitle>
-        <CardDescription>Email and SMS sent to this lead, most recent first.</CardDescription>
+        <CardDescription>Emails sent to this lead, most recent first.</CardDescription>
       </CardHeader>
       <CardContent>
         {logQuery.isLoading ? (
@@ -130,14 +89,14 @@ function SendLog({ leadId }: { leadId: string }) {
             ))}
           </div>
         ) : items.length === 0 ? (
-          <EmptyState icon={<Send />} title="No messages yet" description="Sent emails and SMS will appear here." className="border-none py-8" />
+          <EmptyState icon={<Send />} title="No messages yet" description="Sent emails will appear here." className="border-none py-8" />
         ) : (
           <div className="space-y-2">
             {items.map((log) => (
               <div key={log.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    {log.channel === 'EMAIL' ? <Mail className="size-3.5 text-muted-foreground" /> : <MessageSquareText className="size-3.5 text-muted-foreground" />}
+                    <Mail className="size-3.5 text-muted-foreground" />
                     <span className="text-sm font-medium text-foreground">{log.toAddress}</span>
                   </div>
                   <Badge variant={log.status === 'SENT' ? 'success' : 'destructive'} className="gap-1">
@@ -163,11 +122,10 @@ export function CommunicationsPage() {
 
   const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => api.get<ChannelStatus[]>('/channels') });
   const emailConnected = channelsQuery.data?.find((c) => c.channel === 'EMAIL')?.status === 'CONNECTED';
-  const smsConnected = channelsQuery.data?.find((c) => c.channel === 'SMS')?.status === 'CONNECTED';
 
   return (
     <div>
-      <PageHeader title="Communications" description="Send an email or SMS from a lead, and see its send history." />
+      <PageHeader title="Communications" description="Send an email from a lead, and see its send history." />
 
       <div className="mb-5 max-w-md">
         <LeadPicker selected={selectedLead} onSelect={setSelectedLead} />
@@ -177,14 +135,11 @@ export function CommunicationsPage() {
         <EmptyState
           icon={<Send />}
           title="Search for a lead"
-          description="Pick a lead above to send them an email or SMS, and view what's already been sent."
+          description="Pick a lead above to send them an email, and view what's already been sent."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-4">
-            <EmailPanel lead={selectedLead} connected={emailConnected} />
-            <SmsPanel lead={selectedLead} connected={smsConnected} />
-          </div>
+          <EmailPanel lead={selectedLead} connected={emailConnected} />
           <SendLog leadId={selectedLead.id} />
         </div>
       )}

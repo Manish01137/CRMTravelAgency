@@ -15,7 +15,6 @@ import { AppError } from '../../lib/errors';
 import type {
   ConnectEmailInput,
   ConnectInstagramInput,
-  ConnectSmsInput,
   ConnectWhatsAppInput,
 } from './channels.schemas';
 
@@ -32,22 +31,17 @@ export interface EmailCredentials {
   apiKey: string;
   fromAddress: string;
 }
-export interface SmsCredentials {
-  accountSid: string;
-  authToken: string;
-  senderId: string;
-}
 
 /** Public-safe shape — credentials are NEVER included. */
 export interface ChannelStatus {
-  channel: 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL' | 'SMS';
+  channel: 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL';
   status: 'NOT_CONNECTED' | 'CONNECTED' | 'FAILED';
   displayName: string | null;
   lastError: string | null;
   connectedAt: Date | null;
 }
 
-const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL', 'SMS'] as const;
+const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
 
 /**
  * Public (non-secret) values the frontend needs to launch each OAuth flow —
@@ -60,14 +54,13 @@ export async function getPlatformConfig() {
     whatsappEnabled: isMetaConfigured() && !!env.META_WHATSAPP_CONFIG_ID,
     instagramEnabled: isInstagramConfigured(),
     emailEnabled: true,
-    smsEnabled: true,
     metaAppId: env.META_APP_ID ?? null,
     whatsappConfigId: env.META_WHATSAPP_CONFIG_ID ?? null,
     instagramAppId: env.META_INSTAGRAM_APP_ID ?? env.META_APP_ID ?? null,
   };
 }
 
-/** Lists all four channels' status for the org, synthesizing NOT_CONNECTED for any never touched. */
+/** Lists all three channels' status for the org, synthesizing NOT_CONNECTED for any never touched. */
 export async function listChannels(organizationId: string): Promise<ChannelStatus[]> {
   return withTenant(organizationId, async (tx) => {
     const rows = await tx.channelConnection.findMany({ where: { organizationId } });
@@ -188,32 +181,6 @@ export async function connectEmail(organizationId: string, input: ConnectEmailIn
       update: {
         status: 'CONNECTED',
         displayName: input.fromAddress,
-        credentials: encryptJson(credentials),
-        connectedAt: new Date(),
-        lastError: null,
-      },
-    }),
-  );
-  return toStatus(row);
-}
-
-export async function connectSms(organizationId: string, input: ConnectSmsInput): Promise<ChannelStatus> {
-  const credentials: SmsCredentials = { accountSid: input.accountSid, authToken: input.authToken, senderId: input.senderId };
-  const row = await withTenant(organizationId, (tx) =>
-    tx.channelConnection.upsert({
-      where: { organizationId_channel: { organizationId, channel: 'SMS' } },
-      create: {
-        organizationId,
-        channel: 'SMS',
-        status: 'CONNECTED',
-        displayName: input.senderId,
-        credentials: encryptJson(credentials),
-        connectedAt: new Date(),
-        lastError: null,
-      },
-      update: {
-        status: 'CONNECTED',
-        displayName: input.senderId,
         credentials: encryptJson(credentials),
         connectedAt: new Date(),
         lastError: null,

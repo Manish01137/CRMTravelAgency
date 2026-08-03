@@ -115,7 +115,6 @@ enum ChannelType {
   WHATSAPP
   INSTAGRAM
   EMAIL
-  SMS
 }
 
 enum ChannelConnectionStatus {
@@ -150,7 +149,6 @@ enum TemplateStatus {
 
 enum CommChannel {
   EMAIL
-  SMS
 }
 
 enum CommStatus {
@@ -689,7 +687,7 @@ model Bill {
 }
 
 // ===========================================================================
-// Phase 3 — Communication (WhatsApp Inbox, Instagram Inbox, Email, SMS, Calls)
+// Phase 3 — Communication (WhatsApp Inbox, Instagram Inbox, Email, Calls)
 // ===========================================================================
 //
 // Call Log deliberately has NO new table — it reuses the existing LeadActivity
@@ -698,7 +696,7 @@ model Bill {
 
 /// One row per organization per channel: connection status + encrypted
 /// credentials. WhatsApp/Instagram store an OAuth access token (from Meta's
-/// Embedded Signup / Instagram Login); Email/SMS store a provider API key.
+/// Embedded Signup / Instagram Login); Email stores a provider API key.
 /// `credentials` is always encrypted at rest (see src/lib/encryption.ts) and is
 /// never serialized back to the client.
 model ChannelConnection {
@@ -795,8 +793,7 @@ model MessageTemplate {
   @@map("message_templates")
 }
 
-/// Send history for Email + SMS, against a lead (e.g. emailing a package PDF,
-/// a booking confirmation SMS). One shared log shape for both channels.
+/// Send history for Email sends against a lead (e.g. emailing a package PDF).
 model CommunicationLog {
   id                String      @id @default(uuid()) @db.Uuid
   organizationId    String      @map("organization_id") @db.Uuid

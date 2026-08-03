@@ -13,10 +13,4 @@ export const sendEmailSchema = z.object({
   to: z.preprocess(emptyToUndefined, z.string().email('Enter a valid email').optional()),
 });
 
-export const sendSmsSchema = z.object({
-  body: z.string().trim().min(1, 'Message is required').max(1600),
-  to: z.preprocess(emptyToUndefined, z.string().trim().max(40).optional()),
-});
-
 export type SendEmailInput = z.infer<typeof sendEmailSchema>;
-export type SendSmsInput = z.infer<typeof sendSmsSchema>;
