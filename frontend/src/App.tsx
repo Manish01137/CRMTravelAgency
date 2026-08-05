@@ -44,6 +44,10 @@ import { InstagramCallbackPage } from '@/pages/InstagramCallbackPage';
 import { InboxPage } from '@/pages/InboxPage';
 import { CommunicationsPage } from '@/pages/CommunicationsPage';
 import { CallLogPage } from '@/pages/CallLogPage';
+import { BotFlowsPage } from '@/pages/BotFlowsPage';
+import { BotFlowBuilderPage } from '@/pages/BotFlowBuilderPage';
+import { AiAgentSettingsPage } from '@/pages/AiAgentSettingsPage';
+import { AutomationSettingsPage } from '@/pages/AutomationSettingsPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
 const queryClient = new QueryClient({
@@ -168,6 +172,10 @@ function AppRoutes() {
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
           <Route path="/settings/channels" element={<ChannelsSettingsPage />} />
           <Route path="/settings/channels/instagram/callback" element={<InstagramCallbackPage />} />
+          <Route path="/bot-flows" element={<BotFlowsPage />} />
+          <Route path="/bot-flows/:id" element={<BotFlowBuilderPage />} />
+          <Route path="/settings/ai-agent" element={<AiAgentSettingsPage />} />
+          <Route path="/settings/automation" element={<AutomationSettingsPage />} />
         </Route>
       </Route>
 

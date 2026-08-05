@@ -215,8 +215,77 @@ async function main() {
       check('A: call log — Org B call invisible by id', (await tx.leadActivity.findUnique({ where: { id: callB.id } })) === null);
     });
 
+    // 5d. Phase 4 (Automation & AI) tables — same policy, one canary row per org each.
+    const flowA = await systemPrisma.botFlow.create({ data: { organizationId: orgA.id, name: `Flow A ${suffix}` } });
+    const flowB = await systemPrisma.botFlow.create({ data: { organizationId: orgB.id, name: `Flow B ${suffix}` } });
+    await withTenant(orgA.id, async (tx) => {
+      const flows = await tx.botFlow.findMany();
+      check('A: bot_flows — sees only own rows', flows.some((f) => f.id === flowA.id) && flows.every((f) => f.organizationId === orgA.id));
+      check('A: bot_flows — Org B row invisible by id', (await tx.botFlow.findUnique({ where: { id: flowB.id } })) === null);
+    });
+
+    const stepA = await systemPrisma.botFlowStep.create({
+      data: { organizationId: orgA.id, flowId: flowA.id, type: 'COLLECT', question: 'Destination?', leadField: 'destination' },
+    });
+    const stepB = await systemPrisma.botFlowStep.create({
+      data: { organizationId: orgB.id, flowId: flowB.id, type: 'COLLECT', question: 'Destination?', leadField: 'destination' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const steps = await tx.botFlowStep.findMany();
+      check('A: bot_flow_steps — sees only own rows', steps.some((s) => s.id === stepA.id) && steps.every((s) => s.organizationId === orgA.id));
+      check('A: bot_flow_steps — Org B row invisible by id', (await tx.botFlowStep.findUnique({ where: { id: stepB.id } })) === null);
+    });
+
+    const assignA = await systemPrisma.botFlowAssignment.create({ data: { organizationId: orgA.id, channel: 'WHATSAPP', flowId: flowA.id } });
+    const assignB = await systemPrisma.botFlowAssignment.create({ data: { organizationId: orgB.id, channel: 'WHATSAPP', flowId: flowB.id } });
+    await withTenant(orgA.id, async (tx) => {
+      const assigns = await tx.botFlowAssignment.findMany();
+      check('A: bot_flow_assignments — sees only own rows', assigns.some((a) => a.id === assignA.id) && assigns.every((a) => a.organizationId === orgA.id));
+      check('A: bot_flow_assignments — Org B row invisible by id', (await tx.botFlowAssignment.findUnique({ where: { id: assignB.id } })) === null);
+    });
+
+    const sessA = await systemPrisma.botFlowSession.create({ data: { organizationId: orgA.id, conversationId: convA.id, flowId: flowA.id } });
+    const sessB = await systemPrisma.botFlowSession.create({ data: { organizationId: orgB.id, conversationId: convB.id, flowId: flowB.id } });
+    await withTenant(orgA.id, async (tx) => {
+      const sessions = await tx.botFlowSession.findMany();
+      check('A: bot_flow_sessions — sees only own rows', sessions.some((s) => s.id === sessA.id) && sessions.every((s) => s.organizationId === orgA.id));
+      check('A: bot_flow_sessions — Org B row invisible by id', (await tx.botFlowSession.findUnique({ where: { id: sessB.id } })) === null);
+    });
+
+    const aiA = await systemPrisma.aiAgentSettings.create({ data: { organizationId: orgA.id, systemPrompt: 'A persona' } });
+    const aiB = await systemPrisma.aiAgentSettings.create({ data: { organizationId: orgB.id, systemPrompt: 'B persona' } });
+    await withTenant(orgA.id, async (tx) => {
+      const settings = await tx.aiAgentSettings.findMany();
+      check('A: ai_agent_settings — sees only own rows', settings.some((s) => s.id === aiA.id) && settings.every((s) => s.organizationId === orgA.id));
+      check('A: ai_agent_settings — Org B row invisible by id', (await tx.aiAgentSettings.findUnique({ where: { id: aiB.id } })) === null);
+    });
+
+    const autoA = await systemPrisma.automationSettings.create({ data: { organizationId: orgA.id, enabled: true } });
+    const autoB = await systemPrisma.automationSettings.create({ data: { organizationId: orgB.id, enabled: true } });
+    await withTenant(orgA.id, async (tx) => {
+      const settings = await tx.automationSettings.findMany();
+      check('A: automation_settings — sees only own rows', settings.some((s) => s.id === autoA.id) && settings.every((s) => s.organizationId === orgA.id));
+      check('A: automation_settings — Org B row invisible by id', (await tx.automationSettings.findUnique({ where: { id: autoB.id } })) === null);
+    });
+
+    const followA = await systemPrisma.followUpAttempt.create({
+      data: { organizationId: orgA.id, leadId: leadA.id, channel: 'EMAIL', scheduledFor: new Date(), status: 'SENT' },
+    });
+    const followB = await systemPrisma.followUpAttempt.create({
+      data: { organizationId: orgB.id, leadId: leadB.id, channel: 'EMAIL', scheduledFor: new Date(), status: 'SENT' },
+    });
+    await withTenant(orgA.id, async (tx) => {
+      const attempts = await tx.followUpAttempt.findMany();
+      check('A: follow_up_attempts — sees only own rows', attempts.some((a) => a.id === followA.id) && attempts.every((a) => a.organizationId === orgA.id));
+      check('A: follow_up_attempts — Org B row invisible by id', (await tx.followUpAttempt.findUnique({ where: { id: followB.id } })) === null);
+    });
+
+    // needsReview additive Lead fields are covered implicitly (same `leads` RLS
+    // policy already proven above) — no separate table to canary.
+
     // 6. Cannot forge a row into Org B (WITH CHECK) — Phase 1 canary (leads) + one
-    // Phase 3 canary (conversations, since it carries real customer message data).
+    // Phase 3 canary (conversations, since it carries real customer message data)
+    // + one Phase 4 canary (bot_flows).
     let forgeRejected = false;
     try {
       await withTenant(orgA.id, async (tx) => {
@@ -238,6 +307,16 @@ async function main() {
       conversationForgeRejected = true;
     }
     check('A: inserting a conversation with Org B id is rejected by RLS WITH CHECK', conversationForgeRejected);
+
+    let botFlowForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.botFlow.create({ data: { organizationId: orgB.id, name: 'Forged into B' } });
+      });
+    } catch {
+      botFlowForgeRejected = true;
+    }
+    check('A: inserting a bot_flow with Org B id is rejected by RLS WITH CHECK', botFlowForgeRejected);
 
     // 7. Fail-closed: no org context set => zero rows visible.
     const noContext = await tenantPrisma.$transaction((tx) => tx.lead.findMany());

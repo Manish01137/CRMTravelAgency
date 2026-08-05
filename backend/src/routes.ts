@@ -23,6 +23,10 @@ import webhooksRoutes from './modules/webhooks/webhooks.routes';
 import inboxRoutes from './modules/inbox/inbox.routes';
 import communicationsRoutes from './modules/communications/communications.routes';
 import callLogRoutes from './modules/call-log/call-log.routes';
+// Phase 4 — Automation & AI
+import botFlowRoutes from './modules/bot-flow/bot-flow.routes';
+import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
+import automationRoutes from './modules/automation/automation.routes';
 
 const router = Router();
 
@@ -50,5 +54,9 @@ router.use('/webhooks', webhooksRoutes);
 router.use('/inbox', inboxRoutes);
 router.use('/communications', communicationsRoutes);
 router.use('/call-log', callLogRoutes);
+// Phase 4 — Automation & AI
+router.use('/bot-flows', botFlowRoutes);
+router.use('/ai-agent', aiAgentRoutes);
+router.use('/automation', automationRoutes);
 
 export default router;

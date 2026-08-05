@@ -206,6 +206,13 @@ model Organization {
   messages           Message[]
   messageTemplates   MessageTemplate[]
   communicationLogs  CommunicationLog[]
+  botFlows           BotFlow[]
+  botFlowSteps       BotFlowStep[]
+  botFlowAssignments BotFlowAssignment[]
+  botFlowSessions    BotFlowSession[]
+  aiAgentSettings    AiAgentSettings?
+  automationSettings AutomationSettings?
+  followUpAttempts   FollowUpAttempt[]
 
   @@map("organizations")
 }
@@ -330,6 +337,10 @@ model Lead {
   budgetCurrency String?    @default("USD") @map("budget_currency")
   notes          String?
   assignedToId   String?    @map("assigned_to_id") @db.Uuid
+  // Phase 4 (Bot Flow) — set when an inbound message matches a flow's
+  // "Needs Review" keyword list; the bot stops and hands off to a human.
+  needsReview       Boolean  @default(false) @map("needs_review")
+  needsReviewReason String?  @map("needs_review_reason")
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
@@ -342,6 +353,8 @@ model Lead {
   // Purely additive back-relations; no column added to `leads` itself.
   conversations     Conversation[]
   communicationLogs CommunicationLog[]
+  // Phase 4 (Automation) — same additive-back-relation pattern as Phase 3 above.
+  followUpAttempts  FollowUpAttempt[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -740,6 +753,8 @@ model Conversation {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
   messages     Message[]
+  // Phase 4 (Bot Flow) — additive back-relation, same pattern Phase 3 used on Lead.
+  botFlowSession BotFlowSession?
 
   @@unique([organizationId, channel, externalContactId])
   @@index([organizationId])
@@ -815,4 +830,190 @@ model CommunicationLog {
   @@index([organizationId])
   @@index([leadId, createdAt])
   @@map("communication_logs")
+}
+
+// ===========================================================================
+// Phase 4 — Automation & AI (Bot Flow, AI Agent Builder, Follow-up Automation)
+// ===========================================================================
+//
+// Cross-references Phase 3 tables (ChannelConnection, Conversation) by real FK
+// with additive back-relations only — no Phase 3 module file is touched.
+// Gemini gets its own encrypted-credential table (AiAgentSettings) rather than
+// reusing ChannelConnection: same at-rest encryption + per-org Settings-screen
+// pattern, but Gemini isn't a messaging channel with its own conversations/
+// status, so it doesn't belong in that table.
+
+enum BotFlowStepType {
+  COLLECT
+  CONFIRM
+  CLOSING
+}
+
+enum BotFlowSessionStatus {
+  ACTIVE
+  COMPLETED
+  NEEDS_REVIEW
+}
+
+enum FollowUpStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// A conversational flow an organization runs on ONE connected WhatsApp number
+/// or Instagram account (see BotFlowAssignment). Steps are ordered/branching
+/// nodes (see BotFlowStep); COLLECT steps write straight into the existing
+/// Lead model — no parallel data store. If an inbound message matches
+/// `needsReviewKeywords`, the flow engine stops and flags the Lead instead of
+/// guessing (see Lead.needsReview).
+model BotFlow {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  name                String
+  fallbackMessage     String   @default("Sorry, I didn't quite get that — let me get a team member to help you.") @map("fallback_message")
+  needsReviewKeywords Json     @default("[]") @map("needs_review_keywords") // string[]
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        BotFlowStep[]
+  assignments  BotFlowAssignment[]
+  sessions     BotFlowSession[]
+
+  @@index([organizationId])
+  @@map("bot_flows")
+}
+
+/// One step (node) in a BotFlow's canvas. COLLECT asks a question and writes
+/// the reply into an existing Lead field. CONFIRM asks yes/no or multiple-
+/// choice and branches via `options`. CLOSING sends a final message and ends
+/// the flow. `canvasX`/`canvasY` persist the visual builder's node layout.
+model BotFlowStep {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  flowId         String          @map("flow_id") @db.Uuid
+  type           BotFlowStepType
+  order          Int             @default(0)
+  question       String? // COLLECT/CONFIRM prompt text, or CLOSING's final message
+  leadField      String?         @map("lead_field") // COLLECT only — target Lead column (name/email/phone/destination/travelDate/travelerCount/notes)
+  options        Json? // CONFIRM only — [{ label, nextStepId }]
+  nextStepId     String?         @map("next_step_id") // COLLECT's "what comes next" (CONFIRM branches via options instead; CLOSING leaves this null)
+  canvasX        Int?            @map("canvas_x")
+  canvasY        Int?            @map("canvas_y")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  flow         BotFlow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([flowId])
+  @@map("bot_flow_steps")
+}
+
+/// Which flow is currently active for one connected channel (a WhatsApp
+/// number OR an Instagram account) — one active flow per channel per org. Keyed
+/// by (organizationId, channel) rather than a ChannelConnection id, matching
+/// Phase 3's own convention (its disconnect endpoint is also channel-keyed,
+/// since each org has at most one connection per channel today — see
+/// ChannelConnection's own @@unique([organizationId, channel])). An org can
+/// have many flows but only one live per channel at a time.
+model BotFlowAssignment {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  channel        ConversationChannel
+  flowId         String              @map("flow_id") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  flow         BotFlow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, channel])
+  @@index([organizationId])
+  @@map("bot_flow_assignments")
+}
+
+/// Tracks one conversation's live progress through its assigned BotFlow. The
+/// poller (see queues/bot-flow-poller) advances this whenever a new inbound
+/// message lands on a bot-assigned conversation, using `lastProcessedMessageAt`
+/// as its cursor so each inbound message is handled exactly once.
+model BotFlowSession {
+  id                     String               @id @default(uuid()) @db.Uuid
+  organizationId         String               @map("organization_id") @db.Uuid
+  conversationId         String               @unique @map("conversation_id") @db.Uuid
+  flowId                 String               @map("flow_id") @db.Uuid
+  currentStepId          String?              @map("current_step_id") @db.Uuid
+  collectedData          Json                 @default("{}") @map("collected_data")
+  status                 BotFlowSessionStatus @default(ACTIVE)
+  lastProcessedMessageAt DateTime?            @map("last_processed_message_at")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  flow         BotFlow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("bot_flow_sessions")
+}
+
+/// Per-organization AI Agent configuration — the persona/system prompt used by
+/// Bot Flow's natural-language extraction, "Suggest Reply" and "Summarize",
+/// plus the org's own Gemini API key (encrypted at rest — see lib/encryption.ts,
+/// the same helper Phase 3 uses for channel credentials).
+model AiAgentSettings {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  systemPrompt   String?  @map("system_prompt")
+  agencyFacts    String?  @map("agency_facts")
+  tone           String?  @default("Friendly, warm and professional")
+  geminiApiKey   String?  @map("gemini_api_key") // AES-256-GCM encrypted; never serialized back to the client
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_agent_settings")
+}
+
+/// Per-organization follow-up automation config: nudge a lead if their status
+/// hasn't changed and there's been no reply within `delayHours`.
+model AutomationSettings {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  enabled        Boolean  @default(false)
+  delayHours     Int      @default(48) @map("delay_hours")
+  nudgeMessage   String?  @map("nudge_message")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("automation_settings")
+}
+
+/// Audit trail for follow-up nudges — one row per scheduled check, whether it
+/// actually sent, was skipped (status changed / lead already replied), or
+/// failed. `channel` is a plain string (not a shared enum) since it spans
+/// Email/WhatsApp/Instagram independently of ChannelType/CommChannel.
+model FollowUpAttempt {
+  id             String         @id @default(uuid()) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  leadId         String         @map("lead_id") @db.Uuid
+  channel        String
+  scheduledFor   DateTime       @map("scheduled_for")
+  status         FollowUpStatus @default(PENDING)
+  reason         String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([leadId, createdAt])
+  @@map("follow_up_attempts")
 }

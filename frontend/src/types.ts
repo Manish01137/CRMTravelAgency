@@ -713,3 +713,78 @@ export interface CallLogEntry {
   lead: { id: string; name: string; phone: string | null } | null;
   createdBy: { id: string; name: string } | null;
 }
+
+// --- Phase 4: Automation & AI -------------------------------------------------
+
+export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING';
+export type BotFlowSessionStatus = 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
+export type FollowUpStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
+
+/** Which existing Lead field a COLLECT step writes its answer into. */
+export type BotFlowLeadField = 'name' | 'email' | 'phone' | 'destination' | 'travelDate' | 'travelerCount' | 'notes';
+
+export interface BotFlowConfirmOption {
+  label: string;
+  nextStepId: string | null;
+}
+
+export interface BotFlowStep {
+  id: string;
+  flowId: string;
+  type: BotFlowStepType;
+  order: number;
+  question: string | null;
+  leadField: BotFlowLeadField | null;
+  options: BotFlowConfirmOption[] | null;
+  nextStepId: string | null;
+  canvasX: number | null;
+  canvasY: number | null;
+}
+
+export interface BotFlow {
+  id: string;
+  organizationId: string;
+  name: string;
+  fallbackMessage: string;
+  needsReviewKeywords: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { steps: number; assignments: number };
+}
+
+export interface BotFlowDetail extends BotFlow {
+  steps: BotFlowStep[];
+}
+
+export interface BotFlowAssignment {
+  id: string;
+  channel: ConversationChannel;
+  flowId: string;
+  flow: { id: string; name: string; isActive: boolean };
+}
+
+export interface AiAgentSettings {
+  systemPrompt: string | null;
+  agencyFacts: string | null;
+  tone: string | null;
+  hasGeminiKey: boolean;
+  updatedAt: string | null;
+}
+
+export interface AutomationSettingsData {
+  enabled: boolean;
+  delayHours: number;
+  nudgeMessage: string | null;
+}
+
+export interface FollowUpAttempt {
+  id: string;
+  leadId: string;
+  channel: string;
+  scheduledFor: string;
+  status: FollowUpStatus;
+  reason: string | null;
+  createdAt: string;
+  lead: { id: string; name: string } | null;
+}

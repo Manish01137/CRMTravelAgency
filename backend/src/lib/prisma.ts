@@ -54,11 +54,19 @@ export async function withTenant<T>(
   organizationId: string,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  return tenantPrisma.$transaction(async (tx) => {
-    // is_local = true → the setting lasts only for this transaction.
-    await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
-    return fn(tx);
-  });
+  return tenantPrisma.$transaction(
+    async (tx) => {
+      // is_local = true → the setting lasts only for this transaction.
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${organizationId}, true)`;
+      return fn(tx);
+    },
+    // Prisma's 5s default is tight for a pooled connection (Supabase's pooler
+    // adds real round-trip latency, more so under concurrent load) — 15s gives
+    // legitimate slow-but-succeeding transactions headroom without masking a
+    // truly hung query. `fn` itself must still never contain slow external
+    // I/O (HTTP calls) — see bot-flow.engine.ts / automation.engine.ts for why.
+    { timeout: 15_000 },
+  );
 }
 
 export async function disconnectPrisma(): Promise<void> {

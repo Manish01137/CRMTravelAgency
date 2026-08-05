@@ -48,6 +48,13 @@ const schema = z.object({
   // Instagram Login app id — usually the same as META_APP_ID under one Meta
   // App, but kept separate in case the client uses a dedicated Instagram app.
   META_INSTAGRAM_APP_ID: z.string().optional(),
+
+  // --- Phase 4: Automation (Redis + BullMQ) ------------------------------
+  // Bot Flow's inbound-message poller and the follow-up nudge scheduler both
+  // run as BullMQ jobs. Optional — like SUPABASE_URL/GEMINI_API_KEY, absence
+  // just disables the feature (worker doesn't start, automation endpoints
+  // report "not configured") instead of crashing the whole server at boot.
+  REDIS_URL: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

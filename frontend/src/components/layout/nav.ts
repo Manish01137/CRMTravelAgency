@@ -20,6 +20,9 @@ import {
   Send,
   PhoneCall,
   Plug,
+  Workflow,
+  Bot,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,6 +40,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/inbox', label: 'Inbox', icon: Inbox },
   { to: '/communications', label: 'Communications', icon: Send },
   { to: '/call-log', label: 'Call Log', icon: PhoneCall },
+  { to: '/bot-flows', label: 'Bot Flows', icon: Workflow, adminOnly: true },
   { to: '/bookings', label: 'Bookings', icon: CalendarCheck2 },
   { to: '/events', label: 'Events', icon: Ticket },
   { to: '/itineraries', label: 'Itineraries', icon: RouteIcon },
@@ -56,4 +60,6 @@ export const SETTINGS_ITEMS: NavItem[] = [
   { to: '/settings/profile', label: 'My profile', icon: UserRound },
   { to: '/settings/organization', label: 'Organization', icon: Building2, adminOnly: true },
   { to: '/settings/channels', label: 'Channels', icon: Plug, adminOnly: true },
+  { to: '/settings/ai-agent', label: 'AI Agent', icon: Bot, adminOnly: true },
+  { to: '/settings/automation', label: 'Automation', icon: Zap, adminOnly: true },
 ];
