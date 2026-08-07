@@ -13,6 +13,7 @@ import {
   Plus,
   Printer,
   ReceiptText,
+  Ticket,
   Trash2,
   UsersRound,
   Wallet,
@@ -416,9 +417,19 @@ export function BookingDetailPage() {
         <div className="animate-blob pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
-              {bookingRef(booking.bookingNumber)}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-widest text-white/60">
+                {bookingRef(booking.bookingNumber)}
+              </p>
+              {booking.autoCreated && (
+                <span
+                  title="Created automatically when this lead was marked WON"
+                  className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+                >
+                  <Wand2 className="size-2.5" /> Auto-created
+                </span>
+              )}
+            </div>
             <h1 className="mt-1 truncate font-display text-2xl font-bold sm:text-3xl">{booking.customerName}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/80">
               <span className="flex items-center gap-1">
@@ -429,6 +440,11 @@ export function BookingDetailPage() {
                   <CalendarDays className="size-3.5" />
                   {formatTravelDate(booking.startDate)}
                   {booking.endDate ? ` → ${formatTravelDate(booking.endDate)}` : ''}
+                </span>
+              )}
+              {booking.batch && (
+                <span className="flex items-center gap-1" title="Matched automatically from the lead's destination">
+                  <Ticket className="size-3.5" /> {booking.batch.name || 'Event'} · {formatTravelDate(booking.batch.departureDate)}
                 </span>
               )}
               {booking.travelerCount && (

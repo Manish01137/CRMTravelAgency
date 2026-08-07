@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   ArrowDown,
   CalendarCheck2,
   ArrowUp,
@@ -14,6 +15,7 @@ import {
   ChevronRight,
   Clock3,
   Contact2,
+  History,
   Mail,
   MapPin,
   MessageCircle,
@@ -231,6 +233,33 @@ function TemperaturePill({ lead }: { lead: Lead }) {
   );
 }
 
+/** A past booking with matching phone/email — surfaced so this isn't treated as a stranger. */
+function RepeatCustomerBadge({ lead }: { lead: Lead }) {
+  if (!lead.isRepeatCustomer) return null;
+  const b = lead.repeatBooking;
+  return (
+    <span
+      title={b ? `Previously booked: BK-${b.bookingNumber} · ${b.destination}` : 'Repeat customer'}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-inset ring-violet-100"
+    >
+      <History className="size-3" /> Repeat customer
+    </span>
+  );
+}
+
+/** Bot Flow stopped auto-responding after a "Needs Review" keyword match — flags for a human. */
+function NeedsReviewBadge({ lead }: { lead: Lead }) {
+  if (!lead.needsReview) return null;
+  return (
+    <span
+      title={lead.needsReviewReason ?? 'Needs human review'}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-100"
+    >
+      <AlertTriangle className="size-3" /> Needs review
+    </span>
+  );
+}
+
 /** Inline status changer: solid colored pill + dropdown of all stages. */
 function StatusDropdown({
   lead,
@@ -388,6 +417,8 @@ function LeadIdentityCell({ lead, onEdit }: { lead: Lead; onEdit: () => void }) 
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <SourceBadge source={lead.source} />
+        <NeedsReviewBadge lead={lead} />
+        <RepeatCustomerBadge lead={lead} />
         <span className="text-[11px] text-muted-foreground">ID: {shortId(lead.id)}</span>
       </div>
       <p className="flex items-center gap-1 text-[11px] text-muted-foreground">

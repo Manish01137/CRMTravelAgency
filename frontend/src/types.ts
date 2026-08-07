@@ -135,6 +135,14 @@ export interface AssignedAgent {
   email: string;
 }
 
+export interface RepeatCustomerBooking {
+  id: string;
+  bookingNumber: number;
+  destination: string;
+  totalAmount: number;
+  currency: string;
+}
+
 export interface Lead {
   id: string;
   organizationId: string;
@@ -151,6 +159,13 @@ export interface Lead {
   notes: string | null;
   assignedToId: string | null;
   assignedTo: AssignedAgent | null;
+  // Phase 4 (Bot Flow) — set when an inbound message matched a "Needs Review"
+  // keyword; the bot stopped and handed off to a human.
+  needsReview: boolean;
+  needsReviewReason: string | null;
+  // Set at creation if this lead's phone/email matched an existing booking.
+  isRepeatCustomer: boolean;
+  repeatBooking: RepeatCustomerBooking | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -314,9 +329,13 @@ export interface Booking {
   packageId: string | null;
   batchId: string | null;
   assignedToId: string | null;
+  // True when created automatically (a Lead was marked WON) rather than via
+  // the manual "Convert to booking" action.
+  autoCreated: boolean;
   assignedTo: { id: string; name: string; email: string } | null;
   package: { id: string; name: string } | null;
   lead: { id: string; name: string } | null;
+  batch: { id: string; name: string | null; departureDate: string } | null;
   itineraryItems?: ItineraryItem[];
   itineraryDays?: number;
   invoices?: Invoice[];

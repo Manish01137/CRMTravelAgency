@@ -33,6 +33,9 @@ export const createFromLeadSchema = z.object({
   endDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   totalAmount: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
   packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  // Optional — if omitted, the server auto-suggests the nearest upcoming
+  // departure matching the lead's destination/date, when one exists.
+  batchId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
 });
 
 export const updateBookingSchema = z

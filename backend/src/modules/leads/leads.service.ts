@@ -1,10 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { withTenant, type TenantTx } from '../../lib/prisma';
 import { BadRequest, NotFound } from '../../lib/errors';
+import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
+import { createBookingFromLeadTx } from '../bookings/bookings.service';
 import type { CreateActivityInput, CreateLeadInput, ListLeadsQuery, UpdateLeadInput } from './leads.schemas';
 
 const assignedToSelect = {
   assignedTo: { select: { id: true, name: true, email: true } },
+  repeatBooking: { select: { id: true, bookingNumber: true, destination: true, totalAmount: true, currency: true } },
 } satisfies Prisma.LeadInclude;
 
 /** Ensures an assignee, if given, is a real member of THIS organization (RLS-scoped). */
@@ -12,6 +15,36 @@ async function assertAssigneeInOrg(tx: TenantTx, assignedToId: string | null | u
   if (!assignedToId) return;
   const member = await tx.user.findUnique({ where: { id: assignedToId } });
   if (!member) throw BadRequest('Assigned team member was not found in your organization');
+}
+
+/**
+ * Auto-creates a booking the moment a lead is marked WON — whichever UI path
+ * caused the move (the stage dropdown, the activity board, an API call).
+ * Never double-books: skipped if this lead already has one (from either the
+ * manual "Convert to booking" action or a previous auto-creation).
+ */
+async function autoCreateBookingIfWon(
+  tx: TenantTx,
+  organizationId: string,
+  lead: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    destination: string | null;
+    travelDate: Date | null;
+    travelerCount: number | null;
+    budgetAmount: number | null;
+    budgetCurrency: string | null;
+    assignedToId: string | null;
+    status: string;
+  },
+  previousStatus: string,
+): Promise<void> {
+  if (lead.status !== 'WON' || previousStatus === 'WON') return;
+  const alreadyBooked = await tx.booking.findFirst({ where: { leadId: lead.id } });
+  if (alreadyBooked) return;
+  await createBookingFromLeadTx(tx, organizationId, lead, { autoCreated: true });
 }
 
 export async function listLeads(organizationId: string, query: ListLeadsQuery) {
@@ -64,8 +97,9 @@ export async function getLead(organizationId: string, id: string) {
 export async function createLead(organizationId: string, input: CreateLeadInput) {
   return withTenant(organizationId, async (tx) => {
     await assertAssigneeInOrg(tx, input.assignedToId);
+    const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, input.phone, input.email);
     return tx.lead.create({
-      data: { ...input, organizationId },
+      data: { ...input, organizationId, isRepeatCustomer: !!repeatBooking, repeatBookingId: repeatBooking?.id },
       include: assignedToSelect,
     });
   });
@@ -94,6 +128,7 @@ export async function updateLead(
           createdById: actorId ?? null,
         },
       });
+      await autoCreateBookingIfWon(tx, organizationId, updated, existing.status);
     }
     return updated;
   });
@@ -142,7 +177,8 @@ export async function createActivity(
       include: activityInclude,
     });
     if (input.moveTo && input.moveTo !== lead.status) {
-      await tx.lead.update({ where: { id: leadId }, data: { status: input.moveTo } });
+      const updatedLead = await tx.lead.update({ where: { id: leadId }, data: { status: input.moveTo } });
+      await autoCreateBookingIfWon(tx, organizationId, updatedLead, lead.status);
     }
     return activity;
   });

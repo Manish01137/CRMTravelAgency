@@ -341,11 +341,19 @@ model Lead {
   // "Needs Review" keyword list; the bot stops and hands off to a human.
   needsReview       Boolean  @default(false) @map("needs_review")
   needsReviewReason String?  @map("needs_review_reason")
+  // Set at creation time if this lead's phone/email matches an existing
+  // Booking in the org — surfaces repeat customers immediately instead of
+  // treating them as a stranger (checked once, at creation; not re-checked
+  // if a booking is added later, since the lead's own thread already has
+  // the agent's attention by then).
+  isRepeatCustomer Boolean @default(false) @map("is_repeat_customer")
+  repeatBookingId  String? @map("repeat_booking_id") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  repeatBooking Booking?    @relation("RepeatCustomerLead", fields: [repeatBookingId], references: [id], onDelete: SetNull)
   bookings     Booking[]
   tasks        Task[]
   activities   LeadActivity[]
@@ -360,6 +368,7 @@ model Lead {
   @@index([organizationId, status])
   @@index([organizationId, createdAt])
   @@index([assignedToId])
+  @@index([repeatBookingId])
   @@map("leads")
 }
 
@@ -558,6 +567,10 @@ model Booking {
   packageId      String?       @map("package_id") @db.Uuid
   batchId        String?       @map("batch_id") @db.Uuid
   assignedToId   String?       @map("assigned_to_id") @db.Uuid
+  // True when this booking was created automatically (a Lead was marked WON)
+  // rather than through the manual "Convert to booking" action — surfaced in
+  // the UI so staff understand where it came from.
+  autoCreated    Boolean       @default(false) @map("auto_created")
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
@@ -570,6 +583,9 @@ model Booking {
   tasks          Task[]
   invoices       Invoice[]
   bills          Bill[]
+  // Additive back-relation for Lead.repeatBookingId — same pattern already
+  // used throughout (Phase 3/4 relations onto Lead).
+  repeatCustomerLeads Lead[] @relation("RepeatCustomerLead")
 
   @@unique([organizationId, bookingNumber])
   @@index([organizationId])

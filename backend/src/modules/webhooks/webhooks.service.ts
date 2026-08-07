@@ -1,4 +1,5 @@
 import { systemPrisma, withTenant } from '../../lib/prisma';
+import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 
 /**
  * Meta sends WhatsApp + Instagram events to ONE shared webhook URL, so we
@@ -45,12 +46,15 @@ async function recordInbound(params: {
         ? await tx.lead.findFirst({ where: { organizationId, phone: contactPhone } })
         : null;
       if (!lead) {
+        const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, contactPhone, null);
         lead = await tx.lead.create({
           data: {
             organizationId,
             name: contactName || (contactPhone ? contactPhone : `${leadSource === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} contact`),
             phone: contactPhone ?? undefined,
             source: leadSource,
+            isRepeatCustomer: !!repeatBooking,
+            repeatBookingId: repeatBooking?.id,
           },
         });
       }

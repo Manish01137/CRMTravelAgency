@@ -6,6 +6,7 @@ import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { systemPrisma, withTenant } from '../../lib/prisma';
 import { NotFound } from '../../lib/errors';
+import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 
 /**
  * PUBLIC endpoints — no auth. This is the agency's shareable "host page"
@@ -326,8 +327,9 @@ router.post(
     });
     if (!org) throw NotFound('This page does not exist');
 
-    await withTenant(org.id, (tx) =>
-      tx.lead.create({
+    await withTenant(org.id, async (tx) => {
+      const repeatBooking = await findRepeatCustomerBooking(tx, org.id, req.body.phone ?? null, req.body.email ?? null);
+      return tx.lead.create({
         data: {
           organizationId: org.id,
           name: req.body.name,
@@ -337,9 +339,11 @@ router.post(
           notes: req.body.message ?? null,
           source: 'WEBSITE',
           status: 'NEW',
+          isRepeatCustomer: !!repeatBooking,
+          repeatBookingId: repeatBooking?.id,
         },
-      }),
-    );
+      });
+    });
 
     res.status(201).json({ ok: true, message: 'Thanks! The team will get back to you shortly.' });
   }),

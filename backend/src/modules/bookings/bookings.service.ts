@@ -13,12 +13,100 @@ const bookingInclude = {
   assignedTo: { select: { id: true, name: true, email: true } },
   package: { select: { id: true, name: true } },
   lead: { select: { id: true, name: true } },
+  batch: { select: { id: true, name: true, departureDate: true } },
 } satisfies Prisma.BookingInclude;
 
 /** Next per-org sequential booking number (unique constraint is the backstop). */
 async function nextBookingNumber(tx: TenantTx): Promise<number> {
   const max = await tx.booking.aggregate({ _max: { bookingNumber: true } });
   return (max._max.bookingNumber ?? 0) + 1;
+}
+
+/**
+ * Best-guess upcoming departure for a lead's destination — the nearest
+ * DRAFT/LIVE batch of a package matching that destination, on or after the
+ * date they asked for (or the soonest one if no date was given). Only ever
+ * a suggestion: never blocks booking creation when nothing matches, and is
+ * always editable afterward.
+ */
+async function findMatchingBatchId(
+  tx: TenantTx,
+  organizationId: string,
+  destination: string | null | undefined,
+  travelDate: Date | null | undefined,
+): Promise<string | undefined> {
+  if (!destination) return undefined;
+  const candidates = await tx.batch.findMany({
+    where: {
+      organizationId,
+      status: { in: ['DRAFT', 'LIVE'] },
+      package: { destination: { equals: destination, mode: 'insensitive' } },
+      departureDate: { gte: travelDate ?? new Date() },
+    },
+    orderBy: { departureDate: 'asc' },
+    take: 1,
+    select: { id: true },
+  });
+  return candidates[0]?.id;
+}
+
+interface LeadLike {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  destination: string | null;
+  travelDate: Date | null;
+  travelerCount: number | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  assignedToId: string | null;
+}
+
+/**
+ * Shared booking-from-lead creation, scoped to an ALREADY-OPEN transaction
+ * (no `withTenant` of its own) so callers outside this module — leads.service's
+ * auto-create-on-WON path — can run it inside their own transaction rather
+ * than opening a second, separate one against the same lead update.
+ */
+export async function createBookingFromLeadTx(
+  tx: TenantTx,
+  organizationId: string,
+  lead: LeadLike,
+  overrides: {
+    customerName?: string;
+    destination?: string;
+    startDate?: Date;
+    endDate?: Date;
+    totalAmount?: number;
+    packageId?: string;
+    batchId?: string;
+    autoCreated?: boolean;
+  } = {},
+) {
+  const batchId = overrides.batchId ?? (await findMatchingBatchId(tx, organizationId, lead.destination, lead.travelDate ?? overrides.startDate));
+
+  return tx.booking.create({
+    data: {
+      organizationId,
+      bookingNumber: await nextBookingNumber(tx),
+      leadId: lead.id,
+      customerName: overrides.customerName ?? lead.name,
+      customerEmail: lead.email,
+      customerPhone: lead.phone,
+      destination: overrides.destination ?? lead.destination ?? 'To be decided',
+      startDate: overrides.startDate ?? lead.travelDate,
+      endDate: overrides.endDate,
+      travelerCount: lead.travelerCount,
+      totalAmount: overrides.totalAmount ?? lead.budgetAmount ?? 0,
+      currency: lead.budgetCurrency ?? 'INR',
+      packageId: overrides.packageId,
+      batchId,
+      assignedToId: lead.assignedToId,
+      autoCreated: overrides.autoCreated ?? false,
+    },
+    include: bookingInclude,
+  });
 }
 
 async function assertRefsInOrg(
@@ -107,24 +195,14 @@ export async function createFromLead(
     if (!lead) throw NotFound('Lead not found');
     await assertRefsInOrg(tx, input);
 
-    const booking = await tx.booking.create({
-      data: {
-        organizationId,
-        bookingNumber: await nextBookingNumber(tx),
-        leadId: lead.id,
-        customerName: input.customerName ?? lead.name,
-        customerEmail: lead.email,
-        customerPhone: lead.phone,
-        destination: input.destination ?? lead.destination ?? 'To be decided',
-        startDate: input.startDate ?? lead.travelDate,
-        endDate: input.endDate,
-        travelerCount: lead.travelerCount,
-        totalAmount: input.totalAmount ?? lead.budgetAmount ?? 0,
-        currency: lead.budgetCurrency ?? 'INR',
-        packageId: input.packageId,
-        assignedToId: lead.assignedToId,
-      },
-      include: bookingInclude,
+    const booking = await createBookingFromLeadTx(tx, organizationId, lead, {
+      customerName: input.customerName,
+      destination: input.destination,
+      startDate: input.startDate,
+      endDate: input.endDate,
+      totalAmount: input.totalAmount,
+      packageId: input.packageId,
+      batchId: input.batchId,
     });
 
     if (lead.status !== 'WON') {
