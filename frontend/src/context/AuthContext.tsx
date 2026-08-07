@@ -4,7 +4,7 @@ import type { AuthResponse, Organization, SessionResponse, User } from '@/types'
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
-interface SignupInput {
+interface StartSignupInput {
   organizationName: string;
   name: string;
   email: string;
@@ -24,7 +24,9 @@ interface AuthContextValue {
   isAdmin: boolean;
   refresh: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  signup: (input: SignupInput) => Promise<void>;
+  startSignup: (input: StartSignupInput) => Promise<{ expiresInSeconds: number }>;
+  verifySignup: (email: string, otp: string) => Promise<void>;
+  resendSignupOtp: (email: string) => Promise<{ expiresInSeconds: number }>;
   acceptInvite: (input: AcceptInviteInput) => Promise<void>;
   logout: () => Promise<void>;
   setOrganization: (organization: Organization) => void;
@@ -67,13 +69,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySession],
   );
 
-  const signup = useCallback(
-    async (input: SignupInput) => {
-      const data = await api.post<AuthResponse>('/auth/signup', input);
+  const startSignup = useCallback(async (input: StartSignupInput) => {
+    return api.post<{ expiresInSeconds: number }>('/auth/signup/start', input);
+  }, []);
+
+  const verifySignup = useCallback(
+    async (email: string, otp: string) => {
+      const data = await api.post<AuthResponse>('/auth/signup/verify', { email, otp });
       applySession(data);
     },
     [applySession],
   );
+
+  const resendSignupOtp = useCallback(async (email: string) => {
+    return api.post<{ expiresInSeconds: number }>('/auth/signup/resend-otp', { email });
+  }, []);
 
   const acceptInvite = useCallback(
     async (input: AcceptInviteInput) => {
@@ -100,7 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAdmin: user?.role === 'ADMIN',
     refresh,
     login,
-    signup,
+    startSignup,
+    verifySignup,
+    resendSignupOtp,
     acceptInvite,
     logout,
     setOrganization,

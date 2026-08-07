@@ -17,9 +17,19 @@ function issueSession(res: Response, result: AuthResult) {
   return { token, user: toPublicUser(result.user), organization: result.organization };
 }
 
-export async function signup(req: Request, res: Response): Promise<void> {
-  const result = await authService.signup(req.body);
+export async function startSignup(req: Request, res: Response): Promise<void> {
+  const result = await authService.startSignup(req.body);
+  res.json(result);
+}
+
+export async function verifySignup(req: Request, res: Response): Promise<void> {
+  const result = await authService.verifySignup(req.body);
   res.status(201).json(issueSession(res, result));
+}
+
+export async function resendSignupOtp(req: Request, res: Response): Promise<void> {
+  const result = await authService.resendSignupOtp(req.body);
+  res.json(result);
 }
 
 export async function login(req: Request, res: Response): Promise<void> {

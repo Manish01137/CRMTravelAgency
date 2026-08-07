@@ -8,7 +8,9 @@ import {
   acceptInviteSchema,
   inviteTokenParamSchema,
   loginSchema,
-  signupSchema,
+  resendSignupOtpSchema,
+  startSignupSchema,
+  verifySignupSchema,
 } from './auth.schemas';
 
 // Throttle credential-related endpoints to blunt brute-force / abuse.
@@ -20,9 +22,22 @@ const authLimiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many attempts, please try again later' } },
 });
 
+// Tighter limit on the two endpoints that actually trigger a WhatsApp send —
+// this is public/unauthenticated, so it's the only thing stopping someone
+// from using it to spam arbitrary phone numbers.
+const otpSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many codes requested — please wait a while and try again' } },
+});
+
 const router = Router();
 
-router.post('/signup', authLimiter, validate({ body: signupSchema }), asyncHandler(controller.signup));
+router.post('/signup/start', otpSendLimiter, validate({ body: startSignupSchema }), asyncHandler(controller.startSignup));
+router.post('/signup/verify', authLimiter, validate({ body: verifySignupSchema }), asyncHandler(controller.verifySignup));
+router.post('/signup/resend-otp', otpSendLimiter, validate({ body: resendSignupOtpSchema }), asyncHandler(controller.resendSignupOtp));
 router.post('/login', authLimiter, validate({ body: loginSchema }), asyncHandler(controller.login));
 router.post('/logout', asyncHandler(controller.logout));
 router.get('/me', requireAuth, asyncHandler(controller.me));

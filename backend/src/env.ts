@@ -55,6 +55,16 @@ const schema = z.object({
   // just disables the feature (worker doesn't start, automation endpoints
   // report "not configured") instead of crashing the whole server at boot.
   REDIS_URL: z.string().optional(),
+
+  // --- Signup OTP (Email) --------------------------------------------------
+  // A PLATFORM-level Resend account — distinct from any organization's own
+  // Email connection (see ChannelConnection). At signup there is no
+  // organization yet, so this can't be per-tenant; it belongs to the CRM
+  // itself. Optional — signup/start 503s with a clear message until set. No
+  // pre-approval needed (unlike the WhatsApp route this replaced) — any
+  // verified Resend sending domain works immediately.
+  PLATFORM_RESEND_API_KEY: z.string().optional(),
+  PLATFORM_EMAIL_FROM_ADDRESS: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

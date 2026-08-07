@@ -1,10 +1,19 @@
 import { z } from 'zod';
 
-export const signupSchema = z.object({
+export const startSignupSchema = z.object({
   organizationName: z.string().trim().min(2, 'Agency name is too short').max(80),
   name: z.string().trim().min(1, 'Your name is required').max(80),
   email: z.string().trim().toLowerCase().email('Enter a valid email'),
   password: z.string().min(8, 'Password must be at least 8 characters').max(100),
+});
+
+export const verifySignupSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email'),
+  otp: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code'),
+});
+
+export const resendSignupOtpSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email'),
 });
 
 export const loginSchema = z.object({
@@ -22,6 +31,8 @@ export const inviteTokenParamSchema = z.object({
   token: z.string().min(10),
 });
 
-export type SignupInput = z.infer<typeof signupSchema>;
+export type StartSignupInput = z.infer<typeof startSignupSchema>;
+export type VerifySignupInput = z.infer<typeof verifySignupSchema>;
+export type ResendSignupOtpInput = z.infer<typeof resendSignupOtpSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;

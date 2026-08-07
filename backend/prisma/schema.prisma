@@ -1017,3 +1017,26 @@ model FollowUpAttempt {
   @@index([leadId, createdAt])
   @@map("follow_up_attempts")
 }
+
+// ===========================================================================
+// Email OTP signup verification
+// ===========================================================================
+
+/// A pending new-organization signup awaiting email OTP verification. No
+/// `organizationId` — there is no organization yet. This sits at the same
+/// pre-tenant tier as User/Organization/Invitation and is accessed ONLY via
+/// systemPrisma (never withTenant), same reason those three are: RLS has
+/// nothing to scope this to.
+model SignupVerification {
+  id               String   @id @default(uuid()) @db.Uuid
+  email            String   @unique // the OTP target; one pending signup per email
+  organizationName String   @map("organization_name")
+  name             String
+  passwordHash     String   @map("password_hash")
+  otpHash          String   @map("otp_hash") // sha256, never the plain code
+  attempts         Int      @default(0)
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("signup_verifications")
+}
