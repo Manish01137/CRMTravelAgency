@@ -1,4 +1,4 @@
-# 30-Day Bug Support — Voyage CRM
+# 30-Day Bug Support — Joinetra
 
 Covers the period **starting from the client's sign-off on Phase 4 (Final
 Deployment)** and running for **30 calendar days** from that date.

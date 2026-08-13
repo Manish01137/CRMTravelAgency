@@ -172,7 +172,7 @@ function Nav() {
       <div className="mx-auto flex h-[4.25rem] max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="flex items-center gap-2.5">
           <LogoMark />
-          <span className="font-display text-xl font-bold tracking-tight text-foreground">Voyage</span>
+          <span className="font-display text-xl font-bold tracking-tight text-foreground">Joinetra</span>
         </Link>
         <nav className="hidden items-center gap-8 text-[15px] font-semibold text-foreground md:flex">
           <a href="#why" className="transition-colors hover:text-primary">
@@ -231,7 +231,7 @@ function ProductMock() {
           <span className="size-2.5 rounded-full bg-amber-400" />
           <span className="size-2.5 rounded-full bg-emerald-400" />
           <span className="ml-3 hidden rounded-md bg-card px-3 py-0.5 text-[10px] text-muted-foreground sm:block">
-            app.voyagecrm.com/leads
+            app.joinetra.com/leads
           </span>
         </div>
         <div className="flex">
@@ -240,7 +240,7 @@ function ProductMock() {
               <span className="flex size-5 items-center justify-center rounded-md bg-primary text-white">
                 <Plane className="size-3" />
               </span>
-              <span className="font-display text-[11px] font-bold">Voyage</span>
+              <span className="font-display text-[11px] font-bold">Joinetra</span>
             </div>
             {['Dashboard', 'Leads', 'Team', 'Settings'].map((item, i) => (
               <div key={item} className={cn('rounded-md px-2 py-1.5 text-[10px] font-medium', i === 1 ? 'bg-primary/10 text-primary' : 'text-muted-foreground')}>
@@ -422,7 +422,7 @@ function Hero() {
             size="lg"
             className="w-full rounded-xl bg-white px-7 text-foreground hover:bg-white/90 sm:w-auto"
           >
-            <Link to={authed ? '/dashboard' : '/login'}>Access Voyage</Link>
+            <Link to={authed ? '/dashboard' : '/login'}>Access Joinetra</Link>
           </Button>
         </motion.div>
 
@@ -1140,7 +1140,7 @@ const CORE = [
     tile: 'bg-violet-500',
     chipCls: 'bg-white text-violet-700',
     title: 'Built for Travel People',
-    text: 'Voyage is designed around how agencies actually sell trips — enquiries, follow-ups, departures — not generic sales jargon.',
+    text: 'Joinetra is designed around how agencies actually sell trips — enquiries, follow-ups, departures — not generic sales jargon.',
     chips: ['Enquiries', 'Follow-ups', 'Departures'],
   },
   {
@@ -1149,7 +1149,7 @@ const CORE = [
     tile: 'bg-cyan-500',
     chipCls: 'bg-white text-cyan-700',
     title: 'Easy-to-Use',
-    text: 'Anyone who can use Instagram & WhatsApp can use Voyage. Your team is productive on day one, no training needed.',
+    text: 'Anyone who can use Instagram & WhatsApp can use Joinetra. Your team is productive on day one, no training needed.',
     chips: ['No training', 'Day-one ready', 'Mobile friendly'],
   },
   {
@@ -1220,7 +1220,7 @@ const QUOTES = [
     tilt: -1.5,
   },
   {
-    quote: 'What stood out was how effortlessly it brought the whole team onto a single platform. Voyage became our go-to hub for every customer interaction.',
+    quote: 'What stood out was how effortlessly it brought the whole team onto a single platform. Joinetra became our go-to hub for every customer interaction.',
     role: 'Director, Globe Hoppers',
     name: 'Diego A.',
     bg: 'bg-[#D9F2E2]',
@@ -1473,10 +1473,10 @@ export function LandingPage() {
             <div>
               <div className="flex items-center gap-2.5">
                 <LogoMark className="h-9 w-9" />
-                <span className="font-display text-2xl font-bold tracking-tight">Voyage</span>
+                <span className="font-display text-2xl font-bold tracking-tight">Joinetra</span>
               </div>
               <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-white/60">
-                Discover Voyage, the leading travel-agency CRM to capture enquiries, boost bookings,
+                Discover Joinetra, the leading travel-agency CRM to capture enquiries, boost bookings,
                 manage your team effectively, and automate follow-ups. Try it today!
               </p>
             </div>
@@ -1485,7 +1485,7 @@ export function LandingPage() {
               <p className="font-display text-lg font-bold">Quick Links</p>
               <ul className="mt-4 space-y-3 text-[15px] text-white/60">
                 <li><Link to="/" className="transition-colors hover:text-white">Home</Link></li>
-                <li><a href="#why" className="transition-colors hover:text-white">Why Voyage</a></li>
+                <li><a href="#why" className="transition-colors hover:text-white">Why Joinetra</a></li>
                 <li><a href="#features" className="transition-colors hover:text-white">Features</a></li>
               </ul>
             </div>
@@ -1502,8 +1502,8 @@ export function LandingPage() {
             <div>
               <p className="font-display text-lg font-bold">Legal</p>
               <ul className="mt-4 space-y-3 text-[15px] text-white/60">
-                <li><a href="#" className="transition-colors hover:text-white">Terms &amp; Conditions</a></li>
-                <li><a href="#" className="transition-colors hover:text-white">Privacy Policy</a></li>
+                <li><Link to="/terms" className="transition-colors hover:text-white">Terms &amp; Conditions</Link></li>
+                <li><Link to="/privacy" className="transition-colors hover:text-white">Privacy Policy</Link></li>
                 <li><a href="#" className="transition-colors hover:text-white">Refund &amp; Cancellation</a></li>
               </ul>
             </div>
@@ -1519,7 +1519,7 @@ export function LandingPage() {
           </div>
 
           <div className="mt-14 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-sm text-white/50 sm:flex-row">
-            <p>© {new Date().getFullYear()} Voyage CRM. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Joinetra. All rights reserved.</p>
             <p>Made for travel agencies ✈️</p>
           </div>
         </div>

@@ -57,7 +57,7 @@ export function BrandMark() {
       )}
       <div className="min-w-0">
         <p className="truncate font-display text-sm font-semibold text-foreground">
-          {organization?.name ?? 'Voyage CRM'}
+          {organization?.name ?? 'Joinetra'}
         </p>
         <p className="truncate text-xs text-muted-foreground">Travel CRM</p>
       </div>

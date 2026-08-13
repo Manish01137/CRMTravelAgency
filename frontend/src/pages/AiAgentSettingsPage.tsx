@@ -91,7 +91,7 @@ export function AiAgentSettingsPage() {
                   rows={4}
                   value={systemPrompt}
                   onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder="You are the assistant for Voyage Travel — always mention our 24/7 support line if asked about emergencies…"
+                  placeholder="You are the assistant for Wander & Co. Travel — always mention our 24/7 support line if asked about emergencies…"
                 />
               </Field>
               <Field label="Key facts about the agency" htmlFor="aiAgencyFacts" hint="Pricing policy, popular destinations, anything the AI should reliably know.">

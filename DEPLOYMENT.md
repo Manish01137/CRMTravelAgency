@@ -1,4 +1,4 @@
-# Deploying Voyage CRM (client-preview setup)
+# Deploying Joinetra (client-preview setup)
 
 **Architecture:** Frontend on **Vercel** · API on **Render** (free tier) · Database on
 **Supabase** (already live). The Vercel domain proxies `/api/*` to Render via
@@ -7,7 +7,7 @@ are needed.
 
 ```
 Browser ──▶ your-app.vercel.app  (static React app)
-                 └── /api/* ──proxied──▶ voyage-crm-api.onrender.com ──▶ Supabase
+                 └── /api/* ──proxied──▶ crmtravelagency.onrender.com ──▶ Supabase
 ```
 
 > Phase 4 still ships the spec's Docker/VPS deployment; this is the quick client-preview path.
@@ -21,7 +21,7 @@ Browser ──▶ your-app.vercel.app  (static React app)
 3. Settings:
    | Field | Value |
    |---|---|
-   | Name | `voyage-crm-api` ← keep this exact name if available (it's baked into vercel.json) |
+   | Name | `joinetra-api` (or whatever's already live — `crmtravelagency` is the currently deployed name baked into `vercel.json`; only rename if you also update that file) |
    | Region | Singapore (closest to your Supabase in Seoul) |
    | Root Directory | `backend` |
    | Build Command | `npm install --include=dev && npm run build` ← the `--include=dev` matters: with `NODE_ENV=production` set, plain `npm install` skips TypeScript/@types and the build fails |
@@ -32,7 +32,7 @@ Browser ──▶ your-app.vercel.app  (static React app)
    This includes the **Supabase Storage** vars (`SUPABASE_URL`,
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`) that power image
    uploads — without them the app runs fine but the upload button returns 503.
-5. Deploy. When it's live, verify: `https://voyage-crm-api.onrender.com/health` → `{"status":"ok"}`.
+5. Deploy. When it's live, verify: `https://crmtravelagency.onrender.com/health` → `{"status":"ok"}`.
 6. **If Render gave you a different URL** (name taken), edit `frontend/vercel.json` and put
    your actual URL in the `/api/:path*` destination, then commit + push.
 

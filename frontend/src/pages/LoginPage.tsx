@@ -43,7 +43,7 @@ export function LoginPage() {
   return (
     <AuthLayout
       title="Welcome back"
-      subtitle="Sign in to your Voyage CRM workspace"
+      subtitle="Sign in to your Joinetra workspace"
       trust={
         <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           <span className="flex text-amber-400" aria-hidden>
@@ -56,7 +56,7 @@ export function LoginPage() {
       }
       footer={
         <>
-          New to Voyage?{' '}
+          New to Joinetra?{' '}
           <Link to="/signup" className="font-medium text-primary hover:underline">
             Create an account
           </Link>

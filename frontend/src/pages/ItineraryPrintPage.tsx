@@ -124,7 +124,7 @@ export function ItineraryPrintPage() {
           )}
 
           <p className="mt-8 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-            Prepared by {organization?.name ?? 'Voyage CRM'} ✈ We wish you a wonderful trip!
+            Prepared by {organization?.name ?? 'Joinetra'} ✈ We wish you a wonderful trip!
           </p>
         </div>
       </div>

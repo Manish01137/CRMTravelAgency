@@ -6,6 +6,8 @@ import { AppShell } from '@/components/layout/AppShell';
 import { FullPageLoader } from '@/components/ui/spinner';
 import { ApiError } from '@/lib/api';
 import { LandingPage } from '@/pages/LandingPage';
+import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from '@/pages/TermsOfServicePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
@@ -110,6 +112,10 @@ function AppRoutes() {
     <Routes>
       {/* Public marketing landing — visible to everyone. */}
       <Route path="/" element={<LandingPage />} />
+
+      {/* Legal — required for Meta App Review (WhatsApp/Instagram permissions). */}
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
+      <Route path="/terms" element={<TermsOfServicePage />} />
 
       {/* Public LinkTree — the agency's travel package hub. */}
       <Route path="/a/:slug" element={<HostPage />} />

@@ -1,4 +1,4 @@
-# Connecting Voyage CRM to Supabase
+# Connecting Joinetra to Supabase
 
 The schema + RLS are plain Postgres, so moving from local Docker to Supabase is only a
 connection-string swap. Two ways to set it up — **Option A needs no SQL editor at all.**
@@ -8,7 +8,7 @@ connection-string swap. Two ways to set it up — **Option A needs no SQL editor
 ## 0. Create the project
 
 1. Go to [supabase.com](https://supabase.com) → **New project**.
-2. Pick a name (e.g. `voyage-crm`), a strong **database password** (save it!), and a region
+2. Pick a name (e.g. `joinetra`), a strong **database password** (save it!), and a region
    near you (e.g. Mumbai `ap-south-1`).
 3. Wait ~2 minutes for provisioning.
 

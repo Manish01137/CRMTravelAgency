@@ -1,7 +1,7 @@
-# Deploying Voyage CRM — self-hosted VPS (Phase 4)
+# Deploying Joinetra — self-hosted VPS (Phase 4)
 
 **Architecture:** Nginx + Node backend + Redis, all in Docker Compose, on a
-KVM VPS (e.g. Hostinger). **Supabase remains the hosted database** — nothing
+Hostinger **KVM 4** VPS. **Supabase remains the hosted database** — nothing
 about Supabase changes; this only covers running the app itself.
 
 ```
@@ -20,19 +20,26 @@ the two are independent; this doc doesn't touch that one.
 
 ## 0. Prerequisites
 
-- A KVM VPS with **Docker** + **Docker Compose plugin** installed (`docker compose version` should work). Hostinger's KVM plans ship a stock Ubuntu image — install via:
+- **The Hostinger KVM 4 VPS itself.** From the [hPanel](https://hpanel.hostinger.com) → VPS → your KVM 4 instance, install the stock **Ubuntu 22.04** OS template if you haven't already (hPanel → OS → Operating System). Note the VPS's public **IP address** — shown on the VPS overview page — you'll need it for DNS.
+- **Docker** + **Docker Compose plugin** on the VPS (`docker compose version` should work after this):
   ```bash
   curl -fsSL https://get.docker.com | sh
   ```
-- A domain (or subdomain) with its **A record pointed at the VPS's IP address**. Certbot needs this resolving correctly before it can issue a certificate — do this first, DNS can take a few minutes to a few hours to propagate.
+- **A domain**, bought either through Hostinger (Domains → Buy a new domain) or elsewhere (Namecheap, GoDaddy, etc. — doesn't matter, DNS works the same). Once you have it:
+  1. Go to your domain's DNS zone editor (Hostinger: hPanel → Domains → your domain → DNS / Nameservers).
+  2. Add an **A record**: Host `@` (root domain) → Points to `<your VPS IP>`, TTL default.
+  3. Add a second **A record**: Host `www` → Points to the same VPS IP (so `www.joinetra.com` also resolves — optional but recommended).
+  4. Wait for propagation — usually 10–30 min, sometimes a few hours. Check with `dig +short your-domain.com` from any machine; it should return your VPS IP.
+
+  Certbot (step 4 below) needs this resolving correctly before it can issue a certificate — do this first.
 - Your Supabase project's connection strings (already live — same ones used in local dev throughout this build): `DATABASE_URL`, `APP_DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## 1. Get the code onto the VPS
 
 ```bash
 ssh youruser@your-vps-ip
-git clone <your-repo-url> voyage-crm
-cd voyage-crm
+git clone <your-repo-url> joinetra
+cd joinetra
 ```
 
 ## 2. Configure `backend/.env`
@@ -76,7 +83,7 @@ Open `http://your-domain.com` in a browser — the app should load (over plain H
 docker compose -f docker-compose.prod.yml run --rm certbot \
   certbot certonly --webroot -w /var/www/certbot \
   -d your-domain.com \
-  --email you@youragency.com --agree-tos --no-eff-email
+  --email joinetra@gmail.com --agree-tos --no-eff-email
 ```
 
 This writes the cert into the `certbot_conf` volume, which `nginx.ssl.conf` (below) reads from.
@@ -99,7 +106,7 @@ Let's Encrypt certs expire every 90 days. Add a cron job on the VPS host (outsid
 ```bash
 crontab -e
 # add this line:
-0 3 * * 1 cd /path/to/voyage-crm && docker compose -f docker-compose.prod.yml run --rm certbot certbot renew --webroot -w /var/www/certbot && docker compose -f docker-compose.prod.yml restart web
+0 3 * * 1 cd /path/to/joinetra && docker compose -f docker-compose.prod.yml run --rm certbot certbot renew --webroot -w /var/www/certbot && docker compose -f docker-compose.prod.yml restart web
 ```
 
 Runs weekly; `certbot renew` is a no-op unless the cert is within 30 days of expiry, so this is safe to run often.
@@ -116,6 +123,74 @@ Runs weekly; `certbot renew` is a no-op unless the cert is within 30 days of exp
   ```bash
   docker compose -f docker-compose.prod.yml logs backend --tail=50
   ```
+
+## 8. Meta verification (domain + WhatsApp/Instagram)
+
+This is what turns "the app can technically reach Meta's API" into "Meta will
+actually let a real customer's WhatsApp number and Instagram account connect."
+Do this once your domain is live over HTTPS (step 5 above) — several of
+these steps need a real, reachable HTTPS URL.
+
+### 8.1 Domain verification (Meta Business Manager)
+
+1. Go to [business.facebook.com/settings](https://business.facebook.com/settings) → **Brand Safety → Domains** → **Add**.
+2. Enter `your-domain.com`.
+3. Verify ownership — two ways, pick whichever's easier:
+   - **DNS TXT record** (recommended, no app changes needed): Meta gives you a value like `meta-domain-verification=xxxxxxxx`. Add it as a TXT record on `your-domain.com` in your DNS zone editor, wait for propagation, click **Verify** in Business Manager.
+   - **HTML file upload**: Meta gives you a file like `facebook-domain-verification-xxxx.html` — drop it in `frontend/public/` in this repo (it gets served as a static file automatically by Vite/Nginx at `your-domain.com/facebook-domain-verification-xxxx.html`), rebuild/redeploy, then click **Verify**.
+4. Once verified, go to your **App Dashboard** ([developers.facebook.com/apps](https://developers.facebook.com/apps)) → your app → **App Settings → Basic** → **App Domains** → add `your-domain.com`.
+
+### 8.2 Privacy Policy + Terms of Service URLs (required by Meta, not yet built)
+
+Meta's App Settings → Basic requires a **Privacy Policy URL** before you can
+request WhatsApp/Instagram messaging permissions, and App Review usually
+also expects a **Terms of Service URL** and a **Data Deletion Instructions
+URL**. Right now the app doesn't have real pages for these — the landing
+page footer's "Privacy Policy" link is a placeholder (`href="#"`) and there's
+no Terms page at all. You'll need actual pages at, e.g., `your-domain.com/privacy`
+and `your-domain.com/terms` before Meta will accept the app for anything
+beyond test numbers. Flag this back to me when you're ready for this step —
+happy to draft both pages and wire up the routes/footer links so this isn't
+a last-minute blocker.
+
+### 8.3 Business verification
+
+1. Business Manager → **Business Settings → Security Center → Start Verification**.
+2. Meta will ask for: legal business name, address, phone, and typically a
+   business document (GST certificate, incorporation certificate, or similar,
+   depending on region) that matches the name/address you enter.
+3. This can take anywhere from minutes to a few business days. Required
+   before WhatsApp Business API access moves past a handful of test
+   conversations.
+
+### 8.4 Webhook subscription (connects Meta → your server)
+
+1. App Dashboard → your app → **Webhooks** → for the **WhatsApp Business
+   Account** (and separately for **Instagram**) product, click **Subscribe**.
+2. **Callback URL:** `https://your-domain.com/api/webhooks/meta`
+3. **Verify Token:** must exactly match `META_WEBHOOK_VERIFY_TOKEN` in `backend/.env` on the VPS.
+4. Subscribe to the `messages` field (WhatsApp) and `messages` / `messaging` (Instagram) — these are what feed the Inbox and Bot Flow.
+5. Meta will hit the callback URL once with a `GET` challenge request the moment you click Subscribe — if the app + Nginx + Certbot steps above are all working, this succeeds automatically. If it fails, check `docker compose -f docker-compose.prod.yml logs backend` for the incoming request.
+
+### 8.5 WhatsApp Embedded Signup Configuration ID
+
+App Dashboard → your app → **WhatsApp → Embedded Signup** → create (or use
+the existing) configuration → copy its **Configuration ID** → set
+`META_WHATSAPP_CONFIG_ID` in `backend/.env` on the VPS → restart the backend
+container. This is the one still missing on your current setup — without it,
+Settings → Channels keeps WhatsApp's Connect button disabled even though
+`META_APP_ID`/`META_APP_SECRET` are already in.
+
+### 8.6 Going live beyond test numbers (App Review)
+
+Everything above gets you a **working integration for test WhatsApp numbers
+and your own Instagram account**. To let real client organizations connect
+their *own* numbers, Meta requires **App Review** for the
+`whatsapp_business_messaging` and `instagram_manage_messages` (+related)
+permissions — this is where the Privacy Policy/Terms pages (8.2), domain
+verification (8.1), and business verification (8.3) all get checked. Meta
+typically also asks for a short screen recording showing the actual
+connect → send/receive message flow in the live app.
 
 ## Day-to-day operations
 
