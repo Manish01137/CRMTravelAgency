@@ -140,18 +140,22 @@ these steps need a real, reachable HTTPS URL.
    - **HTML file upload**: Meta gives you a file like `facebook-domain-verification-xxxx.html` — drop it in `frontend/public/` in this repo (it gets served as a static file automatically by Vite/Nginx at `your-domain.com/facebook-domain-verification-xxxx.html`), rebuild/redeploy, then click **Verify**.
 4. Once verified, go to your **App Dashboard** ([developers.facebook.com/apps](https://developers.facebook.com/apps)) → your app → **App Settings → Basic** → **App Domains** → add `your-domain.com`.
 
-### 8.2 Privacy Policy + Terms of Service URLs (required by Meta, not yet built)
+### 8.2 Privacy Policy + Terms of Service + Data Deletion URLs
 
 Meta's App Settings → Basic requires a **Privacy Policy URL** before you can
 request WhatsApp/Instagram messaging permissions, and App Review usually
 also expects a **Terms of Service URL** and a **Data Deletion Instructions
-URL**. Right now the app doesn't have real pages for these — the landing
-page footer's "Privacy Policy" link is a placeholder (`href="#"`) and there's
-no Terms page at all. You'll need actual pages at, e.g., `your-domain.com/privacy`
-and `your-domain.com/terms` before Meta will accept the app for anything
-beyond test numbers. Flag this back to me when you're ready for this step —
-happy to draft both pages and wire up the routes/footer links so this isn't
-a last-minute blocker.
+URL** (or a Data Deletion Request Callback — the instructions-URL option
+below is the simpler of the two and is what's built here). All three pages
+already exist in the app and just need your live domain:
+
+| Meta Dashboard field | URL to paste in |
+|---|---|
+| Privacy Policy URL | `https://your-domain.com/privacy` |
+| Terms of Service URL | `https://your-domain.com/terms` |
+| Data Deletion Instructions URL | `https://your-domain.com/data-deletion` |
+
+All three are set in **App Dashboard → App Settings → Basic**.
 
 ### 8.3 Business verification
 

@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api';
 import { LandingPage } from '@/pages/LandingPage';
 import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from '@/pages/TermsOfServicePage';
+import { DataDeletionPage } from '@/pages/DataDeletionPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
@@ -116,6 +117,7 @@ function AppRoutes() {
       {/* Legal — required for Meta App Review (WhatsApp/Instagram permissions). */}
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/terms" element={<TermsOfServicePage />} />
+      <Route path="/data-deletion" element={<DataDeletionPage />} />
 
       {/* Public LinkTree — the agency's travel package hub. */}
       <Route path="/a/:slug" element={<HostPage />} />

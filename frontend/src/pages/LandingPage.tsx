@@ -1504,7 +1504,7 @@ export function LandingPage() {
               <ul className="mt-4 space-y-3 text-[15px] text-white/60">
                 <li><Link to="/terms" className="transition-colors hover:text-white">Terms &amp; Conditions</Link></li>
                 <li><Link to="/privacy" className="transition-colors hover:text-white">Privacy Policy</Link></li>
-                <li><a href="#" className="transition-colors hover:text-white">Refund &amp; Cancellation</a></li>
+                <li><Link to="/data-deletion" className="transition-colors hover:text-white">Data Deletion</Link></li>
               </ul>
             </div>
 
