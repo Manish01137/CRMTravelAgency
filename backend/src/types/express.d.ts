@@ -10,6 +10,12 @@ declare global {
         organizationId: string;
         role: Role;
       };
+      /** Populated by requirePlatformAdmin from a verified platform-admin JWT.
+       *  Entirely separate from `auth` above — never both set on the same request. */
+      platformAdmin?: {
+        adminId: string;
+        email: string;
+      };
     }
   }
 }

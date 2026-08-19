@@ -27,6 +27,8 @@ import callLogRoutes from './modules/call-log/call-log.routes';
 import botFlowRoutes from './modules/bot-flow/bot-flow.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
 import automationRoutes from './modules/automation/automation.routes';
+// Super Admin panel — platform owner only, entirely separate auth surface.
+import platformAdminRoutes from './modules/platform-admin/platform-admin.routes';
 
 const router = Router();
 
@@ -58,5 +60,7 @@ router.use('/call-log', callLogRoutes);
 router.use('/bot-flows', botFlowRoutes);
 router.use('/ai-agent', aiAgentRoutes);
 router.use('/automation', automationRoutes);
+// Super Admin panel
+router.use('/platform-admin', platformAdminRoutes);
 
 export default router;

@@ -38,8 +38,10 @@ async function sendOtp(email: string, otp: string): Promise<void> {
   });
 }
 
-/** Creates one Organization + one ADMIN user in a single transaction (PROJECT_SPEC.md §4.4). */
-async function createOrgAndUser(input: { organizationName: string; name: string; email: string; passwordHash: string }): Promise<AuthResult> {
+/** Creates one Organization + one ADMIN user in a single transaction (PROJECT_SPEC.md §4.4).
+ *  Exported for reuse by the Super Admin panel's manual org-creation flow — same
+ *  slug-uniqueness handling, no duplicated logic. */
+export async function createOrgAndUser(input: { organizationName: string; name: string; email: string; passwordHash: string }): Promise<AuthResult> {
   const baseSlug = slugify(input.organizationName);
 
   return systemPrisma.$transaction(async (tx) => {
@@ -192,6 +194,9 @@ export async function login(input: LoginInput): Promise<AuthResult> {
   if (user.status === 'DISABLED') {
     throw Forbidden('Your account has been disabled. Contact your administrator.');
   }
+  if (user.organization.status === 'SUSPENDED') {
+    throw Forbidden('Your organization\'s access has been suspended. Contact support.');
+  }
 
   await systemPrisma.user.update({
     where: { id: user.id },
@@ -208,6 +213,9 @@ export async function getSession(organizationId: string, userId: string): Promis
     const user = await tx.user.findUnique({ where: { id: userId } });
     const organization = await tx.organization.findUnique({ where: { id: organizationId } });
     if (!user || !organization) throw Unauthorized('Your session is no longer valid');
+    if (organization.status === 'SUSPENDED') {
+      throw Forbidden('Your organization\'s access has been suspended. Contact support.');
+    }
     return { user, organization };
   });
 }

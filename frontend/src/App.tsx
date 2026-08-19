@@ -9,6 +9,7 @@ import { LandingPage } from '@/pages/LandingPage';
 import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage';
 import { TermsOfServicePage } from '@/pages/TermsOfServicePage';
 import { DataDeletionPage } from '@/pages/DataDeletionPage';
+import { OwnerApp } from '@/pages/owner/OwnerApp';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
@@ -118,6 +119,10 @@ function AppRoutes() {
       <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/terms" element={<TermsOfServicePage />} />
       <Route path="/data-deletion" element={<DataDeletionPage />} />
+
+      {/* Super Admin panel — platform owner only. Self-contained: its own auth
+          context, its own routes, no dependency on the tenant AuthProvider above. */}
+      <Route path="/owner/*" element={<OwnerApp />} />
 
       {/* Public LinkTree — the agency's travel package hub. */}
       <Route path="/a/:slug" element={<HostPage />} />
