@@ -322,6 +322,56 @@ async function main() {
     const noContext = await tenantPrisma.$transaction((tx) => tx.lead.findMany());
     check('No org context set => zero leads visible (fail-closed)', noContext.length === 0);
 
+    // 8. Super Admin panel: platform_admins has RLS enabled with NO policy at
+    // all, so the restricted crm_app role must never see a row there — not
+    // even inside a legitimately-scoped Org A transaction.
+    const platformAdminRows = await withTenant(orgA.id, (tx) => tx.platformAdmin.findMany());
+    check('A: platform_admins is completely invisible to crm_app (no RLS policy = deny-all)', platformAdminRows.length === 0);
+
+    let platformAdminForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.platformAdmin.create({
+          data: { email: `forge-${suffix}@example.com`, name: 'Forged', passwordHash: 'x' },
+        });
+      });
+    } catch {
+      platformAdminForgeRejected = true;
+    }
+    check('A: inserting into platform_admins is rejected by RLS (no INSERT policy)', platformAdminForgeRejected);
+
+    // 9. Same lockout for the two Super Admin extras tables — audit log and
+    // org notes must never leak to a tenant, even for its OWN organization.
+    const auditLogRows = await withTenant(orgA.id, (tx) => tx.platformAuditLog.findMany());
+    check('A: platform_audit_logs is completely invisible to crm_app', auditLogRows.length === 0);
+
+    const orgNoteRows = await withTenant(orgA.id, (tx) => tx.organizationNote.findMany({ where: { organizationId: orgA.id } }));
+    check("A: organization_notes is invisible to crm_app, even for its own org's notes", orgNoteRows.length === 0);
+
+    let auditLogForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.platformAuditLog.create({
+          data: { adminEmail: 'forge@example.com', action: 'FORGE', targetType: 'ORGANIZATION', targetId: orgA.id, targetLabel: 'Forged' },
+        });
+      });
+    } catch {
+      auditLogForgeRejected = true;
+    }
+    check('A: inserting into platform_audit_logs is rejected by RLS', auditLogForgeRejected);
+
+    let orgNoteForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.organizationNote.create({
+          data: { organizationId: orgA.id, adminEmail: 'forge@example.com', body: 'Forged note' },
+        });
+      });
+    } catch {
+      orgNoteForgeRejected = true;
+    }
+    check('A: inserting into organization_notes is rejected by RLS, even for its own org', orgNoteForgeRejected);
+
     // eslint-disable-next-line no-console
     console.log(`\nResult: ${passed} passed, ${failed} failed.\n`);
   } finally {

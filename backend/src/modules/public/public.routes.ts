@@ -151,16 +151,35 @@ router.get(
         brandPrimaryColor: true,
         brandSecondaryColor: true,
         hostLinks: true,
+        contactPhone: true,
       },
     });
 
     // Instagram from the org's existing links (same derivation as LinkTree/Host Page).
     const links = (org?.hostLinks as Array<{ label: string; url: string }> | null) ?? [];
     const instagramUrl = links.find((l) => /instagram\.com/i.test(l.url))?.url ?? null;
-    const { hostLinks: _hl, ...publicOrg } = org ?? {};
+    // WhatsApp number: same fallback chain as the Host Page (org contact, else the package's own).
+    const rawWhatsapp = org?.contactPhone ?? pkg.contactNumber ?? null;
+    const whatsappNumber = rawWhatsapp ? rawWhatsapp.replace(/\D/g, '') || null : null;
+    const { hostLinks: _hl, contactPhone: _cp, ...publicOrg } = org ?? {};
+
+    // Customer reviews for the brochure's "Reviews" page — org-wide testimonials
+    // (same source as the Host Page), not package-specific; there's no
+    // per-package review model. Capped at 6 to match the brochure's fixed grid.
+    const reviews = await withTenant(pkg.organizationId, (tx) =>
+      tx.hostReview.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        take: 6,
+        select: { id: true, reviewerName: true, photoUrl: true, quote: true, rating: true },
+      }),
+    );
 
     const { organizationId: _orgId, ...publicPkg } = pkg;
-    res.json({ package: publicPkg, organization: org ? { ...publicOrg, instagramUrl } : null });
+    res.json({
+      package: publicPkg,
+      organization: org ? { ...publicOrg, instagramUrl, whatsappNumber } : null,
+      reviews,
+    });
   }),
 );
 

@@ -123,6 +123,10 @@ Runs weekly; `certbot renew` is a no-op unless the cert is within 30 days of exp
   ```bash
   docker compose -f docker-compose.prod.yml logs backend --tail=50
   ```
+- [ ] `https://your-domain.com/owner/login` loads the Super Admin panel and
+  logs in with the owner account (`joinetra@gmail.com`) — no extra setup
+  needed here, it's the same frontend build and the same Supabase database
+  as local dev, just reached over the real domain.
 
 ## 8. Meta verification (domain + WhatsApp/Instagram)
 

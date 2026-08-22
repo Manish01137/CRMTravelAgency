@@ -36,6 +36,11 @@ enum UserStatus {
   DISABLED
 }
 
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 enum LeadSource {
   WHATSAPP
   INSTAGRAM
@@ -163,9 +168,15 @@ enum CommStatus {
 
 /// A travel agency (tenant). Every other client-data row is scoped to one of these.
 model Organization {
-  id                  String   @id @default(uuid()) @db.Uuid
+  id                  String             @id @default(uuid()) @db.Uuid
   name                String
-  slug                String   @unique
+  slug                String             @unique
+  // Platform-owner control (Super Admin panel) — a SUSPENDED org's users can no
+  // longer log in or refresh their session; their data is untouched. Set only
+  // via the platform-admin surface, never by an org's own admin.
+  status              OrganizationStatus @default(ACTIVE)
+  suspendedAt         DateTime?          @map("suspended_at")
+  suspendedReason     String?            @map("suspended_reason")
   logoUrl             String?
   brandPrimaryColor   String   @default("#4F46E5") @map("brand_primary_color")
   brandSecondaryColor String   @default("#0D9488") @map("brand_secondary_color")
@@ -1056,4 +1067,68 @@ model SignupVerification {
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@map("signup_verifications")
+}
+
+// ===========================================================================
+// Platform administration (Super Admin panel — the CRM's own operator, not a
+// tenant). Lives entirely outside the multi-tenant model: no organizationId,
+// its own login surface (`/api/platform-admin`), its own JWT scope, and its
+// own frontend (`/owner`) — never reachable through the tenant app's
+// AuthContext or ProtectedRoute. Row Level Security is enabled on this table
+// with NO policy (see the platform_admin migration), so the restricted
+// `crm_app` role — the connection every ordinary tenant request runs as —
+// gets zero access to it, full stop. Only the privileged systemPrisma
+// connection (table owner, exempt from RLS) can ever read or write it.
+// ===========================================================================
+
+model PlatformAdmin {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String
+  passwordHash String    @map("password_hash")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("platform_admins")
+}
+
+/// Every mutating action taken from the Super Admin panel — suspend/reactivate
+/// an org, disable/enable a user, create an org, add a note. Same RLS lockout
+/// as PlatformAdmin (enabled, no policy — crm_app gets nothing). `organizationId`
+/// is a plain unmodeled reference (raw FK in the migration, no Prisma relation)
+/// so this stays fully decoupled from the Organization model — no back-relation
+/// field, nothing a tenant-facing query could ever accidentally `include`.
+model PlatformAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  adminId     String?  @map("admin_id") @db.Uuid
+  adminEmail  String   @map("admin_email")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id") @db.Uuid
+  targetLabel String   @map("target_label")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
+/// Internal, owner-only notes about an organization (support/sales context —
+/// "upgraded to annual", "flaky payments, watch this one"). Deliberately NEVER
+/// visible to the organization itself: RLS is enabled with NO policy, so even
+/// if a future tenant-facing route mistakenly queried this table, `crm_app`
+/// would still get zero rows. `organizationId` is a plain unmodeled reference,
+/// same reasoning as PlatformAuditLog above.
+model OrganizationNote {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  adminId        String?  @map("admin_id") @db.Uuid
+  adminEmail     String   @map("admin_email")
+  body           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId])
+  @@map("organization_notes")
 }

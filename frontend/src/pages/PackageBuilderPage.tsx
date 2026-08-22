@@ -68,7 +68,7 @@ export interface Values {
   priceAmount: string;
   originalPrice: string;
   priceCurrency: string;
-  pricingOptions: { label: string; price: string }[];
+  pricingOptions: { label: string; price: string; season: 'STANDARD' | 'PEAK' }[];
   bannerImageUrl: string;
   whatsappBannerUrl: string;
   whatsappDescription: string;
@@ -187,7 +187,7 @@ export function toValues(pkg: TravelPackage | null): Values {
     priceAmount: pkg?.priceAmount != null ? String(pkg.priceAmount) : '',
     originalPrice: pkg?.originalPrice != null ? String(pkg.originalPrice) : '',
     priceCurrency: pkg?.priceCurrency ?? 'INR',
-    pricingOptions: (pkg?.pricingOptions ?? []).map((p) => ({ label: p.label, price: String(p.price) })),
+    pricingOptions: (pkg?.pricingOptions ?? []).map((p) => ({ label: p.label, price: String(p.price), season: p.season ?? 'STANDARD' })),
     bannerImageUrl: pkg?.bannerImageUrl ?? '',
     whatsappBannerUrl: pkg?.whatsappBannerUrl ?? '',
     whatsappDescription: pkg?.whatsappDescription ?? '',
@@ -244,7 +244,7 @@ function toPayload(v: Values): Record<string, unknown> {
     priceCurrency: (v.priceCurrency || 'INR').toUpperCase(),
     pricingOptions: v.pricingOptions
       .filter((p) => p.label.trim() && p.price.trim() !== '')
-      .map((p) => ({ label: p.label.trim(), price: Number(p.price) || 0 })),
+      .map((p) => ({ label: p.label.trim(), price: Number(p.price) || 0, season: p.season })),
     bannerImageUrl: v.bannerImageUrl.trim() || null,
     whatsappBannerUrl: v.whatsappBannerUrl.trim() || null,
     whatsappDescription: v.whatsappDescription.trim() || null,
@@ -428,7 +428,7 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       </Field>
 
       <div>
-        <SectionLabel hint="Add any number of labelled prices — e.g. Single / Double / Triple sharing, Child With Bed, Extra Bed.">
+        <SectionLabel hint="Add any number of labelled prices — e.g. Single / Double / Triple sharing, Child With Bed, Extra Bed. Tag any as Peak season (Christmas/New Year etc.) to show them as a separate pricing block on the brochure.">
           Pricing options
         </SectionLabel>
         <div className="space-y-2">
@@ -436,6 +436,21 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
             <div key={f.id} className="flex gap-2">
               <Input placeholder="Label (e.g. Double sharing)" className="flex-1" {...register(`pricingOptions.${i}.label`)} />
               <Input type="number" min={0} placeholder="Price" className="w-32" {...register(`pricingOptions.${i}.price`)} />
+              <Controller
+                control={control}
+                name={`pricingOptions.${i}.season`}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="STANDARD">Standard</SelectItem>
+                      <SelectItem value="PEAK">Peak season</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               <Button type="button" variant="ghost" size="icon" aria-label="Remove price" onClick={() => pricing.remove(i)}>
                 <Trash2 className="text-destructive" />
               </Button>
@@ -446,7 +461,7 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           type="button"
           variant="outline"
           className="mt-2 w-full border-dashed"
-          onClick={() => pricing.append({ label: '', price: '' })}
+          onClick={() => pricing.append({ label: '', price: '', season: 'STANDARD' })}
         >
           <Plus /> Add price
         </Button>

@@ -22,6 +22,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:roles": "tsx prisma/rls/apply-roles.ts",
+    "owner:create": "tsx prisma/create-owner.ts",
     "test:isolation": "tsx tests/isolation.test.ts"
   },
   "dependencies": {
