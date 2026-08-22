@@ -57,7 +57,11 @@ export function OrganizationNotes({ organizationId }: { organizationId: string }
           placeholder="e.g. Upgraded to annual plan on 8/10, primary contact prefers WhatsApp…"
           className="min-h-[44px] flex-1 border-white/10 bg-white/[0.03] text-white placeholder:text-white/30"
         />
-        <Button type="submit" disabled={addNote.isPending || !body.trim()}>
+        <Button
+          type="submit"
+          className="bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-[0_4px_16px_rgba(251,191,36,0.3)] hover:brightness-110"
+          disabled={addNote.isPending || !body.trim()}
+        >
           Add note
         </Button>
       </form>
@@ -71,17 +75,25 @@ export function OrganizationNotes({ organizationId }: { organizationId: string }
           </p>
         ) : (
           notes.map((note) => (
-            <div key={note.id} className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
-              <div className="min-w-0">
-                <p className="whitespace-pre-wrap text-sm text-white">{note.body}</p>
-                <p className="mt-1 text-xs text-white/40">
-                  {note.adminEmail} · {formatDateTime(note.createdAt)}
-                </p>
+            <div
+              key={note.id}
+              className="flex items-start justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 transition-colors hover:border-white/20"
+            >
+              <div className="flex min-w-0 gap-3">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-300">
+                  <StickyNote className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="whitespace-pre-wrap text-sm text-white">{note.body}</p>
+                  <p className="mt-1 text-xs text-white/40">
+                    {note.adminEmail} · {formatDateTime(note.createdAt)}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => deleteNote.mutate(note.id)}
-                className="shrink-0 text-white/30 hover:text-red-300"
+                className="shrink-0 text-white/30 hover:text-rose-300"
                 aria-label="Delete note"
               >
                 <Trash2 className="size-4" />

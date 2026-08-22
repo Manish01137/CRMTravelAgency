@@ -56,11 +56,11 @@ export function GlobalSearch() {
         }}
         onFocus={() => setOpen(true)}
         placeholder="Search organizations, users, leads, bookings…"
-        className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-white/30 focus:border-primary/50 focus:outline-none"
+        className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.03] pl-9 pr-3 text-sm text-white placeholder:text-white/30 transition-colors focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
       />
 
       {open && debounced.trim().length > 0 && (
-        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-lg border border-white/10 bg-[#15171d] shadow-xl">
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#15171d] shadow-2xl">
           {isFetching && !data ? (
             <p className="px-4 py-3 text-sm text-white/40">Searching…</p>
           ) : !hasResults ? (

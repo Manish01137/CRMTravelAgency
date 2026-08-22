@@ -51,7 +51,7 @@ export function OwnerUsersPage() {
         </div>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-white/10">
+      <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
         {isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -74,7 +74,7 @@ export function OwnerUsersPage() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {data.items.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} className="transition-colors hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
                     <p className="font-medium text-white">{user.name}</p>
                     <p className="text-xs text-white/40">{user.email}</p>
@@ -84,8 +84,28 @@ export function OwnerUsersPage() {
                       {user.organization.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-white/70">{user.role}</td>
-                  <td className="px-4 py-3 text-white/70">{user.status}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        user.role === 'ADMIN'
+                          ? 'inline-flex items-center rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-400/20'
+                          : 'inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/60 ring-1 ring-inset ring-white/10'
+                      }
+                    >
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        user.status === 'DISABLED'
+                          ? 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
+                          : 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
+                      }
+                    >
+                      {user.status}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-white/50">{user.lastLoginAt ? fromNow(user.lastLoginAt) : 'Never'}</td>
                   <td className="px-4 py-3 text-right">
                     <Button

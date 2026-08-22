@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { handleApiError } from '@/lib/formErrors';
 import { OwnerShell } from './OwnerShell';
 import { CreateOrganizationDialog } from './CreateOrganizationDialog';
+import { OwnerConfirmDialog } from './OwnerConfirmDialog';
 import type { OwnerOrganizationRow, Paginated } from './types';
 
 export function OwnerOrganizationsPage() {
@@ -57,7 +57,10 @@ export function OwnerOrganizationsPage() {
               className="border-white/10 bg-white/[0.03] pl-9 text-white placeholder:text-white/30"
             />
           </div>
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="bg-gradient-to-r from-primary to-secondary text-white shadow-[0_4px_16px_rgba(79,70,229,0.35)] hover:brightness-110"
+          >
             <Plus className="size-4" /> New organization
           </Button>
         </div>
@@ -65,7 +68,7 @@ export function OwnerOrganizationsPage() {
 
       <CreateOrganizationDialog open={createOpen} onOpenChange={setCreateOpen} />
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-white/10">
+      <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
         {isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -89,7 +92,7 @@ export function OwnerOrganizationsPage() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {data.items.map((org) => (
-                <tr key={org.id}>
+                <tr key={org.id} className="transition-colors hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
                     <Link to={`/owner/organizations/${org.id}`} className="font-medium text-white hover:text-primary">
                       {org.name}
@@ -103,8 +106,8 @@ export function OwnerOrganizationsPage() {
                     <span
                       className={
                         org.status === 'ACTIVE'
-                          ? 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300'
-                          : 'inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-300'
+                          ? 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
+                          : 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
                       }
                     >
                       {org.status}
@@ -136,7 +139,7 @@ export function OwnerOrganizationsPage() {
         )}
       </div>
 
-      <ConfirmDialog
+      <OwnerConfirmDialog
         open={!!target}
         onOpenChange={(open) => !open && setTarget(null)}
         title={target?.status === 'ACTIVE' ? `Suspend ${target.name}?` : `Reactivate ${target?.name}?`}

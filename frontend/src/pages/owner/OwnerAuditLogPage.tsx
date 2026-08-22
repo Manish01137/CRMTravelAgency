@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ShieldBan, ShieldCheck, UserCog, Building2, StickyNote } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -7,14 +8,15 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { OwnerShell } from './OwnerShell';
 import type { AuditLogEntry, Paginated } from './types';
 
-const ACTION_META: Record<string, { label: string; icon: typeof ShieldBan; tone: string }> = {
-  ORGANIZATION_SUSPENDED: { label: 'Suspended organization', icon: ShieldBan, tone: 'text-red-300' },
-  ORGANIZATION_REACTIVATED: { label: 'Reactivated organization', icon: ShieldCheck, tone: 'text-emerald-300' },
-  ORGANIZATION_CREATED: { label: 'Created organization', icon: Building2, tone: 'text-sky-300' },
-  USER_DISABLED: { label: 'Disabled user', icon: UserCog, tone: 'text-red-300' },
-  USER_ENABLED: { label: 'Enabled user', icon: UserCog, tone: 'text-emerald-300' },
-  NOTE_ADDED: { label: 'Added a note', icon: StickyNote, tone: 'text-white/70' },
+const ACTION_META: Record<string, { label: string; icon: typeof ShieldBan; badge: string }> = {
+  ORGANIZATION_SUSPENDED: { label: 'Suspended organization', icon: ShieldBan, badge: 'bg-rose-500/15 text-rose-300' },
+  ORGANIZATION_REACTIVATED: { label: 'Reactivated organization', icon: ShieldCheck, badge: 'bg-emerald-500/15 text-emerald-300' },
+  ORGANIZATION_CREATED: { label: 'Created organization', icon: Building2, badge: 'bg-violet-500/15 text-violet-300' },
+  USER_DISABLED: { label: 'Disabled user', icon: UserCog, badge: 'bg-rose-500/15 text-rose-300' },
+  USER_ENABLED: { label: 'Enabled user', icon: UserCog, badge: 'bg-teal-500/15 text-teal-300' },
+  NOTE_ADDED: { label: 'Added a note', icon: StickyNote, badge: 'bg-amber-500/15 text-amber-300' },
 };
+const DEFAULT_ACTION_META = { icon: UserCog, badge: 'bg-white/10 text-white/60' };
 
 export function OwnerAuditLogPage() {
   const { data, isLoading } = useQuery({
@@ -39,14 +41,21 @@ export function OwnerAuditLogPage() {
         ) : (
           <div className="space-y-2">
             {data.items.map((entry) => {
-              const meta = ACTION_META[entry.action] ?? { label: entry.action, icon: UserCog, tone: 'text-white/70' };
-              const Icon = meta.icon;
+              const meta = ACTION_META[entry.action];
+              const Icon = meta?.icon ?? DEFAULT_ACTION_META.icon;
+              const badge = meta?.badge ?? DEFAULT_ACTION_META.badge;
+              const label = meta?.label ?? entry.action;
               return (
-                <div key={entry.id} className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
-                  <Icon className={`mt-0.5 size-4 shrink-0 ${meta.tone}`} />
+                <div
+                  key={entry.id}
+                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 transition-colors hover:border-white/20"
+                >
+                  <span className={cn('mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg', badge)}>
+                    <Icon className="size-4" />
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-white">
-                      <span className="font-medium">{entry.adminEmail}</span> — {meta.label.toLowerCase()}{' '}
+                      <span className="font-medium">{entry.adminEmail}</span> — {label.toLowerCase()}{' '}
                       <span className="font-medium">{entry.targetLabel}</span>
                     </p>
                     {entry.metadata?.reason ? (

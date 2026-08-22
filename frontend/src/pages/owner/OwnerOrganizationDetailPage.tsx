@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowLeft, ShieldBan, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, CalendarCheck2, ShieldBan, ShieldCheck, TrendingUp, UsersRound, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatCurrency, formatDate, fromNow } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { handleApiError } from '@/lib/formErrors';
 import { OwnerShell } from './OwnerShell';
 import { OrganizationNotes } from './OrganizationNotes';
+import { OwnerConfirmDialog } from './OwnerConfirmDialog';
+import { StatTile } from './StatTile';
 import type { OwnerOrganizationDetail } from './types';
 
 export function OwnerOrganizationDetailPage() {
@@ -74,8 +75,8 @@ export function OwnerOrganizationDetailPage() {
             <span
               className={
                 org.status === 'ACTIVE'
-                  ? 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300'
-                  : 'inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-300'
+                  ? 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
+                  : 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
               }
             >
               {org.status}
@@ -89,8 +90,11 @@ export function OwnerOrganizationDetailPage() {
           )}
         </div>
         <Button
-          variant="outline"
-          className="border-white/15 bg-transparent text-white hover:bg-white/10"
+          className={
+            org.status === 'ACTIVE'
+              ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white hover:brightness-110'
+              : 'bg-gradient-to-r from-primary to-secondary text-white hover:brightness-110'
+          }
           onClick={() => setConfirmOpen(true)}
         >
           {org.status === 'ACTIVE' ? (
@@ -106,27 +110,15 @@ export function OwnerOrganizationDetailPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-xs uppercase tracking-wide text-white/40">Users</p>
-          <p className="mt-1 font-display text-xl font-bold text-white">{org.users.length}</p>
-        </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-xs uppercase tracking-wide text-white/40">Leads</p>
-          <p className="mt-1 font-display text-xl font-bold text-white">{org._count.leads}</p>
-        </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-xs uppercase tracking-wide text-white/40">Bookings</p>
-          <p className="mt-1 font-display text-xl font-bold text-white">{org._count.bookings}</p>
-        </div>
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-xs uppercase tracking-wide text-white/40">Booking value</p>
-          <p className="mt-1 font-display text-xl font-bold text-white">{formatCurrency(org.totalBookingValue, 'INR')}</p>
-        </div>
+        <StatTile icon={UsersRound} label="Users" value={String(org.users.length)} accent="teal" />
+        <StatTile icon={TrendingUp} label="Leads" value={String(org._count.leads)} accent="indigo" />
+        <StatTile icon={CalendarCheck2} label="Bookings" value={String(org._count.bookings)} accent="amber" />
+        <StatTile icon={Wallet} label="Booking value" value={formatCurrency(org.totalBookingValue, 'INR')} accent="violet" />
       </div>
 
       <div className="mt-8">
         <h2 className="font-display text-lg font-bold text-white">Team members</h2>
-        <div className="mt-3 overflow-hidden rounded-lg border border-white/10">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
           <table className="w-full text-left text-sm">
             <thead className="bg-white/[0.03] text-xs uppercase tracking-wide text-white/40">
               <tr>
@@ -139,13 +131,33 @@ export function OwnerOrganizationDetailPage() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {org.users.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} className="transition-colors hover:bg-white/[0.03]">
                   <td className="px-4 py-3">
                     <p className="font-medium text-white">{user.name}</p>
                     <p className="text-xs text-white/40">{user.email}</p>
                   </td>
-                  <td className="px-4 py-3 text-white/70">{user.role}</td>
-                  <td className="px-4 py-3 text-white/70">{user.status}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        user.role === 'ADMIN'
+                          ? 'inline-flex items-center rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-400/20'
+                          : 'inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/60 ring-1 ring-inset ring-white/10'
+                      }
+                    >
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        user.status === 'DISABLED'
+                          ? 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
+                          : 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
+                      }
+                    >
+                      {user.status}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-white/50">{user.lastLoginAt ? fromNow(user.lastLoginAt) : 'Never'}</td>
                   <td className="px-4 py-3 text-right">
                     <Button
@@ -169,7 +181,7 @@ export function OwnerOrganizationDetailPage() {
 
       <OrganizationNotes organizationId={org.id} />
 
-      <ConfirmDialog
+      <OwnerConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={org.status === 'ACTIVE' ? `Suspend ${org.name}?` : `Reactivate ${org.name}?`}
