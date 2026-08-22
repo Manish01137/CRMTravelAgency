@@ -44,3 +44,4 @@ tmp/
 
 # Supabase setup with real password (never commit)
 supabase/setup.local.sql
+nginx/nginx.ssl.conf.bak
