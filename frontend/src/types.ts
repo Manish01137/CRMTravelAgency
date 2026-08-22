@@ -231,6 +231,9 @@ export type PackageViewType =
 export interface PricingOption {
   label: string;
   price: number;
+  /** Optional — lets the brochure split pricing into standard vs. a peak-season
+   *  block (e.g. Christmas/New Year). Defaults to standard when omitted. */
+  season?: 'STANDARD' | 'PEAK';
 }
 /** An activity copied from the Sightseeing library into one day of one package. */
 export interface DayActivityBlock {

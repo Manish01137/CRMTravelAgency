@@ -12,6 +12,9 @@ const nullUrl = z.preprocess(emptyToNull, z.string().url('Enter a valid URL').ma
 const pricingOptionSchema = z.object({
   label: z.string().trim().min(1).max(80),
   price: z.coerce.number().int().nonnegative().max(1_000_000_000),
+  // Optional — splits the brochure's pricing page into standard vs. peak-season
+  // cards. Omitted/STANDARD is the default; only PEAK needs to be set explicitly.
+  season: z.enum(['STANDARD', 'PEAK']).optional(),
 });
 const itineraryDaySchema = z.object({
   day: z.coerce.number().int().min(1).max(366),
