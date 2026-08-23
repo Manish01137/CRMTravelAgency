@@ -7,8 +7,13 @@ import * as controller from './platform-admin.controller';
 import {
   addOrganizationNoteSchema,
   auditLogQuerySchema,
+  createExpenseSchema,
   createOrganizationSchema,
+  expenseIdParam,
+  financeQuerySchema,
   growthQuerySchema,
+  listBookingsQuerySchema,
+  listLeadsQuerySchema,
   listOrganizationsQuerySchema,
   listUsersQuerySchema,
   noteIdParam,
@@ -17,6 +22,7 @@ import {
   searchQuerySchema,
   updateOrganizationStatusSchema,
   updateUserStatusSchema,
+  upsertSubscriptionSchema,
   userIdParam,
 } from './platform-admin.schemas';
 
@@ -76,5 +82,24 @@ router.patch(
   validate({ params: userIdParam, body: updateUserStatusSchema }),
   asyncHandler(controller.updateUserStatus),
 );
+
+router.get('/leads', validate({ query: listLeadsQuerySchema }), asyncHandler(controller.listLeads));
+router.get('/bookings', validate({ query: listBookingsQuerySchema }), asyncHandler(controller.listBookings));
+
+// --- Finance (manual tracking) ---
+router.get('/subscriptions', asyncHandler(controller.listSubscriptions));
+router.put(
+  '/subscriptions/:id',
+  validate({ params: orgIdParam, body: upsertSubscriptionSchema }),
+  asyncHandler(controller.upsertSubscription),
+);
+router.get('/expenses', validate({ query: financeQuerySchema }), asyncHandler(controller.listExpenses));
+router.post('/expenses', validate({ body: createExpenseSchema }), asyncHandler(controller.createExpense));
+router.delete('/expenses/:id', validate({ params: expenseIdParam }), asyncHandler(controller.deleteExpense));
+router.get('/revenue', asyncHandler(controller.revenue));
+router.get('/profit', validate({ query: financeQuerySchema }), asyncHandler(controller.profit));
+
+// --- Ops ---
+router.get('/system-health', asyncHandler(controller.systemHealth));
 
 export default router;

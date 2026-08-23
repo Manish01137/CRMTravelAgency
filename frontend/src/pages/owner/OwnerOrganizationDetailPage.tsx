@@ -6,11 +6,13 @@ import { ArrowLeft, CalendarCheck2, ShieldBan, ShieldCheck, TrendingUp, UsersRou
 import { api } from '@/lib/api';
 import { formatCurrency, formatDate, fromNow } from '@/lib/format';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { handleApiError } from '@/lib/formErrors';
 import { OwnerShell } from './OwnerShell';
 import { OrganizationNotes } from './OrganizationNotes';
-import { OwnerConfirmDialog } from './OwnerConfirmDialog';
 import { StatTile } from './StatTile';
 import type { OwnerOrganizationDetail } from './types';
 
@@ -52,8 +54,8 @@ export function OwnerOrganizationDetailPage() {
   if (isLoading || !org) {
     return (
       <OwnerShell>
-        <Skeleton className="h-8 w-64 bg-white/5" />
-        <Skeleton className="mt-4 h-40 rounded-lg bg-white/5" />
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="mt-4 h-40 rounded-lg" />
       </OwnerShell>
     );
   }
@@ -63,7 +65,7 @@ export function OwnerOrganizationDetailPage() {
       <button
         type="button"
         onClick={() => navigate('/owner/organizations')}
-        className="mb-4 flex items-center gap-1.5 text-sm text-white/50 hover:text-white"
+        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-4" /> Back to organizations
       </button>
@@ -71,32 +73,17 @@ export function OwnerOrganizationDetailPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-white">{org.name}</h1>
-            <span
-              className={
-                org.status === 'ACTIVE'
-                  ? 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
-                  : 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
-              }
-            >
-              {org.status}
-            </span>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">{org.name}</h1>
+            <Badge variant={org.status === 'ACTIVE' ? 'success' : 'destructive'}>{org.status}</Badge>
           </div>
-          <p className="mt-1 text-sm text-white/50">
+          <p className="mt-1 text-sm text-muted-foreground">
             {org.slug} · Signed up {formatDate(org.createdAt)}
           </p>
           {org.status === 'SUSPENDED' && org.suspendedReason && (
-            <p className="mt-2 text-sm text-amber-300">Reason: {org.suspendedReason}</p>
+            <p className="mt-2 text-sm text-amber-600">Reason: {org.suspendedReason}</p>
           )}
         </div>
-        <Button
-          className={
-            org.status === 'ACTIVE'
-              ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white hover:brightness-110'
-              : 'bg-gradient-to-r from-primary to-secondary text-white hover:brightness-110'
-          }
-          onClick={() => setConfirmOpen(true)}
-        >
+        <Button variant={org.status === 'ACTIVE' ? 'destructive' : 'default'} onClick={() => setConfirmOpen(true)}>
           {org.status === 'ACTIVE' ? (
             <>
               <ShieldBan className="size-4" /> Suspend organization
@@ -110,17 +97,17 @@ export function OwnerOrganizationDetailPage() {
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatTile icon={UsersRound} label="Users" value={String(org.users.length)} accent="teal" />
-        <StatTile icon={TrendingUp} label="Leads" value={String(org._count.leads)} accent="indigo" />
-        <StatTile icon={CalendarCheck2} label="Bookings" value={String(org._count.bookings)} accent="amber" />
+        <StatTile icon={UsersRound} label="Users" value={org.users.length} accent="teal" />
+        <StatTile icon={TrendingUp} label="Leads" value={org._count.leads} accent="sky" />
+        <StatTile icon={CalendarCheck2} label="Bookings" value={org._count.bookings} accent="amber" />
         <StatTile icon={Wallet} label="Booking value" value={formatCurrency(org.totalBookingValue, 'INR')} accent="violet" />
       </div>
 
       <div className="mt-8">
-        <h2 className="font-display text-lg font-bold text-white">Team members</h2>
-        <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+        <h2 className="font-display text-base font-semibold text-foreground">Team members</h2>
+        <Card className="mt-3 overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="bg-white/[0.03] text-xs uppercase tracking-wide text-white/40">
+            <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Role</th>
@@ -129,41 +116,25 @@ export function OwnerOrganizationDetailPage() {
                 <th className="px-4 py-3" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-border">
               {org.users.map((user) => (
-                <tr key={user.id} className="transition-colors hover:bg-white/[0.03]">
+                <tr key={user.id} className="transition-colors hover:bg-muted/50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-white">{user.name}</p>
-                    <p className="text-xs text-white/40">{user.email}</p>
+                    <p className="font-medium text-foreground">{user.name}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={
-                        user.role === 'ADMIN'
-                          ? 'inline-flex items-center rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-400/20'
-                          : 'inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/60 ring-1 ring-inset ring-white/10'
-                      }
-                    >
-                      {user.role}
-                    </span>
+                    <Badge variant={user.role === 'ADMIN' ? 'default' : 'muted'}>{user.role}</Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={
-                        user.status === 'DISABLED'
-                          ? 'inline-flex items-center rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300 ring-1 ring-inset ring-rose-400/20'
-                          : 'inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-400/20'
-                      }
-                    >
-                      {user.status}
-                    </span>
+                    <Badge variant={user.status === 'DISABLED' ? 'destructive' : 'success'}>{user.status}</Badge>
                   </td>
-                  <td className="px-4 py-3 text-white/50">{user.lastLoginAt ? fromNow(user.lastLoginAt) : 'Never'}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{user.lastLoginAt ? fromNow(user.lastLoginAt) : 'Never'}</td>
                   <td className="px-4 py-3 text-right">
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 border-white/15 bg-transparent text-xs text-white hover:bg-white/10"
+                      className="h-8 text-xs"
                       disabled={toggleUserStatus.isPending}
                       onClick={() =>
                         toggleUserStatus.mutate({ userId: user.id, status: user.status === 'DISABLED' ? 'ACTIVE' : 'DISABLED' })
@@ -176,12 +147,12 @@ export function OwnerOrganizationDetailPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </Card>
       </div>
 
       <OrganizationNotes organizationId={org.id} />
 
-      <OwnerConfirmDialog
+      <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={org.status === 'ACTIVE' ? `Suspend ${org.name}?` : `Reactivate ${org.name}?`}

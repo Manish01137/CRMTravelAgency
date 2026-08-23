@@ -1,9 +1,11 @@
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/card';
+import { CountUp } from '@/components/ui/count-up';
 import { ACCENT_CLASSES, type OwnerAccent } from './theme';
 
-/** Colorful glass stat card — shared across the dashboard and org detail page
- *  so every number in the owner panel reads as one consistent system. */
+/** Same shape as the tenant Dashboard's StatCard — gradient icon tile, bold
+ *  count-up number — so the owner panel reads as the exact same design system. */
 export function StatTile({
   icon: Icon,
   label,
@@ -13,22 +15,23 @@ export function StatTile({
 }: {
   icon: LucideIcon;
   label: string;
-  value: string;
+  value: number | string;
   sub?: string;
   accent: OwnerAccent;
 }) {
   const a = ACCENT_CLASSES[accent];
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-colors hover:border-white/20">
-      <div className={cn('pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-20 blur-2xl transition-opacity group-hover:opacity-40', a.bg)} />
-      <div className="relative flex items-center gap-3">
-        <span className={cn('flex size-9 items-center justify-center rounded-xl', a.bg, a.text)}>
-          <Icon className="size-4" />
+    <Card className="p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl text-white [&_svg]:size-4', a.tile)}>
+          <Icon />
         </span>
-        <p className="text-xs font-medium uppercase tracking-wide text-white/50">{label}</p>
       </div>
-      <p className="relative mt-3 font-display text-[1.75rem] font-bold text-white">{value}</p>
-      {sub && <p className="relative mt-1 text-xs text-white/40">{sub}</p>}
-    </div>
+      <p className="mt-2 font-display text-2xl font-bold text-foreground sm:text-3xl">
+        {typeof value === 'number' ? <CountUp to={value} duration={900} /> : value}
+      </p>
+      {sub && <p className="mt-1 truncate text-xs text-muted-foreground">{sub}</p>}
+    </Card>
   );
 }

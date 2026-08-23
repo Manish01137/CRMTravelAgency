@@ -3,10 +3,10 @@ import type { GrowthWeek } from './types';
 
 /**
  * Weekly new-organization signups — a single sequential series (magnitude over
- * time), so per the dataviz method: one hue (validated blue, step 400), no
- * legend box needed, bars ≤24px with a 4px rounded data-end, 2px surface gaps,
- * hairline gridlines, and a per-bar hover tooltip since this is the mark-is-
- * the-hit-target case (bars/cells), not a crosshair chart.
+ * time), so per the dataviz method: one hue (validated blue, light-surface
+ * step), no legend box needed, bars ≤24px with a 4px rounded data-end, 2px
+ * surface gaps, hairline gridlines, and a per-bar hover tooltip since this is
+ * the mark-is-the-hit-target case (bars/cells), not a crosshair chart.
  */
 export function GrowthChart({ weeks }: { weeks: GrowthWeek[] }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -46,7 +46,7 @@ export function GrowthChart({ weeks }: { weeks: GrowthWeek[] }) {
           const y = paddingTop + plotHeight - (tick / niceMax) * plotHeight;
           return (
             <g key={tick}>
-              <line x1={paddingLeft} x2={width} y1={y} y2={y} stroke="#2c2c2a" strokeWidth={1} />
+              <line x1={paddingLeft} x2={width} y1={y} y2={y} stroke="#e1e0d9" strokeWidth={1} />
               <text x={0} y={y + 4} fontSize={10} fill="#898781">
                 {Math.round(tick)}
               </text>
@@ -60,7 +60,7 @@ export function GrowthChart({ weeks }: { weeks: GrowthWeek[] }) {
           x2={width}
           y1={paddingTop + plotHeight}
           y2={paddingTop + plotHeight}
-          stroke="#383835"
+          stroke="#c3c2b7"
           strokeWidth={1}
         />
 
@@ -95,7 +95,7 @@ export function GrowthChart({ weeks }: { weeks: GrowthWeek[] }) {
                   width={Math.max(0, barWidth - gap)}
                   height={Math.max(0, barHeight)}
                   rx={4}
-                  fill={isHovered ? '#5598e7' : '#3987e5'}
+                  fill={isHovered ? '#3987e5' : '#2a78d6'}
                   className="pointer-events-none transition-colors"
                 />
               )}
@@ -111,14 +111,14 @@ export function GrowthChart({ weeks }: { weeks: GrowthWeek[] }) {
 
       {hoverIndex !== null && weeks[hoverIndex] && (
         <div
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-md border border-white/10 bg-[#1a1a19] px-2.5 py-1.5 text-xs shadow-lg"
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-pop"
           style={{
             left: `${((paddingLeft + hoverIndex * barSlot + barSlot / 2) / width) * 100}%`,
             top: `${(paddingTop / height) * 100}%`,
           }}
         >
-          <p className="font-semibold text-white">{weeks[hoverIndex].count} organization{weeks[hoverIndex].count === 1 ? '' : 's'}</p>
-          <p className="text-white/50">Week of {formatWeek(weeks[hoverIndex].weekStart)}</p>
+          <p className="font-semibold text-foreground">{weeks[hoverIndex].count} organization{weeks[hoverIndex].count === 1 ? '' : 's'}</p>
+          <p className="text-muted-foreground">Week of {formatWeek(weeks[hoverIndex].weekStart)}</p>
         </div>
       )}
     </div>

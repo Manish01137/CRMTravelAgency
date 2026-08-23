@@ -372,6 +372,35 @@ async function main() {
     }
     check('A: inserting into organization_notes is rejected by RLS, even for its own org', orgNoteForgeRejected);
 
+    // 10. Owner-only finance tables — same lockout, even for its own org.
+    const subRows = await withTenant(orgA.id, (tx) => tx.organizationSubscription.findMany({ where: { organizationId: orgA.id } }));
+    check("A: organization_subscriptions is invisible to crm_app, even for its own org's subscription", subRows.length === 0);
+
+    const expenseRows = await withTenant(orgA.id, (tx) => tx.platformExpense.findMany());
+    check('A: platform_expenses is completely invisible to crm_app', expenseRows.length === 0);
+
+    let subForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.organizationSubscription.create({
+          data: { organizationId: orgA.id, planName: 'Forged', amount: 0, startedAt: new Date() },
+        });
+      });
+    } catch {
+      subForgeRejected = true;
+    }
+    check('A: inserting into organization_subscriptions is rejected by RLS, even for its own org', subForgeRejected);
+
+    let expenseForgeRejected = false;
+    try {
+      await withTenant(orgA.id, async (tx) => {
+        await tx.platformExpense.create({ data: { description: 'Forged', amount: 0, expenseDate: new Date() } });
+      });
+    } catch {
+      expenseForgeRejected = true;
+    }
+    check('A: inserting into platform_expenses is rejected by RLS', expenseForgeRejected);
+
     // eslint-disable-next-line no-console
     console.log(`\nResult: ${passed} passed, ${failed} failed.\n`);
   } finally {

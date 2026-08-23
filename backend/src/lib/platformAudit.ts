@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { systemPrisma } from './prisma';
 
-export type AuditTargetType = 'ORGANIZATION' | 'USER';
+export type AuditTargetType = 'ORGANIZATION' | 'USER' | 'EXPENSE';
 
 /** Records one Super Admin panel action. Best-effort: a logging failure must
  *  never block the action it's describing, so callers fire-and-forget this. */

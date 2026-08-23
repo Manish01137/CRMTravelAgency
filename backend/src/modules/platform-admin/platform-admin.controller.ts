@@ -5,7 +5,10 @@ import { setPlatformAdminCookie, clearPlatformAdminCookie } from '../../lib/cook
 import { Unauthorized } from '../../lib/errors';
 import type {
   AuditLogQuery,
+  FinanceQuery,
   GrowthQuery,
+  ListBookingsQuery,
+  ListLeadsQuery,
   ListOrganizationsQuery,
   ListUsersQuery,
   SearchQuery,
@@ -94,4 +97,45 @@ export async function search(req: Request, res: Response): Promise<void> {
 
 export async function auditLog(req: Request, res: Response): Promise<void> {
   res.json(await service.listAuditLog(req.query as unknown as AuditLogQuery));
+}
+
+export async function listLeads(req: Request, res: Response): Promise<void> {
+  res.json(await service.listLeads(req.query as unknown as ListLeadsQuery));
+}
+
+export async function listBookings(req: Request, res: Response): Promise<void> {
+  res.json(await service.listBookings(req.query as unknown as ListBookingsQuery));
+}
+
+export async function listSubscriptions(_req: Request, res: Response): Promise<void> {
+  res.json(await service.listSubscriptions());
+}
+
+export async function upsertSubscription(req: Request, res: Response): Promise<void> {
+  res.json(await service.upsertSubscription(req.params.id, req.body, actor(req)));
+}
+
+export async function listExpenses(req: Request, res: Response): Promise<void> {
+  res.json(await service.listExpenses(req.query as unknown as FinanceQuery));
+}
+
+export async function createExpense(req: Request, res: Response): Promise<void> {
+  res.status(201).json(await service.createExpense(req.body, actor(req)));
+}
+
+export async function deleteExpense(req: Request, res: Response): Promise<void> {
+  await service.deleteExpense(req.params.id, actor(req));
+  res.json({ ok: true });
+}
+
+export async function revenue(_req: Request, res: Response): Promise<void> {
+  res.json(await service.getRevenue());
+}
+
+export async function profit(req: Request, res: Response): Promise<void> {
+  res.json(await service.getProfit(req.query as unknown as FinanceQuery));
+}
+
+export async function systemHealth(_req: Request, res: Response): Promise<void> {
+  res.json(await service.getSystemHealth());
 }

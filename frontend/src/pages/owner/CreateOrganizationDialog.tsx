@@ -9,9 +9,9 @@ import { api } from '@/lib/api';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { handleApiError } from '@/lib/formErrors';
-import { DarkField } from './DarkField';
 
 const schema = z.object({
   organizationName: z.string().trim().min(1, 'Organization name is required'),
@@ -62,29 +62,26 @@ export function CreateOrganizationDialog({ open, onOpenChange }: { open: boolean
     toast.success('Credentials copied');
   };
 
-  const darkInput = 'border-white/10 bg-white/[0.03] text-white placeholder:text-white/25 focus-visible:border-primary/60 focus-visible:ring-primary/25';
-  const gradientButton = 'bg-gradient-to-r from-primary to-secondary text-white shadow-[0_4px_16px_rgba(79,70,229,0.35)] hover:brightness-110';
-
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="rounded-2xl border-white/10 bg-[#15171d]">
+      <DialogContent>
         {result ? (
           <>
             <DialogHeader>
-              <DialogTitle className="text-white">Organization created</DialogTitle>
-              <DialogDescription className="text-white/50">
+              <DialogTitle>Organization created</DialogTitle>
+              <DialogDescription>
                 Send these credentials to the agency — this password is shown once and can't be retrieved again.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2 rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-4 font-mono text-sm text-white">
+            <div className="space-y-2 rounded-lg border border-success/30 bg-success/5 p-4 font-mono text-sm text-foreground">
               <p>Email: {result.admin.email}</p>
               <p>Password: {result.generatedPassword}</p>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" className="border-white/15 bg-transparent text-white hover:bg-white/10" onClick={copyCredentials}>
+              <Button type="button" variant="outline" onClick={copyCredentials}>
                 <Copy className="size-4" /> Copy
               </Button>
-              <Button type="button" className={gradientButton} onClick={() => close(false)}>
+              <Button type="button" onClick={() => close(false)}>
                 Done
               </Button>
             </DialogFooter>
@@ -92,26 +89,26 @@ export function CreateOrganizationDialog({ open, onOpenChange }: { open: boolean
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle className="text-white">New organization</DialogTitle>
-              <DialogDescription className="text-white/50">
+              <DialogTitle>New organization</DialogTitle>
+              <DialogDescription>
                 Creates the org and its first admin account, skipping self-signup/OTP. A password is generated for you.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit((v) => create.mutate(v))} className="space-y-4" noValidate>
-              <DarkField label="Organization name" htmlFor="organizationName" error={errors.organizationName?.message}>
-                <Input id="organizationName" className={darkInput} aria-invalid={!!errors.organizationName} {...register('organizationName')} />
-              </DarkField>
-              <DarkField label="Admin name" htmlFor="adminName" error={errors.adminName?.message}>
-                <Input id="adminName" className={darkInput} aria-invalid={!!errors.adminName} {...register('adminName')} />
-              </DarkField>
-              <DarkField label="Admin email" htmlFor="adminEmail" error={errors.adminEmail?.message}>
-                <Input id="adminEmail" type="email" className={darkInput} aria-invalid={!!errors.adminEmail} {...register('adminEmail')} />
-              </DarkField>
+              <Field label="Organization name" htmlFor="organizationName" error={errors.organizationName?.message} required>
+                <Input id="organizationName" aria-invalid={!!errors.organizationName} {...register('organizationName')} />
+              </Field>
+              <Field label="Admin name" htmlFor="adminName" error={errors.adminName?.message} required>
+                <Input id="adminName" aria-invalid={!!errors.adminName} {...register('adminName')} />
+              </Field>
+              <Field label="Admin email" htmlFor="adminEmail" error={errors.adminEmail?.message} required>
+                <Input id="adminEmail" type="email" aria-invalid={!!errors.adminEmail} {...register('adminEmail')} />
+              </Field>
               <DialogFooter>
-                <Button type="button" variant="outline" className="border-white/15 bg-transparent text-white hover:bg-white/10" onClick={() => close(false)}>
+                <Button type="button" variant="outline" onClick={() => close(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" className={gradientButton} disabled={isSubmitting}>
+                <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting && <Spinner />}
                   Create
                 </Button>

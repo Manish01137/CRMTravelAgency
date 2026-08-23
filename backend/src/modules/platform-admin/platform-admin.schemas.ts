@@ -56,10 +56,51 @@ export const growthQuerySchema = z.object({
 });
 
 export const auditLogQuerySchema = z.object({
-  targetType: z.enum(['ORGANIZATION', 'USER']).optional(),
+  targetType: z.enum(['ORGANIZATION', 'USER', 'EXPENSE']).optional(),
   targetId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(30),
+});
+
+export const listLeadsQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  organizationId: z.string().uuid().optional(),
+  status: z.string().trim().max(40).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const listBookingsQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  organizationId: z.string().uuid().optional(),
+  status: z.string().trim().max(40).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
+// --- Finance (manual tracking — no payment gateway) --------------------------
+export const upsertSubscriptionSchema = z.object({
+  planName: z.string().trim().min(1, 'Plan name is required').max(80),
+  amount: z.coerce.number().int().nonnegative().max(1_000_000_000),
+  currency: z.string().trim().length(3).toUpperCase().default('INR'),
+  status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).default('ACTIVE'),
+  startedAt: z.coerce.date(),
+  renewsAt: z.coerce.date().optional(),
+  notes: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().max(1000).optional()),
+});
+
+export const createExpenseSchema = z.object({
+  description: z.string().trim().min(1, 'Description is required').max(200),
+  category: z.enum(['HOSTING', 'API_COSTS', 'SOFTWARE', 'MARKETING', 'PAYROLL', 'OTHER']).default('OTHER'),
+  amount: z.coerce.number().int().nonnegative().max(1_000_000_000),
+  currency: z.string().trim().length(3).toUpperCase().default('INR'),
+  expenseDate: z.coerce.date(),
+});
+
+export const expenseIdParam = z.object({ id: z.string().uuid('Invalid expense id') });
+
+export const financeQuerySchema = z.object({
+  months: z.coerce.number().int().positive().max(24).default(6),
 });
 
 export type PlatformAdminLoginInput = z.infer<typeof platformAdminLoginSchema>;
@@ -72,3 +113,8 @@ export type AddOrganizationNoteInput = z.infer<typeof addOrganizationNoteSchema>
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 export type GrowthQuery = z.infer<typeof growthQuerySchema>;
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
+export type ListLeadsQuery = z.infer<typeof listLeadsQuerySchema>;
+export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;
+export type UpsertSubscriptionInput = z.infer<typeof upsertSubscriptionSchema>;
+export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
+export type FinanceQuery = z.infer<typeof financeQuerySchema>;

@@ -75,7 +75,7 @@ export interface AuditLogEntry {
   id: string;
   adminEmail: string;
   action: string;
-  targetType: 'ORGANIZATION' | 'USER';
+  targetType: 'ORGANIZATION' | 'USER' | 'EXPENSE';
   targetId: string;
   targetLabel: string;
   metadata: Record<string, unknown> | null;
@@ -112,4 +112,93 @@ export interface SearchResults {
   users: Array<{ id: string; name: string; email: string; organization: { id: string; name: string } }>;
   leads: Array<{ id: string; name: string; email: string | null; phone: string | null; organization: { id: string; name: string } }>;
   bookings: Array<{ id: string; bookingNumber: number; customerName: string; customerPhone: string | null; organization: { id: string; name: string } }>;
+}
+
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL_SENT' | 'NEGOTIATION' | 'WON' | 'LOST';
+export type LeadSource = 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK' | 'WEBSITE' | 'REFERRAL' | 'WALK_IN' | 'PHONE' | 'MANUAL' | 'OTHER';
+
+export interface OwnerLeadRow {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  status: LeadStatus;
+  source: LeadSource;
+  destination: string | null;
+  budgetAmount: number | null;
+  budgetCurrency: string | null;
+  createdAt: string;
+  organization: { id: string; name: string; slug: string };
+}
+
+export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+
+export interface OwnerBookingRow {
+  id: string;
+  bookingNumber: number;
+  customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  destination: string;
+  status: BookingStatus;
+  totalAmount: number;
+  amountPaid: number;
+  currency: string;
+  startDate: string | null;
+  createdAt: string;
+  organization: { id: string; name: string; slug: string };
+}
+
+export type SubscriptionStatus = 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+
+export interface OrganizationSubscription {
+  id: string;
+  organizationId: string;
+  planName: string;
+  amount: number;
+  currency: string;
+  status: SubscriptionStatus;
+  startedAt: string;
+  renewsAt: string | null;
+  notes: string | null;
+}
+
+export interface SubscriptionRow {
+  organization: { id: string; name: string; slug: string; status: OrganizationStatus };
+  subscription: OrganizationSubscription | null;
+}
+
+export type ExpenseCategory = 'HOSTING' | 'API_COSTS' | 'SOFTWARE' | 'MARKETING' | 'PAYROLL' | 'OTHER';
+
+export interface PlatformExpense {
+  id: string;
+  description: string;
+  category: ExpenseCategory;
+  amount: number;
+  currency: string;
+  expenseDate: string;
+  createdAt: string;
+}
+
+export interface RevenueData {
+  mrr: number;
+  currency: string;
+  activeSubscriptions: number;
+  byPlan: Record<string, { count: number; amount: number }>;
+  subscriptions: Array<{ organizationName: string; planName: string; amount: number }>;
+}
+
+export interface ProfitData {
+  mrr: number;
+  totalExpenses: number;
+  profit: number;
+  currency: string;
+  months: Array<{ month: string; expenses: number; revenue: number; profit: number }>;
+}
+
+export interface SystemHealth {
+  database: { ok: boolean; latencyMs: number };
+  redisConfigured: boolean;
+  process: { uptimeSeconds: number; memoryUsedMb: number; nodeVersion: string; platform: string };
+  checkedAt: string;
 }

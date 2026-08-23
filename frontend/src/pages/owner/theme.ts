@@ -1,42 +1,50 @@
 /** Shared color-accent system for the owner panel — one hue per section, reused
- *  across nav, stat tiles, and badges so the whole panel reads as one design
- *  instead of each page inventing its own palette. */
-export type OwnerAccent = 'indigo' | 'violet' | 'teal' | 'amber' | 'rose';
+ *  across nav, stat tiles, and badges so the whole panel reads as one design,
+ *  matching the exact gradient-tile pattern the tenant Dashboard already uses
+ *  (StatCard's `tile` prop in pages/DashboardPage.tsx). */
+export type OwnerAccent = 'indigo' | 'violet' | 'teal' | 'amber' | 'rose' | 'sky' | 'fuchsia';
 
-export const ACCENT_CLASSES: Record<OwnerAccent, { text: string; bg: string; ring: string; gradient: string; glow: string }> = {
+export const ACCENT_CLASSES: Record<OwnerAccent, { tile: string; badgeBg: string; badgeText: string; navActive: string }> = {
   indigo: {
-    text: 'text-indigo-300',
-    bg: 'bg-indigo-500/15',
-    ring: 'ring-indigo-400/20',
-    gradient: 'from-indigo-500 to-indigo-600',
-    glow: 'shadow-[0_0_24px_rgba(99,102,241,0.35)]',
+    tile: 'bg-gradient-to-br from-primary to-violet-500',
+    badgeBg: 'bg-indigo-50',
+    badgeText: 'text-indigo-700',
+    navActive: 'bg-primary/10 text-primary',
   },
   violet: {
-    text: 'text-violet-300',
-    bg: 'bg-violet-500/15',
-    ring: 'ring-violet-400/20',
-    gradient: 'from-violet-500 to-purple-600',
-    glow: 'shadow-[0_0_24px_rgba(139,92,246,0.35)]',
+    tile: 'bg-gradient-to-br from-violet-500 to-purple-600',
+    badgeBg: 'bg-violet-50',
+    badgeText: 'text-violet-700',
+    navActive: 'bg-violet-500/10 text-violet-700',
   },
   teal: {
-    text: 'text-teal-300',
-    bg: 'bg-teal-500/15',
-    ring: 'ring-teal-400/20',
-    gradient: 'from-teal-400 to-emerald-600',
-    glow: 'shadow-[0_0_24px_rgba(45,212,191,0.35)]',
+    tile: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+    badgeBg: 'bg-teal-50',
+    badgeText: 'text-teal-700',
+    navActive: 'bg-teal-500/10 text-teal-700',
   },
   amber: {
-    text: 'text-amber-300',
-    bg: 'bg-amber-500/15',
-    ring: 'ring-amber-400/20',
-    gradient: 'from-amber-400 to-orange-500',
-    glow: 'shadow-[0_0_24px_rgba(251,191,36,0.35)]',
+    tile: 'bg-gradient-to-br from-amber-400 to-orange-500',
+    badgeBg: 'bg-amber-50',
+    badgeText: 'text-amber-700',
+    navActive: 'bg-amber-500/10 text-amber-700',
   },
   rose: {
-    text: 'text-rose-300',
-    bg: 'bg-rose-500/15',
-    ring: 'ring-rose-400/20',
-    gradient: 'from-rose-500 to-pink-600',
-    glow: 'shadow-[0_0_24px_rgba(244,63,94,0.35)]',
+    tile: 'bg-gradient-to-br from-rose-500 to-pink-600',
+    badgeBg: 'bg-rose-50',
+    badgeText: 'text-rose-700',
+    navActive: 'bg-rose-500/10 text-rose-700',
+  },
+  sky: {
+    tile: 'bg-gradient-to-br from-sky-500 to-blue-600',
+    badgeBg: 'bg-sky-50',
+    badgeText: 'text-sky-700',
+    navActive: 'bg-sky-500/10 text-sky-700',
+  },
+  fuchsia: {
+    tile: 'bg-gradient-to-br from-fuchsia-500 to-pink-600',
+    badgeBg: 'bg-fuchsia-50',
+    badgeText: 'text-fuchsia-700',
+    navActive: 'bg-fuchsia-500/10 text-fuchsia-700',
   },
 };

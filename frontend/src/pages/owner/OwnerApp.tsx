@@ -6,6 +6,13 @@ import { OwnerDashboardPage } from './OwnerDashboardPage';
 import { OwnerOrganizationsPage } from './OwnerOrganizationsPage';
 import { OwnerOrganizationDetailPage } from './OwnerOrganizationDetailPage';
 import { OwnerUsersPage } from './OwnerUsersPage';
+import { OwnerLeadsPage } from './OwnerLeadsPage';
+import { OwnerBookingsPage } from './OwnerBookingsPage';
+import { OwnerSubscriptionsPage } from './OwnerSubscriptionsPage';
+import { OwnerRevenuePage } from './OwnerRevenuePage';
+import { OwnerExpensesPage } from './OwnerExpensesPage';
+import { OwnerProfitPage } from './OwnerProfitPage';
+import { OwnerSystemHealthPage } from './OwnerSystemHealthPage';
 import { OwnerChannelHealthPage } from './OwnerChannelHealthPage';
 import { OwnerAuditLogPage } from './OwnerAuditLogPage';
 
@@ -41,6 +48,13 @@ export function OwnerApp() {
           <Route path="organizations" element={<OwnerOrganizationsPage />} />
           <Route path="organizations/:id" element={<OwnerOrganizationDetailPage />} />
           <Route path="users" element={<OwnerUsersPage />} />
+          <Route path="leads" element={<OwnerLeadsPage />} />
+          <Route path="bookings" element={<OwnerBookingsPage />} />
+          <Route path="subscriptions" element={<OwnerSubscriptionsPage />} />
+          <Route path="revenue" element={<OwnerRevenuePage />} />
+          <Route path="expenses" element={<OwnerExpensesPage />} />
+          <Route path="profit" element={<OwnerProfitPage />} />
+          <Route path="system-health" element={<OwnerSystemHealthPage />} />
           <Route path="channel-health" element={<OwnerChannelHealthPage />} />
           <Route path="audit-log" element={<OwnerAuditLogPage />} />
         </Route>

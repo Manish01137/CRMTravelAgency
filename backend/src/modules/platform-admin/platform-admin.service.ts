@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { Prisma } from '@prisma/client';
 import { systemPrisma } from '../../lib/prisma';
+import { env } from '../../env';
 import { hashPassword, verifyPassword } from '../../lib/password';
 import { createOrgAndUser } from '../auth/auth.service';
 import { logPlatformAction } from '../../lib/platformAudit';
@@ -8,14 +10,19 @@ import { BadRequest, NotFound, Unauthorized } from '../../lib/errors';
 import type {
   AddOrganizationNoteInput,
   AuditLogQuery,
+  CreateExpenseInput,
   CreateOrganizationInput,
+  FinanceQuery,
   GrowthQuery,
+  ListBookingsQuery,
+  ListLeadsQuery,
   ListOrganizationsQuery,
   ListUsersQuery,
   PlatformAdminLoginInput,
   SearchQuery,
   UpdateOrganizationStatusInput,
   UpdateUserStatusInput,
+  UpsertSubscriptionInput,
 } from './platform-admin.schemas';
 
 /** Actor identity attached to every mutating call, for the audit log. */
@@ -412,6 +419,258 @@ export async function listAuditLog(query: AuditLogQuery) {
   ]);
 
   return { items, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+}
+
+export async function listLeads(query: ListLeadsQuery) {
+  const where: Prisma.LeadWhereInput = {};
+  if (query.organizationId) where.organizationId = query.organizationId;
+  if (query.status) where.status = query.status as Prisma.EnumLeadStatusFilter['equals'];
+  if (query.search) {
+    where.OR = [
+      { name: { contains: query.search, mode: 'insensitive' } },
+      { email: { contains: query.search, mode: 'insensitive' } },
+      { phone: { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+
+  const [items, total] = await Promise.all([
+    systemPrisma.lead.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        status: true,
+        source: true,
+        destination: true,
+        budgetAmount: true,
+        budgetCurrency: true,
+        createdAt: true,
+        organization: { select: { id: true, name: true, slug: true } },
+      },
+    }),
+    systemPrisma.lead.count({ where }),
+  ]);
+
+  return { items, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+}
+
+export async function listBookings(query: ListBookingsQuery) {
+  const where: Prisma.BookingWhereInput = {};
+  if (query.organizationId) where.organizationId = query.organizationId;
+  if (query.status) where.status = query.status as Prisma.EnumBookingStatusFilter['equals'];
+  if (query.search) {
+    where.OR = [
+      { customerName: { contains: query.search, mode: 'insensitive' } },
+      { customerEmail: { contains: query.search, mode: 'insensitive' } },
+      { customerPhone: { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+
+  const [items, total] = await Promise.all([
+    systemPrisma.booking.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      select: {
+        id: true,
+        bookingNumber: true,
+        customerName: true,
+        customerEmail: true,
+        customerPhone: true,
+        destination: true,
+        status: true,
+        totalAmount: true,
+        amountPaid: true,
+        currency: true,
+        startDate: true,
+        createdAt: true,
+        organization: { select: { id: true, name: true, slug: true } },
+      },
+    }),
+    systemPrisma.booking.count({ where }),
+  ]);
+
+  return { items, total, page: query.page, pageSize: query.pageSize, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+}
+
+// --- Finance (manual tracking — no payment gateway) --------------------------
+
+/** Every organization with its subscription, if one has been set — a LEFT JOIN
+ *  in spirit: orgs without a subscription still appear, with subscription: null,
+ *  so the owner can see who still needs a plan assigned. */
+export async function listSubscriptions() {
+  const [organizations, subscriptions] = await Promise.all([
+    systemPrisma.organization.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, slug: true, status: true },
+    }),
+    systemPrisma.organizationSubscription.findMany(),
+  ]);
+  const byOrgId = new Map(subscriptions.map((s) => [s.organizationId, s]));
+  return organizations.map((org) => ({ organization: org, subscription: byOrgId.get(org.id) ?? null }));
+}
+
+/** Creates or replaces the one subscription row an organization has (there's
+ *  exactly one active plan per org, never a history of past plans here — the
+ *  audit log already captures the change itself). */
+export async function upsertSubscription(organizationId: string, input: UpsertSubscriptionInput, actor: PlatformActor) {
+  const organization = await systemPrisma.organization.findUnique({ where: { id: organizationId } });
+  if (!organization) throw NotFound('Organization not found');
+
+  const existing = await systemPrisma.organizationSubscription.findUnique({ where: { organizationId } });
+
+  const subscription = await systemPrisma.organizationSubscription.upsert({
+    where: { organizationId },
+    create: { organizationId, adminId: actor.adminId, ...input },
+    update: { adminId: actor.adminId, ...input },
+  });
+
+  await logPlatformAction({
+    ...actor,
+    action: existing ? 'SUBSCRIPTION_UPDATED' : 'SUBSCRIPTION_CREATED',
+    targetType: 'ORGANIZATION',
+    targetId: organizationId,
+    targetLabel: organization.name,
+    metadata: { planName: input.planName, amount: input.amount, status: input.status },
+  });
+
+  return subscription;
+}
+
+export async function listExpenses(query: FinanceQuery) {
+  const since = new Date();
+  since.setMonth(since.getMonth() - query.months);
+  return systemPrisma.platformExpense.findMany({
+    where: { expenseDate: { gte: since } },
+    orderBy: { expenseDate: 'desc' },
+  });
+}
+
+export async function createExpense(input: CreateExpenseInput, actor: PlatformActor) {
+  const expense = await systemPrisma.platformExpense.create({
+    data: { ...input, adminId: actor.adminId },
+  });
+  await logPlatformAction({
+    ...actor,
+    action: 'EXPENSE_ADDED',
+    targetType: 'EXPENSE',
+    targetId: expense.id,
+    targetLabel: input.description,
+    metadata: { amount: input.amount, category: input.category },
+  });
+  return expense;
+}
+
+export async function deleteExpense(id: string, actor: PlatformActor) {
+  const expense = await systemPrisma.platformExpense.findUnique({ where: { id } });
+  if (!expense) throw NotFound('Expense not found');
+  await systemPrisma.platformExpense.delete({ where: { id } });
+  await logPlatformAction({
+    ...actor,
+    action: 'EXPENSE_DELETED',
+    targetType: 'EXPENSE',
+    targetId: id,
+    targetLabel: expense.description,
+    metadata: { amount: expense.amount },
+  });
+}
+
+/** Monthly recurring revenue — the sum of every ACTIVE subscription's amount.
+ *  Not currency-converted (every amount is assumed to already be in the same
+ *  currency the owner tracks subscriptions in — INR by default). */
+export async function getRevenue() {
+  const active = await systemPrisma.organizationSubscription.findMany({
+    where: { status: 'ACTIVE' },
+    select: { amount: true, currency: true, planName: true, organizationId: true },
+  });
+  const organizations = await systemPrisma.organization.findMany({
+    where: { id: { in: active.map((s) => s.organizationId) } },
+    select: { id: true, name: true },
+  });
+  const orgNameById = new Map(organizations.map((o) => [o.id, o.name]));
+
+  const mrr = active.reduce((sum, s) => sum + s.amount, 0);
+  const byPlan: Record<string, { count: number; amount: number }> = {};
+  for (const s of active) {
+    const bucket = (byPlan[s.planName] ??= { count: 0, amount: 0 });
+    bucket.count += 1;
+    bucket.amount += s.amount;
+  }
+
+  return {
+    mrr,
+    currency: active[0]?.currency ?? 'INR',
+    activeSubscriptions: active.length,
+    byPlan,
+    subscriptions: active.map((s) => ({ organizationName: orgNameById.get(s.organizationId) ?? 'Unknown', planName: s.planName, amount: s.amount })),
+  };
+}
+
+/** Revenue - Expenses, bucketed by month for the requested window. */
+export async function getProfit(query: FinanceQuery) {
+  const since = new Date();
+  since.setMonth(since.getMonth() - query.months);
+  since.setDate(1);
+  since.setHours(0, 0, 0, 0);
+
+  const [revenue, expenses] = await Promise.all([
+    getRevenue(),
+    systemPrisma.platformExpense.findMany({ where: { expenseDate: { gte: since } } }),
+  ]);
+
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const months: { month: string; expenses: number; revenue: number; profit: number }[] = [];
+  for (let i = query.months - 1; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const key = monthKey(d);
+    const monthExpenses = expenses.filter((e) => monthKey(e.expenseDate) === key).reduce((sum, e) => sum + e.amount, 0);
+    // MRR is treated as constant per month for this simple bookkeeping view —
+    // there's no historical subscription-amount tracking, just the current state.
+    months.push({ month: key, expenses: monthExpenses, revenue: revenue.mrr, profit: revenue.mrr - monthExpenses });
+  }
+
+  return {
+    mrr: revenue.mrr,
+    totalExpenses,
+    profit: revenue.mrr - totalExpenses,
+    currency: revenue.currency,
+    months,
+  };
+}
+
+/** Live infrastructure status — DB and Redis reachability, process uptime. No
+ *  customer data touched; this is purely "is the platform itself healthy". */
+export async function getSystemHealth() {
+  const startedAt = Date.now();
+  let dbOk = false;
+  try {
+    await systemPrisma.$queryRaw`SELECT 1`;
+    dbOk = true;
+  } catch {
+    dbOk = false;
+  }
+  const dbLatencyMs = Date.now() - startedAt;
+
+  return {
+    database: { ok: dbOk, latencyMs: dbLatencyMs },
+    redisConfigured: !!env.REDIS_URL,
+    process: {
+      uptimeSeconds: Math.round(process.uptime()),
+      memoryUsedMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      nodeVersion: process.version,
+      platform: `${os.type()} ${os.release()}`,
+    },
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 /** One-time bootstrap for the very first owner account — not exposed over HTTP.

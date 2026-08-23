@@ -1132,3 +1132,60 @@ model OrganizationNote {
   @@index([organizationId])
   @@map("organization_notes")
 }
+
+// ===========================================================================
+// Owner-only finance tracking (manual — no payment gateway integration).
+// Same RLS lockout as the other Super Admin tables above: enabled, no policy,
+// so `crm_app` (every ordinary tenant request) gets zero rows, even for its
+// own organization's subscription. `organizationId` is a plain unmodeled
+// reference, same reasoning as OrganizationNote.
+// ===========================================================================
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+/// One row per organization — the owner manually sets what plan/price an
+/// agency is on. There is no payment gateway; this is bookkeeping, not billing.
+model OrganizationSubscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @unique @map("organization_id") @db.Uuid
+  planName       String             @map("plan_name")
+  amount         Int
+  currency       String             @default("INR")
+  status         SubscriptionStatus @default(ACTIVE)
+  startedAt      DateTime           @map("started_at")
+  renewsAt       DateTime?          @map("renews_at")
+  notes          String?
+  adminId        String?            @map("admin_id") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  @@map("organization_subscriptions")
+}
+
+enum ExpenseCategory {
+  HOSTING
+  API_COSTS
+  SOFTWARE
+  MARKETING
+  PAYROLL
+  OTHER
+}
+
+/// A manually-logged platform operating expense (VPS, API costs, tools…).
+model PlatformExpense {
+  id          String          @id @default(uuid()) @db.Uuid
+  description String
+  category    ExpenseCategory @default(OTHER)
+  amount      Int
+  currency    String          @default("INR")
+  expenseDate DateTime        @map("expense_date")
+  adminId     String?         @map("admin_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([expenseDate])
+  @@map("platform_expenses")
+}
