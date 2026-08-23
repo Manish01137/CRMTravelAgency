@@ -1069,6 +1069,19 @@ model SignupVerification {
   @@map("signup_verifications")
 }
 
+/// A pending password reset awaiting email OTP verification. Same tier as
+/// SignupVerification — accessed only via systemPrisma, never withTenant.
+model PasswordReset {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique // one pending reset per email
+  otpHash   String   @map("otp_hash") // sha256, never the plain code
+  attempts  Int      @default(0)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("password_resets")
+}
+
 // ===========================================================================
 // Platform administration (Super Admin panel — the CRM's own operator, not a
 // tenant). Lives entirely outside the multi-tenant model: no organizationId,

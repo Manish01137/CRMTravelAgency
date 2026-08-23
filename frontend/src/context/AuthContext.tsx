@@ -17,6 +17,13 @@ interface AcceptInviteInput {
   password: string;
 }
 
+interface ResetPasswordInput {
+  email: string;
+  otp: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 interface AuthContextValue {
   user: User | null;
   organization: Organization | null;
@@ -27,6 +34,9 @@ interface AuthContextValue {
   startSignup: (input: StartSignupInput) => Promise<{ expiresInSeconds: number }>;
   verifySignup: (email: string, otp: string) => Promise<void>;
   resendSignupOtp: (email: string) => Promise<{ expiresInSeconds: number }>;
+  startPasswordReset: (email: string) => Promise<{ expiresInSeconds: number }>;
+  resendPasswordResetOtp: (email: string) => Promise<{ expiresInSeconds: number }>;
+  resetPassword: (input: ResetPasswordInput) => Promise<void>;
   acceptInvite: (input: AcceptInviteInput) => Promise<void>;
   logout: () => Promise<void>;
   setOrganization: (organization: Organization) => void;
@@ -85,6 +95,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return api.post<{ expiresInSeconds: number }>('/auth/signup/resend-otp', { email });
   }, []);
 
+  const startPasswordReset = useCallback(async (email: string) => {
+    return api.post<{ expiresInSeconds: number }>('/auth/forgot-password/start', { email });
+  }, []);
+
+  const resendPasswordResetOtp = useCallback(async (email: string) => {
+    return api.post<{ expiresInSeconds: number }>('/auth/forgot-password/resend', { email });
+  }, []);
+
+  const resetPassword = useCallback(
+    async (input: ResetPasswordInput) => {
+      const data = await api.post<AuthResponse>('/auth/forgot-password/reset', input);
+      applySession(data);
+    },
+    [applySession],
+  );
+
   const acceptInvite = useCallback(
     async (input: AcceptInviteInput) => {
       const data = await api.post<AuthResponse>('/auth/accept-invite', input);
@@ -113,6 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     startSignup,
     verifySignup,
     resendSignupOtp,
+    startPasswordReset,
+    resendPasswordResetOtp,
+    resetPassword,
     acceptInvite,
     logout,
     setOrganization,

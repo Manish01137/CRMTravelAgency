@@ -12,6 +12,7 @@ import { DataDeletionPage } from '@/pages/DataDeletionPage';
 import { OwnerApp } from '@/pages/owner/OwnerApp';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage';
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LeadsPage } from '@/pages/LeadsPage';
@@ -143,6 +144,7 @@ function AppRoutes() {
       <Route element={<PublicOnlyRoute />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
 
       <Route path="/accept-invite" element={<AcceptInvitePage />} />

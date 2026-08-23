@@ -7,7 +7,16 @@ import { slugify } from '../../lib/slug';
 import { sendEmail } from '../../lib/resend';
 import { env } from '../../env';
 import { AppError, BadRequest, Conflict, Forbidden, NotFound, Unauthorized } from '../../lib/errors';
-import type { AcceptInviteInput, LoginInput, ResendSignupOtpInput, StartSignupInput, VerifySignupInput } from './auth.schemas';
+import type {
+  AcceptInviteInput,
+  ForgotPasswordResendInput,
+  ForgotPasswordResetInput,
+  ForgotPasswordStartInput,
+  LoginInput,
+  ResendSignupOtpInput,
+  StartSignupInput,
+  VerifySignupInput,
+} from './auth.schemas';
 
 export interface AuthResult {
   user: User;
@@ -26,15 +35,18 @@ function generateOtp(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
 }
 
-async function sendOtp(email: string, otp: string): Promise<void> {
+async function sendOtp(email: string, otp: string, purpose: 'signup' | 'reset' = 'signup'): Promise<void> {
   if (!isPlatformEmailConfigured()) {
     throw new AppError(503, 'OTP_NOT_CONFIGURED', 'Signup verification is not configured on the server yet — contact your administrator');
   }
+  const copy =
+    purpose === 'reset'
+      ? { subject: 'Your password reset code', text: `Your password reset code is ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email — your password won't change.` }
+      : { subject: 'Your verification code', text: `Your verification code is ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.` };
   await sendEmail(env.PLATFORM_RESEND_API_KEY!, {
     from: env.PLATFORM_EMAIL_FROM_ADDRESS!,
     to: email,
-    subject: 'Your verification code',
-    text: `Your verification code is ${otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
+    ...copy,
   });
 }
 
@@ -178,6 +190,81 @@ export async function resendSignupOtp(input: ResendSignupOtpInput): Promise<{ ex
 
   await sendOtp(input.email, otp);
   return { expiresInSeconds: OTP_TTL_MS / 1000 };
+}
+
+/**
+ * Step 1 of forgot-password — if an account exists for this email, stages an
+ * OTP and emails it. Always returns the same shape whether or not the
+ * account exists, so the response itself can't be used to enumerate emails.
+ */
+export async function startPasswordReset(input: ForgotPasswordStartInput): Promise<{ expiresInSeconds: number }> {
+  const user = await systemPrisma.user.findUnique({ where: { email: input.email } });
+  if (user) {
+    const otp = generateOtp();
+    const otpHash = hashToken(otp);
+    const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+
+    await systemPrisma.passwordReset.upsert({
+      where: { email: input.email },
+      create: { email: input.email, otpHash, expiresAt },
+      update: { otpHash, attempts: 0, expiresAt, createdAt: new Date() },
+    });
+
+    await sendOtp(input.email, otp, 'reset');
+  }
+  return { expiresInSeconds: OTP_TTL_MS / 1000 };
+}
+
+/** Resends a fresh reset OTP. Throttled only when a pending reset actually exists. */
+export async function resendPasswordResetOtp(input: ForgotPasswordResendInput): Promise<{ expiresInSeconds: number }> {
+  const pending = await systemPrisma.passwordReset.findUnique({ where: { email: input.email } });
+  if (pending) {
+    const sinceLast = Date.now() - pending.createdAt.getTime();
+    if (sinceLast < OTP_MIN_RESEND_MS) {
+      throw BadRequest(`Please wait ${Math.ceil((OTP_MIN_RESEND_MS - sinceLast) / 1000)}s before requesting another code`);
+    }
+  }
+  return startPasswordReset(input);
+}
+
+/** Step 2 — verifies the OTP and, on success, sets the new password. Auto-logs the user in, same as verifySignup/acceptInvite. */
+export async function resetPassword(input: ForgotPasswordResetInput): Promise<AuthResult> {
+  const pending = await systemPrisma.passwordReset.findUnique({ where: { email: input.email } });
+  if (!pending) throw NotFound('No password reset in progress for this email — start again');
+
+  if (pending.expiresAt < new Date()) {
+    await systemPrisma.passwordReset.delete({ where: { id: pending.id } });
+    throw BadRequest('This code has expired — request a new one');
+  }
+  if (pending.attempts >= OTP_MAX_ATTEMPTS) {
+    await systemPrisma.passwordReset.delete({ where: { id: pending.id } });
+    throw BadRequest('Too many incorrect attempts — request a new code');
+  }
+
+  if (hashToken(input.otp) !== pending.otpHash) {
+    const updated = await systemPrisma.passwordReset.update({
+      where: { id: pending.id },
+      data: { attempts: { increment: 1 } },
+    });
+    if (updated.attempts >= OTP_MAX_ATTEMPTS) {
+      await systemPrisma.passwordReset.delete({ where: { id: pending.id } });
+      throw BadRequest('Too many incorrect attempts — request a new code');
+    }
+    throw BadRequest('Incorrect code — please try again');
+  }
+
+  const user = await systemPrisma.user.findUnique({ where: { email: pending.email }, include: { organization: true } });
+  if (!user) {
+    await systemPrisma.passwordReset.delete({ where: { id: pending.id } });
+    throw NotFound('No account found for this email');
+  }
+
+  const passwordHash = await hashPassword(input.newPassword);
+  const updatedUser = await systemPrisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  await systemPrisma.passwordReset.delete({ where: { id: pending.id } });
+
+  const { organization, ...userOnly } = user;
+  return { user: { ...userOnly, passwordHash: updatedUser.passwordHash }, organization };
 }
 
 /** Login — looks the user up by email (cross-tenant, hence systemPrisma). */

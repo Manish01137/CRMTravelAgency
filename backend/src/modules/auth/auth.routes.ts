@@ -6,6 +6,9 @@ import { requireAuth } from '../../middleware/auth';
 import * as controller from './auth.controller';
 import {
   acceptInviteSchema,
+  forgotPasswordResendSchema,
+  forgotPasswordResetSchema,
+  forgotPasswordStartSchema,
   inviteTokenParamSchema,
   loginSchema,
   resendSignupOtpSchema,
@@ -39,6 +42,9 @@ router.post('/signup/start', otpSendLimiter, validate({ body: startSignupSchema 
 router.post('/signup/verify', authLimiter, validate({ body: verifySignupSchema }), asyncHandler(controller.verifySignup));
 router.post('/signup/resend-otp', otpSendLimiter, validate({ body: resendSignupOtpSchema }), asyncHandler(controller.resendSignupOtp));
 router.post('/login', authLimiter, validate({ body: loginSchema }), asyncHandler(controller.login));
+router.post('/forgot-password/start', otpSendLimiter, validate({ body: forgotPasswordStartSchema }), asyncHandler(controller.startPasswordReset));
+router.post('/forgot-password/resend', otpSendLimiter, validate({ body: forgotPasswordResendSchema }), asyncHandler(controller.resendPasswordResetOtp));
+router.post('/forgot-password/reset', authLimiter, validate({ body: forgotPasswordResetSchema }), asyncHandler(controller.resetPassword));
 router.post('/logout', asyncHandler(controller.logout));
 router.get('/me', requireAuth, asyncHandler(controller.me));
 router.get(

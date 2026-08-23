@@ -32,6 +32,21 @@ export async function resendSignupOtp(req: Request, res: Response): Promise<void
   res.json(result);
 }
 
+export async function startPasswordReset(req: Request, res: Response): Promise<void> {
+  const result = await authService.startPasswordReset(req.body);
+  res.json(result);
+}
+
+export async function resendPasswordResetOtp(req: Request, res: Response): Promise<void> {
+  const result = await authService.resendPasswordResetOtp(req.body);
+  res.json(result);
+}
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+  const result = await authService.resetPassword(req.body);
+  res.json(issueSession(res, result));
+}
+
 export async function login(req: Request, res: Response): Promise<void> {
   const result = await authService.login(req.body);
   res.json(issueSession(res, result));

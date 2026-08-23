@@ -9,19 +9,24 @@ interface FieldProps {
   hint?: string;
   required?: boolean;
   className?: string;
+  /** Optional element rendered to the right of the label, e.g. a "Forgot password?" link. */
+  labelAddon?: React.ReactNode;
   children: React.ReactNode;
 }
 
 /** Label + control + error/hint text, laid out consistently for single-column forms. */
-export function Field({ label, htmlFor, error, hint, required, className, children }: FieldProps) {
+export function Field({ label, htmlFor, error, hint, required, className, labelAddon, children }: FieldProps) {
   const errorText = Array.isArray(error) ? error[0] : error;
   return (
     <div className={cn('space-y-1.5', className)}>
       {label && (
-        <Label htmlFor={htmlFor}>
-          {label}
-          {required && <span className="ml-0.5 text-destructive">*</span>}
-        </Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor={htmlFor}>
+            {label}
+            {required && <span className="ml-0.5 text-destructive">*</span>}
+          </Label>
+          {labelAddon}
+        </div>
       )}
       {children}
       {errorText ? (

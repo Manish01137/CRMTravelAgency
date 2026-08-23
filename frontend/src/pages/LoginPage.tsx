@@ -74,7 +74,17 @@ export function LoginPage() {
             {...register('email')}
           />
         </Field>
-        <Field label="Password" htmlFor="password" error={errors.password?.message} required>
+        <Field
+          label="Password"
+          htmlFor="password"
+          error={errors.password?.message}
+          required
+          labelAddon={
+            <Link to="/forgot-password" className="text-xs font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          }
+        >
           <Input
             id="password"
             type="password"
