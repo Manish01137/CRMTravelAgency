@@ -216,6 +216,14 @@ export async function fetchInstagramUsername(igAccountId: string, pageAccessToke
   return data.username;
 }
 
+/** Registers our webhook to receive this Page's messages. Required once per connected Page. */
+export async function subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<void> {
+  await graphFetch(`/${pageId}/subscribed_apps?subscribed_fields=messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${pageAccessToken}` },
+  });
+}
+
 export async function sendInstagramText(
   igUserId: string,
   accessToken: string,

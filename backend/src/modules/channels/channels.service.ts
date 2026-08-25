@@ -12,6 +12,7 @@ import {
   fetchManagedFacebookPages,
   fetchPageInstagramAccount,
   fetchInstagramUsername,
+  subscribePageWebhook,
 } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
 import type {
@@ -181,6 +182,7 @@ async function saveInstagramConnection(organizationId: string, option: Instagram
       },
     }),
   );
+  await subscribePageWebhook(option.pageId, option.pageAccessToken);
   return toStatus(row);
 }
 

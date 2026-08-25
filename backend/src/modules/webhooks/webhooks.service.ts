@@ -185,6 +185,15 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
 /** Entry point for POST /webhooks/meta. Always resolves — callers must still respond 200 quickly to Meta. */
 export async function processMetaWebhook(body: unknown): Promise<void> {
   const payload = body as { object?: string; entry?: Record<string, unknown>[] };
+
+  // TEMPORARY — logging the raw shape Meta actually sends for Page events
+  // (the new Instagram-via-Facebook-Page subscription) before writing real
+  // parsing/routing for it. Not processed yet.
+  if (payload.object === 'page') {
+    console.log('RAW PAGE WEBHOOK PAYLOAD:', JSON.stringify(body));
+    return;
+  }
+
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
   for (const entry of entries) {
