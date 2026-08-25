@@ -145,6 +145,7 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
     );
     return toStatus(row);
   } catch (err) {
+    console.error(err);
     const message = err instanceof AppError ? err.message : 'Could not connect WhatsApp — please try again';
     await markFailed(organizationId, 'WHATSAPP', message);
     throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
@@ -224,6 +225,7 @@ export async function connectInstagram(organizationId: string, input: ConnectIns
     const channel = await saveInstagramConnection(organizationId, options[0]);
     return { status: 'connected', channel };
   } catch (err) {
+    console.error(err);
     const message = err instanceof AppError ? err.message : 'Could not connect Instagram — please try again';
     await markFailed(organizationId, 'INSTAGRAM', message);
     throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
@@ -235,6 +237,7 @@ export async function selectInstagramPage(organizationId: string, input: SelectI
   try {
     return await saveInstagramConnection(organizationId, input);
   } catch (err) {
+    console.error(err);
     const message = err instanceof AppError ? err.message : 'Could not connect Instagram — please try again';
     await markFailed(organizationId, 'INSTAGRAM', message);
     throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
