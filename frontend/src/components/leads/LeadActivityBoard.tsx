@@ -702,7 +702,7 @@ export function LeadActivityBoard({
     >
       <DialogContent
         className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-4xl"
-        closeClassName="text-white/80 hover:bg-white/15 hover:text-white focus-visible:ring-white/60"
+        closeClassName="bg-white/20 text-white hover:bg-white/30 hover:text-white focus-visible:ring-white/70"
       >
         {/* Gradient header (reference style) */}
         <div className="flex items-center gap-3 bg-gradient-to-r from-violet-600 to-primary px-5 py-4 text-white">
