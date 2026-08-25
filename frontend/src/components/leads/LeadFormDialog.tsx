@@ -1,10 +1,10 @@
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import type { Lead, User } from '@/types';
+import type { Lead, TravelPackage, User } from '@/types';
 import {
   Dialog,
   DialogClose,
@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { LEAD_SOURCES, LEAD_STATUSES } from '@/lib/leadMeta';
+import { CUSTOMER_TYPES, LEAD_SOURCES, LEAD_STATUSES } from '@/lib/leadMeta';
 import { handleApiError } from '@/lib/formErrors';
 import { toDateInputValue } from '@/lib/format';
 
@@ -44,7 +44,15 @@ const schema = z.object({
     'PHONE',
     'MANUAL',
     'OTHER',
+    'GOOGLE_ADS',
+    'GOOGLE_MY_BUSINESS',
+    'YOUTUBE',
+    'EMAIL',
+    'JUSTDIAL',
+    'EXHIBITION',
   ]),
+  customerType: z.enum(['B2C', 'B2B', 'CORPORATE', 'VIP']),
+  packageId: z.string(),
   status: z.enum([
     'NEW',
     'CONTACTED',
@@ -65,8 +73,9 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const UNASSIGNED = 'unassigned';
+const NO_PACKAGE = 'none';
 
-function LeadForm({ lead, users, onDone }: { lead: Lead | null; users: User[]; onDone: () => void }) {
+function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users: User[]; packages: TravelPackage[]; onDone: () => void }) {
   const queryClient = useQueryClient();
 
   const {
@@ -82,6 +91,8 @@ function LeadForm({ lead, users, onDone }: { lead: Lead | null; users: User[]; o
       email: lead?.email ?? '',
       phone: lead?.phone ?? '',
       source: lead?.source ?? 'MANUAL',
+      customerType: lead?.customerType ?? 'B2C',
+      packageId: lead?.packageId ?? NO_PACKAGE,
       status: lead?.status ?? 'NEW',
       destination: lead?.destination ?? '',
       travelDate: toDateInputValue(lead?.travelDate),
@@ -108,12 +119,15 @@ function LeadForm({ lead, users, onDone }: { lead: Lead | null; users: User[]; o
   const onSubmit = (values: Values) => {
     const assignedToId =
       values.assignedToId && values.assignedToId !== UNASSIGNED ? values.assignedToId : null;
+    const packageId = values.packageId && values.packageId !== NO_PACKAGE ? values.packageId : null;
 
     mutation.mutate({
       name: values.name.trim(),
       email: values.email.trim() || null,
       phone: values.phone.trim() || null,
       source: values.source,
+      customerType: values.customerType,
+      packageId,
       status: values.status,
       destination: values.destination.trim() || null,
       travelDate: values.travelDate || null,
@@ -174,6 +188,50 @@ function LeadForm({ lead, users, onDone }: { lead: Lead | null; users: User[]; o
                   {LEAD_STATUSES.map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Customer type" htmlFor="customerType">
+          <Controller
+            control={control}
+            name="customerType"
+            render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger id="customerType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUSTOMER_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </Field>
+        <Field label="Interested package" htmlFor="packageId" hint="Optional — helps the team see what they're after.">
+          <Controller
+            control={control}
+            name="packageId"
+            render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger id="packageId">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_PACKAGE}>None</SelectItem>
+                  {packages.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} — {p.destination}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -256,6 +314,13 @@ export function LeadFormDialog({
   lead: Lead | null;
   users: User[];
 }) {
+  const packagesQuery = useQuery({
+    queryKey: ['packages'],
+    queryFn: () => api.get<TravelPackage[]>('/packages'),
+    enabled: open,
+  });
+  const packages = (packagesQuery.data ?? []).filter((p) => p.isActive);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
@@ -266,7 +331,7 @@ export function LeadFormDialog({
           </DialogDescription>
         </DialogHeader>
         {open && (
-          <LeadForm key={lead?.id ?? 'new'} lead={lead} users={users} onDone={() => onOpenChange(false)} />
+          <LeadForm key={lead?.id ?? 'new'} lead={lead} users={users} packages={packages} onDone={() => onOpenChange(false)} />
         )}
       </DialogContent>
     </Dialog>

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 import type { LinktreeCategory as CategoryType, Hotel, PackageViewType, PdfTemplateId, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -173,7 +174,13 @@ const STEPS = [
   { key: 'review', label: 'Review', Icon: Star },
 ] as const;
 
-export function toValues(pkg: TravelPackage | null): Values {
+export interface OrgPolicyDefaults {
+  cancellationPolicy?: string | null;
+  paymentTerms?: string | null;
+  termsConditions?: string | null;
+}
+
+export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefaults): Values {
   return {
     name: pkg?.name ?? '',
     code: pkg?.code ?? '',
@@ -213,9 +220,9 @@ export function toValues(pkg: TravelPackage | null): Values {
     exclusions: pkg?.exclusions ?? '',
     thingsToCarry: pkg?.thingsToCarry ?? '',
     pickupPoints: pkg?.pickupPoints ?? '',
-    cancellationPolicy: pkg?.cancellationPolicy ?? '',
-    paymentTerms: pkg?.paymentTerms ?? '',
-    termsConditions: pkg?.termsConditions ?? '',
+    cancellationPolicy: pkg?.cancellationPolicy ?? orgDefaults?.cancellationPolicy ?? '',
+    paymentTerms: pkg?.paymentTerms ?? orgDefaults?.paymentTerms ?? '',
+    termsConditions: pkg?.termsConditions ?? orgDefaults?.termsConditions ?? '',
     faqs: pkg?.faqs ?? [],
     highlights: (pkg?.highlights ?? []).map((value) => ({ value })),
     galleryImages: (pkg?.galleryImages ?? []).map((value) => ({ value })),
@@ -765,10 +772,16 @@ function LogisticsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   );
 }
 
-function PoliciesStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
+function PoliciesStep({ form, hasOrgDefaults }: { form: ReturnType<typeof useForm<Values>>; hasOrgDefaults: boolean }) {
   const { register } = form;
   return (
     <div className="space-y-6">
+      {hasOrgDefaults && (
+        <p className="rounded-lg bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          Pre-filled from your organization's default policies (Settings → Organization) — edit freely for
+          this package.
+        </p>
+      )}
       <Field label="Cancellation policy" htmlFor="cancellationPolicy">
         <Textarea id="cancellationPolicy" rows={4} placeholder={'Free cancellation up to 15 days before departure…'} {...register('cancellationPolicy')} />
       </Field>
@@ -1117,10 +1130,21 @@ export function PackageBuilderPage() {
   const isEdit = !!id;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { organization } = useAuth();
   const [step, setStep] = useState(0);
   const [aiOpen, setAiOpen] = useState(false);
   // Template chosen from the Basics-step dropdown (optional).
   const [templateId, setTemplateId] = useState('');
+
+  // Auto-fills the Policies step for a NEW package (or an existing one whose
+  // own fields are still blank) from the org's saved defaults — see Org
+  // Settings → "Default policies & terms".
+  const orgDefaults: OrgPolicyDefaults = {
+    cancellationPolicy: organization?.defaultCancellationPolicy,
+    paymentTerms: organization?.defaultPaymentTerms,
+    termsConditions: organization?.defaultTermsConditions,
+  };
+  const hasOrgDefaults = !!(orgDefaults.cancellationPolicy || orgDefaults.paymentTerms || orgDefaults.termsConditions);
 
   const pkgQuery = useQuery({
     queryKey: ['package', id],
@@ -1133,14 +1157,14 @@ export function PackageBuilderPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const form = useForm<Values>({ defaultValues: toValues(null) });
+  const form = useForm<Values>({ defaultValues: toValues(null, orgDefaults) });
   const { reset, handleSubmit } = form;
 
   /** Seed the builder from a premium template, keeping anything already typed. */
   const applyTemplate = (tpl: PackageTemplate) => {
     const cur = form.getValues();
     reset({
-      ...toValues(null),
+      ...toValues(null, orgDefaults),
       ...tpl.seed,
       // preserve the identity fields the agent may have already entered
       name: cur.name,
@@ -1159,7 +1183,7 @@ export function PackageBuilderPage() {
   // Populate once the package loads (edit mode).
   const [hydrated, setHydrated] = useState(false);
   if (isEdit && pkgQuery.data && !hydrated) {
-    reset(toValues(pkgQuery.data));
+    reset(toValues(pkgQuery.data, orgDefaults));
     setHydrated(true);
   }
 
@@ -1297,7 +1321,7 @@ export function PackageBuilderPage() {
         {step === 0 && <BasicsStep form={form} />}
         {step === 1 && <ItineraryStep form={form} />}
         {step === 2 && <LogisticsStep form={form} />}
-        {step === 3 && <PoliciesStep form={form} />}
+        {step === 3 && <PoliciesStep form={form} hasOrgDefaults={hasOrgDefaults} />}
         {step === 4 && <FaqsStep form={form} />}
         {step === 5 && <ExtraStep form={form} />}
         {step === 6 && <ReviewStep form={form} />}

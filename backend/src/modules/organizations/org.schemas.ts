@@ -43,6 +43,10 @@ export const updateOrgSchema = z
       .optional(),
     // Host Page gallery (image URLs)
     hostGallery: z.array(z.string().url().max(2000)).max(60).optional(),
+    // Default policy text, auto-filled into a NEW package's Policies step.
+    defaultCancellationPolicy: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
+    defaultPaymentTerms: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
+    defaultTermsConditions: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
     // LinkTree module theme (its own object, independent of Host Page branding)
     linktreeTheme: z
       .object({

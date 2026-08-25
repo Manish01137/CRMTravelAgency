@@ -1,5 +1,5 @@
 import { Controller, useFieldArray, useForm, type Control } from 'react-hook-form';
-import { Copy, ExternalLink, Globe, Plus, Trash2 } from 'lucide-react';
+import { Copy, ExternalLink, Globe, Plus, ScrollText, Trash2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -182,6 +182,93 @@ function HostPageCard() {
   );
 }
 
+interface PoliciesFormValues {
+  defaultCancellationPolicy: string;
+  defaultPaymentTerms: string;
+  defaultTermsConditions: string;
+}
+
+/** Default policy text — auto-filled into a package's Policies step whenever a new package is created. */
+function PoliciesCard() {
+  const { organization, setOrganization } = useAuth();
+  const { register, handleSubmit, reset } = useForm<PoliciesFormValues>({
+    defaultValues: {
+      defaultCancellationPolicy: organization?.defaultCancellationPolicy ?? '',
+      defaultPaymentTerms: organization?.defaultPaymentTerms ?? '',
+      defaultTermsConditions: organization?.defaultTermsConditions ?? '',
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (v: PoliciesFormValues) =>
+      api.patch<Organization>('/organization', {
+        defaultCancellationPolicy: v.defaultCancellationPolicy.trim() || null,
+        defaultPaymentTerms: v.defaultPaymentTerms.trim() || null,
+        defaultTermsConditions: v.defaultTermsConditions.trim() || null,
+      }),
+    onSuccess: (updated) => {
+      setOrganization(updated);
+      reset({
+        defaultCancellationPolicy: updated.defaultCancellationPolicy ?? '',
+        defaultPaymentTerms: updated.defaultPaymentTerms ?? '',
+        defaultTermsConditions: updated.defaultTermsConditions ?? '',
+      });
+      toast.success('Default policies updated');
+    },
+    onError: (err) => handleApiError(err),
+  });
+
+  if (!organization) return null;
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ScrollText className="size-5 text-primary" /> Default policies & terms
+        </CardTitle>
+        <CardDescription>
+          Fills in automatically on the Policies step whenever you create a new package, so you're not
+          retyping the same boilerplate every time. Each package can still edit its own copy.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4" noValidate>
+          <Field label="Cancellation policy" htmlFor="defaultCancellationPolicy">
+            <Textarea
+              id="defaultCancellationPolicy"
+              rows={4}
+              placeholder={'Free cancellation up to 15 days before departure…'}
+              {...register('defaultCancellationPolicy')}
+            />
+          </Field>
+          <Field label="Payment terms" htmlFor="defaultPaymentTerms">
+            <Textarea
+              id="defaultPaymentTerms"
+              rows={4}
+              placeholder={'25% advance to confirm, balance 7 days before travel…'}
+              {...register('defaultPaymentTerms')}
+            />
+          </Field>
+          <Field label="Terms & conditions" htmlFor="defaultTermsConditions">
+            <Textarea
+              id="defaultTermsConditions"
+              rows={5}
+              placeholder="Any standard terms travellers should know…"
+              {...register('defaultTermsConditions')}
+            />
+          </Field>
+          <div className="flex justify-end pt-2">
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending && <Spinner />}
+              Save default policies
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function OrgSettingsPage() {
   const { organization, setOrganization } = useAuth();
 
@@ -343,6 +430,7 @@ export function OrgSettingsPage() {
       </div>
 
       <HostPageCard />
+      <PoliciesCard />
     </div>
   );
 }

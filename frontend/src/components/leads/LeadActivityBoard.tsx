@@ -41,7 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LEAD_STATUSES, leadSourceLabel, leadStatusStyle } from '@/lib/leadMeta';
+import { LEAD_STATUSES, customerTypeStyle, leadSourceLabel, leadStatusStyle } from '@/lib/leadMeta';
 import { formatCurrency, formatDate, formatSmartTime, fromNow } from '@/lib/format';
 
 type BoardTab = 'interaction' | 'history' | 'tasks' | 'itineraries' | 'packages' | 'whatsapp';
@@ -241,6 +241,18 @@ function InteractionTab({ lead }: { lead: Lead }) {
               <dt className="text-[11px] font-semibold uppercase tracking-wide text-white/60">Source</dt>
               <dd className="mt-0.5 font-semibold">{leadSourceLabel(lead.source)}</dd>
             </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-white/60">Customer type</dt>
+              <dd className="mt-0.5 font-semibold">{customerTypeStyle(lead.customerType).label}</dd>
+            </div>
+            {lead.package && (
+              <div>
+                <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                  <MapPin className="size-3.5" /> Interested package
+                </dt>
+                <dd className="mt-0.5 font-semibold">{lead.package.name}</dd>
+              </div>
+            )}
             <div>
               <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                 <UserRound className="size-3.5" /> Assigned to
@@ -688,7 +700,10 @@ export function LeadActivityBoard({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent
+        className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        closeClassName="text-white/80 hover:bg-white/15 hover:text-white focus-visible:ring-white/60"
+      >
         {/* Gradient header (reference style) */}
         <div className="flex items-center gap-3 bg-gradient-to-r from-violet-600 to-primary px-5 py-4 text-white">
           <span className="flex size-10 items-center justify-center rounded-xl bg-white/15 [&_svg]:size-5">

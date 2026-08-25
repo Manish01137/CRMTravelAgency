@@ -51,6 +51,19 @@ enum LeadSource {
   PHONE
   MANUAL
   OTHER
+  GOOGLE_ADS
+  GOOGLE_MY_BUSINESS
+  YOUTUBE
+  EMAIL
+  JUSTDIAL
+  EXHIBITION
+}
+
+enum CustomerType {
+  B2C
+  B2B
+  CORPORATE
+  VIP
 }
 
 enum LeadStatus {
@@ -193,6 +206,13 @@ model Organization {
   /// from Host Page branding by design.
   linktreeTheme       Json     @default("{}") @map("linktree_theme")
   hostGallery         Json     @default("[]") @map("host_gallery") // Host Page gallery image URLs
+  // Default policy text — auto-filled into a package's Policies step when
+  // creating a NEW package, so an agent doesn't retype the same boilerplate
+  // every time. Purely a convenience default; each package's own fields are
+  // independent afterward.
+  defaultCancellationPolicy String? @map("default_cancellation_policy")
+  defaultPaymentTerms       String? @map("default_payment_terms")
+  defaultTermsConditions    String? @map("default_terms_conditions")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -342,6 +362,7 @@ model Lead {
   phone          String?
   source         LeadSource @default(MANUAL)
   status         LeadStatus @default(NEW)
+  customerType   CustomerType @default(B2C) @map("customer_type")
   destination    String?
   travelDate     DateTime?  @map("travel_date") @db.Date
   travelerCount  Int?       @map("traveler_count")
@@ -349,6 +370,9 @@ model Lead {
   budgetCurrency String?    @default("USD") @map("budget_currency")
   notes          String?
   assignedToId   String?    @map("assigned_to_id") @db.Uuid
+  // Package the lead is interested in, if known at entry time — purely
+  // informational (no cascading effect on booking/itinerary creation).
+  packageId      String?    @map("package_id") @db.Uuid
   // Phase 4 (Bot Flow) — set when an inbound message matches a flow's
   // "Needs Review" keyword list; the bot stops and hands off to a human.
   needsReview       Boolean  @default(false) @map("needs_review")
@@ -366,6 +390,7 @@ model Lead {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
   repeatBooking Booking?    @relation("RepeatCustomerLead", fields: [repeatBookingId], references: [id], onDelete: SetNull)
+  package      Package?     @relation(fields: [packageId], references: [id], onDelete: SetNull)
   bookings     Booking[]
   tasks        Task[]
   activities   LeadActivity[]
@@ -515,6 +540,7 @@ model Package {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   bookings     Booking[]
   batches      Batch[]
+  leads        Lead[]
   linktreeCategoryLinks PackageLinktreeCategory[]
 
   @@unique([organizationId, slug])

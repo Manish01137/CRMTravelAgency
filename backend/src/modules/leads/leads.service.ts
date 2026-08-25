@@ -8,6 +8,7 @@ import type { CreateActivityInput, CreateLeadInput, ListLeadsQuery, UpdateLeadIn
 const assignedToSelect = {
   assignedTo: { select: { id: true, name: true, email: true } },
   repeatBooking: { select: { id: true, bookingNumber: true, destination: true, totalAmount: true, currency: true } },
+  package: { select: { id: true, name: true, destination: true } },
 } satisfies Prisma.LeadInclude;
 
 /** Ensures an assignee, if given, is a real member of THIS organization (RLS-scoped). */
@@ -15,6 +16,13 @@ async function assertAssigneeInOrg(tx: TenantTx, assignedToId: string | null | u
   if (!assignedToId) return;
   const member = await tx.user.findUnique({ where: { id: assignedToId } });
   if (!member) throw BadRequest('Assigned team member was not found in your organization');
+}
+
+/** Ensures a package, if given, belongs to THIS organization (RLS-scoped) — same guard as assignedToId. */
+async function assertPackageInOrg(tx: TenantTx, packageId: string | null | undefined) {
+  if (!packageId) return;
+  const pkg = await tx.package.findUnique({ where: { id: packageId } });
+  if (!pkg) throw BadRequest('Selected package was not found in your organization');
 }
 
 /**
@@ -97,6 +105,7 @@ export async function getLead(organizationId: string, id: string) {
 export async function createLead(organizationId: string, input: CreateLeadInput) {
   return withTenant(organizationId, async (tx) => {
     await assertAssigneeInOrg(tx, input.assignedToId);
+    await assertPackageInOrg(tx, input.packageId);
     const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, input.phone, input.email);
     return tx.lead.create({
       data: { ...input, organizationId, isRepeatCustomer: !!repeatBooking, repeatBookingId: repeatBooking?.id },
@@ -115,6 +124,7 @@ export async function updateLead(
     const existing = await tx.lead.findUnique({ where: { id } });
     if (!existing) throw NotFound('Lead not found');
     await assertAssigneeInOrg(tx, input.assignedToId);
+    await assertPackageInOrg(tx, input.packageId);
     const updated = await tx.lead.update({ where: { id }, data: input, include: assignedToSelect });
     // Stage moves show up in the activity timeline automatically.
     if (input.status && input.status !== existing.status) {

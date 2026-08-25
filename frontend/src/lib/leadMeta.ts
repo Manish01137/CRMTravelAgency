@@ -1,16 +1,25 @@
 import {
+  Briefcase,
+  Building2,
   Camera,
   CircleDashed,
+  Crown,
   Footprints,
   Globe,
+  Mail,
+  MapPin,
+  Megaphone,
   MessageCircle,
   PencilLine,
   Phone,
+  PlayCircle,
   Share2,
+  Tent,
   ThumbsUp,
+  User as UserIcon,
   type LucideIcon,
 } from 'lucide-react';
-import type { Lead, LeadSource, LeadStatus, Role, UserStatus } from '@/types';
+import type { CustomerType, Lead, LeadSource, LeadStatus, Role, UserStatus } from '@/types';
 
 export type BadgeVariant =
   | 'default'
@@ -129,7 +138,35 @@ export const LEAD_SOURCE_STYLES: Record<LeadSource, LeadSourceStyle> = {
   PHONE: { label: 'Phone', Icon: Phone, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
   MANUAL: { label: 'Manual', Icon: PencilLine, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
   OTHER: { label: 'Other', Icon: CircleDashed, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  GOOGLE_ADS: { label: 'Google Ads', Icon: Megaphone, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  GOOGLE_MY_BUSINESS: { label: 'Google Business', Icon: MapPin, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  YOUTUBE: { label: 'YouTube', Icon: PlayCircle, badge: 'bg-red-50 text-red-700 ring-red-200' },
+  EMAIL: { label: 'Email', Icon: Mail, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  JUSTDIAL: { label: 'JustDial', Icon: Building2, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  EXHIBITION: { label: 'Exhibition', Icon: Tent, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
 };
+
+/** Customer type — set at lead entry, one deliberate colour each (reference: B2C/B2B/Corporate/VIP). */
+export interface CustomerTypeStyle {
+  label: string;
+  Icon: LucideIcon;
+  badge: string;
+}
+
+export const CUSTOMER_TYPE_STYLES: Record<CustomerType, CustomerTypeStyle> = {
+  B2C: { label: 'B2C', Icon: UserIcon, badge: 'bg-sky-50 text-sky-700 ring-sky-200' },
+  B2B: { label: 'B2B', Icon: Briefcase, badge: 'bg-teal-50 text-teal-700 ring-teal-200' },
+  CORPORATE: { label: 'Corporate', Icon: Building2, badge: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
+  VIP: { label: 'VIP', Icon: Crown, badge: 'bg-amber-50 text-amber-700 ring-amber-200' },
+};
+
+export const CUSTOMER_TYPES: { value: CustomerType; label: string }[] = (
+  Object.keys(CUSTOMER_TYPE_STYLES) as CustomerType[]
+).map((value) => ({ value, label: CUSTOMER_TYPE_STYLES[value].label }));
+
+export function customerTypeStyle(type: CustomerType): CustomerTypeStyle {
+  return CUSTOMER_TYPE_STYLES[type];
+}
 
 export const LEAD_SOURCES: { value: LeadSource; label: string }[] = (
   Object.keys(LEAD_SOURCE_STYLES) as LeadSource[]

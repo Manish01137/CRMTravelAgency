@@ -10,7 +10,15 @@ export const LeadSourceEnum = z.enum([
   'PHONE',
   'MANUAL',
   'OTHER',
+  'GOOGLE_ADS',
+  'GOOGLE_MY_BUSINESS',
+  'YOUTUBE',
+  'EMAIL',
+  'JUSTDIAL',
+  'EXHIBITION',
 ]);
+
+export const CustomerTypeEnum = z.enum(['B2C', 'B2B', 'CORPORATE', 'VIP']);
 
 export const LeadStatusEnum = z.enum([
   'NEW',
@@ -31,6 +39,8 @@ export const createLeadSchema = z.object({
   phone: z.preprocess(emptyToUndefined, z.string().trim().max(40).optional()),
   source: LeadSourceEnum.default('MANUAL'),
   status: LeadStatusEnum.default('NEW'),
+  customerType: CustomerTypeEnum.default('B2C'),
+  packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   destination: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
   travelDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   travelerCount: z.preprocess(
@@ -53,6 +63,8 @@ export const updateLeadSchema = z
     phone: z.preprocess(emptyToNull, z.string().trim().max(40).nullable()).optional(),
     source: LeadSourceEnum.optional(),
     status: LeadStatusEnum.optional(),
+    customerType: CustomerTypeEnum.optional(),
+    packageId: z.preprocess(emptyToNull, z.string().uuid().nullable()).optional(),
     destination: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
     travelDate: z.preprocess(emptyToNull, z.coerce.date().nullable()).optional(),
     travelerCount: z.preprocess(emptyToNull, z.coerce.number().int().positive().max(100000).nullable()).optional(),

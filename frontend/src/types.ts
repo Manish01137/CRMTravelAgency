@@ -12,7 +12,15 @@ export type LeadSource =
   | 'WALK_IN'
   | 'PHONE'
   | 'MANUAL'
-  | 'OTHER';
+  | 'OTHER'
+  | 'GOOGLE_ADS'
+  | 'GOOGLE_MY_BUSINESS'
+  | 'YOUTUBE'
+  | 'EMAIL'
+  | 'JUSTDIAL'
+  | 'EXHIBITION';
+
+export type CustomerType = 'B2C' | 'B2B' | 'CORPORATE' | 'VIP';
 
 export type LeadStatus =
   | 'NEW'
@@ -42,6 +50,9 @@ export interface Organization {
   linktreeCoverUrl: string | null;
   linktreeTheme: LinktreeTheme;
   hostGallery: string[];
+  defaultCancellationPolicy: string | null;
+  defaultPaymentTerms: string | null;
+  defaultTermsConditions: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -151,6 +162,7 @@ export interface Lead {
   phone: string | null;
   source: LeadSource;
   status: LeadStatus;
+  customerType: CustomerType;
   destination: string | null;
   travelDate: string | null;
   travelerCount: number | null;
@@ -159,6 +171,8 @@ export interface Lead {
   notes: string | null;
   assignedToId: string | null;
   assignedTo: AssignedAgent | null;
+  packageId: string | null;
+  package: { id: string; name: string; destination: string } | null;
   // Phase 4 (Bot Flow) — set when an inbound message matched a "Needs Review"
   // keyword; the bot stopped and handed off to a human.
   needsReview: boolean;
