@@ -112,7 +112,7 @@ export function buildInstagramAuthUrl(appId: string, graphVersion: string, redir
     client_id: appId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management',
+    scope: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management,pages_messaging',
   });
   return `https://www.facebook.com/${graphVersion}/dialog/oauth?${params.toString()}`;
 }
