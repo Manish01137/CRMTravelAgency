@@ -671,9 +671,22 @@ export interface ChannelsPlatformConfig {
   instagramEnabled: boolean;
   emailEnabled: boolean;
   metaAppId: string | null;
+  metaGraphVersion: string | null;
   whatsappConfigId: string | null;
-  instagramAppId: string | null;
 }
+
+/** One Facebook Page + its linked Instagram account — shown in the picker when more than one matches. */
+export interface InstagramPageOption {
+  pageId: string;
+  pageName: string;
+  instagramBusinessAccountId: string;
+  instagramUsername: string;
+  pageAccessToken: string;
+}
+
+export type ConnectInstagramResult =
+  | { status: 'connected'; channel: ChannelStatus }
+  | { status: 'needs_selection'; options: InstagramPageOption[] };
 
 export type ConversationChannel = 'WHATSAPP' | 'INSTAGRAM';
 

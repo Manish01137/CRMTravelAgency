@@ -1,8 +1,9 @@
 /**
- * WhatsApp Embedded Signup (Facebook Login for Business SDK) + Instagram Login
- * (direct OAuth redirect, "Instagram API with Instagram Login" — no Facebook
- * Page required). Both flows end with the client logging into their OWN Meta
- * account and granting permission directly to Meta; we only ever receive the
+ * WhatsApp Embedded Signup (Facebook Login for Business SDK) + Instagram
+ * connection via the classic Facebook Login OAuth dialog (Instagram Graph
+ * API, reached through a connected Facebook Page — not a direct Instagram
+ * login). Both flows end with the client logging into their OWN Meta account
+ * and granting permission directly to Meta; we only ever receive the
  * resulting authorization `code`, exchanged server-side for a token (see
  * /api/channels/whatsapp/connect and /instagram/connect).
  */
@@ -105,15 +106,15 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
   });
 }
 
-/** Builds the direct Instagram OAuth URL (redirect flow — no popup/JS SDK). */
-export function buildInstagramAuthUrl(instagramAppId: string, redirectUri: string): string {
+/** Builds the Facebook Login OAuth URL for Instagram (redirect flow — no popup/JS SDK). */
+export function buildInstagramAuthUrl(appId: string, graphVersion: string, redirectUri: string): string {
   const params = new URLSearchParams({
-    client_id: instagramAppId,
+    client_id: appId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'instagram_business_basic,instagram_business_manage_messages',
+    scope: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management',
   });
-  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+  return `https://www.facebook.com/${graphVersion}/dialog/oauth?${params.toString()}`;
 }
 
 export function instagramRedirectUri(): string {

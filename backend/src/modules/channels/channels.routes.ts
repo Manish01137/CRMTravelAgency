@@ -4,7 +4,13 @@ import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { requireRole } from '../../middleware/requireRole';
 import * as controller from './channels.controller';
-import { channelParam, connectEmailSchema, connectInstagramSchema, connectWhatsAppSchema } from './channels.schemas';
+import {
+  channelParam,
+  connectEmailSchema,
+  connectInstagramSchema,
+  connectWhatsAppSchema,
+  selectInstagramPageSchema,
+} from './channels.schemas';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,6 +31,12 @@ router.post(
   requireRole('ADMIN'),
   validate({ body: connectInstagramSchema }),
   asyncHandler(controller.connectInstagram),
+);
+router.post(
+  '/instagram/select-page',
+  requireRole('ADMIN'),
+  validate({ body: selectInstagramPageSchema }),
+  asyncHandler(controller.selectInstagramPage),
 );
 router.patch(
   '/email',

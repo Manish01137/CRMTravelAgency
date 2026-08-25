@@ -141,62 +141,79 @@ export async function createWhatsAppTemplate(
   return { externalTemplateId: data.id };
 }
 
-// --- Instagram (API with Instagram Login — no Facebook Page required) ------
+// --- Instagram (Facebook Login flow — classic Instagram Graph API, reached
+// through a connected Facebook Page). Shares the same Meta App ID/Secret as
+// WhatsApp above; no separate Instagram app or credentials are used. --------
 
 export function isInstagramConfigured(): boolean {
-  return !!(env.META_INSTAGRAM_APP_ID ?? env.META_APP_ID) && !!env.META_APP_SECRET;
+  return isMetaConfigured();
 }
 
-async function instagramFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  const data = (await res.json().catch(() => null)) as (T & { error_message?: string; error?: { message?: string } }) | null;
-  if (!res.ok) {
-    const message = data?.error_message ?? data?.error?.message ?? `Instagram API request failed (${res.status})`;
-    throw new AppError(502, 'INSTAGRAM_API_ERROR', message);
-  }
-  return data as T;
-}
-
-/** Exchanges the OAuth `code` (from instagram.com/oauth/authorize) for a short-lived token. */
-export async function exchangeInstagramCode(
-  code: string,
-  redirectUri: string,
-): Promise<{ accessToken: string; userId: string }> {
-  if (!isInstagramConfigured()) {
-    throw new AppError(503, 'META_NOT_CONFIGURED', 'Instagram connection is not configured on the server');
-  }
-  const form = new URLSearchParams({
-    client_id: env.META_INSTAGRAM_APP_ID ?? env.META_APP_ID!,
+/** Step 1 — exchanges the Facebook Login `code` for a short-lived user access token. */
+export async function exchangeFacebookUserCode(code: string, redirectUri: string): Promise<{ accessToken: string }> {
+  requireMetaConfigured();
+  const params = new URLSearchParams({
+    client_id: env.META_APP_ID!,
     client_secret: env.META_APP_SECRET!,
-    grant_type: 'authorization_code',
     redirect_uri: redirectUri,
     code,
   });
-  const data = await instagramFetch<{ access_token: string; user_id: string }>(
-    'https://api.instagram.com/oauth/access_token',
-    { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() },
-  );
-  return { accessToken: data.access_token, userId: String(data.user_id) };
-}
-
-/** Short-lived (1h) → long-lived (60d) token exchange. */
-export async function exchangeLongLivedInstagramToken(shortLivedToken: string): Promise<{ accessToken: string }> {
-  const params = new URLSearchParams({
-    grant_type: 'ig_exchange_token',
-    client_secret: env.META_APP_SECRET!,
-    access_token: shortLivedToken,
-  });
-  const data = await instagramFetch<{ access_token: string }>(
-    `https://graph.instagram.com/access_token?${params.toString()}`,
-  );
+  const data = await graphFetch<{ access_token: string }>(`/oauth/access_token?${params.toString()}`);
   return { accessToken: data.access_token };
 }
 
-export async function fetchInstagramProfile(accessToken: string): Promise<{ userId: string; username: string }> {
-  const data = await instagramFetch<{ user_id: string; username: string }>(
-    `https://graph.instagram.com/me?fields=user_id,username&access_token=${encodeURIComponent(accessToken)}`,
+/** Step 2 — short-lived user token → long-lived (~60 day) user token. */
+export async function exchangeLongLivedUserToken(shortLivedToken: string): Promise<{ accessToken: string }> {
+  requireMetaConfigured();
+  const params = new URLSearchParams({
+    grant_type: 'fb_exchange_token',
+    client_id: env.META_APP_ID!,
+    client_secret: env.META_APP_SECRET!,
+    fb_exchange_token: shortLivedToken,
+  });
+  const data = await graphFetch<{ access_token: string }>(`/oauth/access_token?${params.toString()}`);
+  return { accessToken: data.access_token };
+}
+
+export interface FacebookPage {
+  id: string;
+  name: string;
+  accessToken: string;
+}
+
+/**
+ * Step 3 — lists the Facebook Pages this user manages. Each page's own access
+ * token, derived from a long-lived user token, does not expire — no refresh
+ * job is needed for it (unlike the old direct-Instagram-token flow).
+ * Assumes a single page of results (Meta's default page size of 25) — fine
+ * for a travel agency managing a handful of Pages; not worth paginating here.
+ */
+export async function fetchManagedFacebookPages(userAccessToken: string): Promise<FacebookPage[]> {
+  const data = await graphFetch<{ data: { id: string; name: string; access_token: string }[] }>(
+    '/me/accounts?fields=id,name,access_token',
+    { headers: { Authorization: `Bearer ${userAccessToken}` } },
   );
-  return { userId: String(data.user_id), username: data.username };
+  return data.data.map((p) => ({ id: p.id, name: p.name, accessToken: p.access_token }));
+}
+
+/** Step 4 — looks up the Instagram professional account linked to one Facebook Page, if any. */
+export async function fetchPageInstagramAccount(
+  pageId: string,
+  pageAccessToken: string,
+): Promise<{ instagramBusinessAccountId: string | null }> {
+  const data = await graphFetch<{ instagram_business_account?: { id: string } }>(
+    `/${pageId}?fields=instagram_business_account`,
+    { headers: { Authorization: `Bearer ${pageAccessToken}` } },
+  );
+  return { instagramBusinessAccountId: data.instagram_business_account?.id ?? null };
+}
+
+/** Fetches the @username for display once we know which Instagram account is being connected. */
+export async function fetchInstagramUsername(igAccountId: string, pageAccessToken: string): Promise<string> {
+  const data = await graphFetch<{ username: string }>(`/${igAccountId}?fields=username`, {
+    headers: { Authorization: `Bearer ${pageAccessToken}` },
+  });
+  return data.username;
 }
 
 export async function sendInstagramText(

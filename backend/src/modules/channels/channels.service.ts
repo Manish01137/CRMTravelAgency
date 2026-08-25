@@ -7,15 +7,18 @@ import {
   exchangeWhatsAppCode,
   fetchWhatsAppPhoneNumber,
   subscribeWabaWebhook,
-  exchangeInstagramCode,
-  exchangeLongLivedInstagramToken,
-  fetchInstagramProfile,
+  exchangeFacebookUserCode,
+  exchangeLongLivedUserToken,
+  fetchManagedFacebookPages,
+  fetchPageInstagramAccount,
+  fetchInstagramUsername,
 } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
 import type {
   ConnectEmailInput,
   ConnectInstagramInput,
   ConnectWhatsAppInput,
+  SelectInstagramPageInput,
 } from './channels.schemas';
 
 export interface WhatsAppCredentials {
@@ -23,6 +26,14 @@ export interface WhatsAppCredentials {
   phoneNumberId: string;
   wabaId: string;
 }
+/**
+ * `accessToken` is now a Facebook Page Access Token (doesn't expire) and
+ * `igUserId` is the Instagram professional account's id — both obtained via
+ * the Facebook Login flow (see connectInstagram below), not a direct
+ * Instagram user token/id as before. Field names kept as-is since every
+ * consumer (inbox, bot-flow, automation) just forwards them to
+ * sendInstagramText(igUserId, accessToken, ...), which is unaffected.
+ */
 export interface InstagramCredentials {
   accessToken: string;
   igUserId: string;
@@ -31,6 +42,19 @@ export interface EmailCredentials {
   apiKey: string;
   fromAddress: string;
 }
+
+/** One Facebook Page + its linked Instagram account, as surfaced to the picker when more than one matches. */
+export interface InstagramPageOption {
+  pageId: string;
+  pageName: string;
+  instagramBusinessAccountId: string;
+  instagramUsername: string;
+  pageAccessToken: string;
+}
+
+export type ConnectInstagramResult =
+  | { status: 'connected'; channel: ChannelStatus }
+  | { status: 'needs_selection'; options: InstagramPageOption[] };
 
 /** Public-safe shape — credentials are NEVER included. */
 export interface ChannelStatus {
@@ -45,9 +69,10 @@ const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
 
 /**
  * Public (non-secret) values the frontend needs to launch each OAuth flow —
- * a Meta App ID and an Embedded-Signup Configuration ID are meant to be used
- * client-side per Meta's own Embedded Signup docs. The App SECRET never
- * leaves the server (see lib/meta.ts).
+ * a Meta App ID, its Graph API version, and an Embedded-Signup Configuration
+ * ID are meant to be used client-side per Meta's own docs. The App SECRET
+ * never leaves the server (see lib/meta.ts). Instagram now reuses the same
+ * App ID as WhatsApp (Facebook Login flow) — no separate Instagram app id.
  */
 export async function getPlatformConfig() {
   return {
@@ -55,8 +80,8 @@ export async function getPlatformConfig() {
     instagramEnabled: isInstagramConfigured(),
     emailEnabled: true,
     metaAppId: env.META_APP_ID ?? null,
+    metaGraphVersion: env.META_GRAPH_VERSION,
     whatsappConfigId: env.META_WHATSAPP_CONFIG_ID ?? null,
-    instagramAppId: env.META_INSTAGRAM_APP_ID ?? env.META_APP_ID ?? null,
   };
 }
 
@@ -126,37 +151,89 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
   }
 }
 
-export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ChannelStatus> {
-  try {
-    const { accessToken: shortLived } = await exchangeInstagramCode(input.code, input.redirectUri);
-    const { accessToken } = await exchangeLongLivedInstagramToken(shortLived);
-    const { userId, username } = await fetchInstagramProfile(accessToken);
+/** Persists the chosen Page's token + linked Instagram account as this org's Instagram connection. */
+async function saveInstagramConnection(organizationId: string, option: InstagramPageOption): Promise<ChannelStatus> {
+  const credentials: InstagramCredentials = {
+    accessToken: option.pageAccessToken,
+    igUserId: option.instagramBusinessAccountId,
+  };
+  const row = await withTenant(organizationId, (tx) =>
+    tx.channelConnection.upsert({
+      where: { organizationId_channel: { organizationId, channel: 'INSTAGRAM' } },
+      create: {
+        organizationId,
+        channel: 'INSTAGRAM',
+        status: 'CONNECTED',
+        displayName: `@${option.instagramUsername}`,
+        externalId: option.instagramBusinessAccountId,
+        credentials: encryptJson(credentials),
+        connectedAt: new Date(),
+        lastError: null,
+      },
+      update: {
+        status: 'CONNECTED',
+        displayName: `@${option.instagramUsername}`,
+        externalId: option.instagramBusinessAccountId,
+        credentials: encryptJson(credentials),
+        connectedAt: new Date(),
+        lastError: null,
+      },
+    }),
+  );
+  return toStatus(row);
+}
 
-    const credentials: InstagramCredentials = { accessToken, igUserId: userId };
-    const row = await withTenant(organizationId, (tx) =>
-      tx.channelConnection.upsert({
-        where: { organizationId_channel: { organizationId, channel: 'INSTAGRAM' } },
-        create: {
-          organizationId,
-          channel: 'INSTAGRAM',
-          status: 'CONNECTED',
-          displayName: `@${username}`,
-          externalId: userId,
-          credentials: encryptJson(credentials),
-          connectedAt: new Date(),
-          lastError: null,
-        },
-        update: {
-          status: 'CONNECTED',
-          displayName: `@${username}`,
-          externalId: userId,
-          credentials: encryptJson(credentials),
-          connectedAt: new Date(),
-          lastError: null,
-        },
-      }),
-    );
-    return toStatus(row);
+/**
+ * Facebook Login flow: exchange the code for a user token, list the Facebook
+ * Pages this user manages, and find which one(s) have an Instagram
+ * professional account linked. Zero matches is a clear setup error; exactly
+ * one connects immediately; more than one is handed back to the frontend as
+ * a picker (see InstagramCallbackPage.tsx) rather than guessing.
+ */
+export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
+  try {
+    const { accessToken: shortLived } = await exchangeFacebookUserCode(input.code, input.redirectUri);
+    const { accessToken: userToken } = await exchangeLongLivedUserToken(shortLived);
+    const pages = await fetchManagedFacebookPages(userToken);
+
+    const options: InstagramPageOption[] = [];
+    for (const page of pages) {
+      const { instagramBusinessAccountId } = await fetchPageInstagramAccount(page.id, page.accessToken);
+      if (!instagramBusinessAccountId) continue;
+      const instagramUsername = await fetchInstagramUsername(instagramBusinessAccountId, page.accessToken);
+      options.push({
+        pageId: page.id,
+        pageName: page.name,
+        instagramBusinessAccountId,
+        instagramUsername,
+        pageAccessToken: page.accessToken,
+      });
+    }
+
+    if (options.length === 0) {
+      throw new AppError(
+        422,
+        'NO_INSTAGRAM_PAGE',
+        'No Facebook Page with a linked Instagram professional account was found — link your Instagram account to a Facebook Page first.',
+      );
+    }
+    if (options.length > 1) {
+      return { status: 'needs_selection', options };
+    }
+
+    const channel = await saveInstagramConnection(organizationId, options[0]);
+    return { status: 'connected', channel };
+  } catch (err) {
+    const message = err instanceof AppError ? err.message : 'Could not connect Instagram — please try again';
+    await markFailed(organizationId, 'INSTAGRAM', message);
+    throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
+  }
+}
+
+/** Step 2 of the ambiguous case — the org picked one Page from connectInstagram's `options`. */
+export async function selectInstagramPage(organizationId: string, input: SelectInstagramPageInput): Promise<ChannelStatus> {
+  try {
+    return await saveInstagramConnection(organizationId, input);
   } catch (err) {
     const message = err instanceof AppError ? err.message : 'Could not connect Instagram — please try again';
     await markFailed(organizationId, 'INSTAGRAM', message);
