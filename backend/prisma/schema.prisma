@@ -213,6 +213,21 @@ model Organization {
   defaultCancellationPolicy String? @map("default_cancellation_policy")
   defaultPaymentTerms       String? @map("default_payment_terms")
   defaultTermsConditions    String? @map("default_terms_conditions")
+  // --- Tax invoice details — printed on every invoice's header/footer.
+  // All optional: a blank field simply doesn't render on the invoice. ---
+  secondaryPhone          String? @map("secondary_phone")
+  secondaryEmail          String? @map("secondary_email")
+  stateName               String? @map("state_name")
+  stateCode               String? @map("state_code")
+  bankName                String? @map("bank_name")
+  bankAccountNumber       String? @map("bank_account_number")
+  ifscCode                String? @map("ifsc_code")
+  gstin                   String?
+  pan                     String?
+  hsnCode                 String? @map("hsn_code")
+  signatureImageUrl       String? @map("signature_image_url")
+  signatoryTitle          String? @map("signatory_title")
+  invoiceTermsConditions  String? @map("invoice_terms_conditions")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -707,11 +722,17 @@ model Invoice {
   customerName   String        @map("customer_name")
   customerEmail  String?       @map("customer_email")
   customerPhone  String?       @map("customer_phone")
+  // Bill-to extras for the tax-invoice layout — optional, blank if unset.
+  customerCompanyName String?  @map("customer_company_name")
+  customerAddress     String?  @map("customer_address")
   status         InvoiceStatus @default(DRAFT)
   issueDate      DateTime      @default(now()) @map("issue_date") @db.Date
   dueDate        DateTime?     @map("due_date") @db.Date
   items          Json          @default("[]")
   subtotal       Int           @default(0)
+  // Advance/down-payment already collected — shown in the invoice summary as
+  // "Remaining Payable Value" (total - advanceAmount). Independent of tax.
+  advanceAmount  Int           @default(0) @map("advance_amount")
   taxPercent     Float         @default(0) @map("tax_percent")
   taxAmount      Int           @default(0) @map("tax_amount")
   total          Int           @default(0)

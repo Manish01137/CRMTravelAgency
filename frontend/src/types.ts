@@ -53,6 +53,20 @@ export interface Organization {
   defaultCancellationPolicy: string | null;
   defaultPaymentTerms: string | null;
   defaultTermsConditions: string | null;
+  // Tax invoice details — printed on the invoice header/footer.
+  secondaryPhone: string | null;
+  secondaryEmail: string | null;
+  stateName: string | null;
+  stateCode: string | null;
+  bankName: string | null;
+  bankAccountNumber: string | null;
+  ifscCode: string | null;
+  gstin: string | null;
+  pan: string | null;
+  hsnCode: string | null;
+  signatureImageUrl: string | null;
+  signatoryTitle: string | null;
+  invoiceTermsConditions: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -404,6 +418,10 @@ export interface InvoiceLineItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  // Tax-invoice extras — optional, rendered only when present.
+  fromDate?: string | null;
+  toDate?: string | null;
+  sharingCapacity?: string | null;
 }
 
 export interface Invoice {
@@ -414,11 +432,14 @@ export interface Invoice {
   customerName: string;
   customerEmail: string | null;
   customerPhone: string | null;
+  customerCompanyName: string | null;
+  customerAddress: string | null;
   status: InvoiceStatus;
   issueDate: string;
   dueDate: string | null;
   items: InvoiceLineItem[];
   subtotal: number;
+  advanceAmount: number;
   taxPercent: number;
   taxAmount: number;
   total: number;

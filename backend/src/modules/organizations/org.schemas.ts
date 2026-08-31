@@ -47,6 +47,23 @@ export const updateOrgSchema = z
     defaultCancellationPolicy: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
     defaultPaymentTerms: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
     defaultTermsConditions: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
+    // Tax invoice details — printed on the invoice header/footer (see PROJECT
+    // notes). All optional: a blank field just doesn't render on the invoice.
+    secondaryPhone: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(40).nullable()).optional(),
+    secondaryEmail: z.preprocess((v) => (v === '' ? null : v), z.string().email('Enter a valid email').max(200).nullable()).optional(),
+    stateName: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(80).nullable()).optional(),
+    stateCode: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(10).nullable()).optional(),
+    bankName: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(120).nullable()).optional(),
+    bankAccountNumber: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(40).nullable()).optional(),
+    ifscCode: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(20).nullable()).optional(),
+    gstin: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(20).nullable()).optional(),
+    pan: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(15).nullable()).optional(),
+    hsnCode: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(20).nullable()).optional(),
+    signatureImageUrl: z
+      .preprocess((v) => (v === '' ? null : v), z.string().url('Enter a valid URL').max(2000).nullable())
+      .optional(),
+    signatoryTitle: z.preprocess((v) => (v === '' ? null : v), z.string().trim().max(80).nullable()).optional(),
+    invoiceTermsConditions: z.preprocess((v) => (v === '' ? null : v), z.string().max(5000).nullable()).optional(),
     // LinkTree module theme (its own object, independent of Host Page branding)
     linktreeTheme: z
       .object({

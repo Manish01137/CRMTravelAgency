@@ -9,6 +9,10 @@ export const lineItemSchema = z.object({
   description: z.string().trim().min(1, 'Description required').max(300),
   quantity: z.coerce.number().int().positive().max(10000).default(1),
   unitPrice: z.coerce.number().int().nonnegative().max(1_000_000_000),
+  // Tax-invoice extras — optional, rendered only when present.
+  fromDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  toDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  sharingCapacity: z.preprocess(emptyToUndefined, z.string().trim().max(60).optional()),
 });
 
 export const createInvoiceSchema = z.object({
@@ -16,10 +20,13 @@ export const createInvoiceSchema = z.object({
   customerName: z.string().trim().min(1, 'Customer name is required').max(120),
   customerEmail: z.preprocess(emptyToUndefined, z.string().email().max(200).optional()),
   customerPhone: z.preprocess(emptyToUndefined, z.string().trim().max(40).optional()),
+  customerCompanyName: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
+  customerAddress: z.preprocess(emptyToUndefined, z.string().trim().max(500).optional()),
   status: InvoiceStatusEnum.default('DRAFT'),
   issueDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   dueDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   items: z.array(lineItemSchema).min(1, 'Add at least one line item').max(100),
+  advanceAmount: z.coerce.number().int().nonnegative().max(1_000_000_000).default(0),
   taxPercent: z.coerce.number().min(0).max(100).default(0),
   currency: z.string().trim().length(3).toUpperCase().default('INR'),
   notes: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
@@ -30,10 +37,13 @@ export const updateInvoiceSchema = z
     customerName: z.string().trim().min(1).max(120).optional(),
     customerEmail: z.preprocess(emptyToNull, z.string().email().max(200).nullable()).optional(),
     customerPhone: z.preprocess(emptyToNull, z.string().trim().max(40).nullable()).optional(),
+    customerCompanyName: z.preprocess(emptyToNull, z.string().trim().max(120).nullable()).optional(),
+    customerAddress: z.preprocess(emptyToNull, z.string().trim().max(500).nullable()).optional(),
     status: InvoiceStatusEnum.optional(),
     issueDate: z.coerce.date().optional(),
     dueDate: z.preprocess(emptyToNull, z.coerce.date().nullable()).optional(),
     items: z.array(lineItemSchema).min(1).max(100).optional(),
+    advanceAmount: z.coerce.number().int().nonnegative().max(1_000_000_000).optional(),
     taxPercent: z.coerce.number().min(0).max(100).optional(),
     currency: z.string().trim().length(3).toUpperCase().optional(),
     notes: z.preprocess(emptyToNull, z.string().max(2000).nullable()).optional(),
