@@ -34,12 +34,17 @@ const schema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, 'ENCRYPTION_KEY must be a 64-character hex string (32 bytes) — generate with `openssl rand -hex 32`')
     .optional(),
 
-  // One Meta App (Developer console) is shared by the whole platform; each
-  // organization's own WABA/Instagram account is connected via Embedded Signup
-  // and its token is stored per-organization (see ChannelConnection). Optional —
-  // WhatsApp/Instagram connect endpoints 503 until these are set.
+  // Meta App (Developer console) used platform-wide; each organization's own
+  // WABA/Instagram account is connected via Embedded Signup and its token is
+  // stored per-organization (see ChannelConnection). Optional — WhatsApp/
+  // Instagram connect endpoints 503 until these are set.
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
+  // A second, separate Meta App ("Joinetraa") handles WhatsApp specifically —
+  // it has its own App Secret, used only to verify that app's webhook
+  // deliveries (see lib/meta.ts's verifyWebhookSignature). Both apps deliver
+  // to the same shared /webhooks/meta endpoint.
+  META_WHATSAPP_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   META_GRAPH_VERSION: z.string().default('v21.0'),
   // WhatsApp Embedded Signup "Configuration ID" from Meta App Dashboard →

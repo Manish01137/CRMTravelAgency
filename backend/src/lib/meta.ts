@@ -36,19 +36,32 @@ async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+/** One HMAC-SHA256 attempt: expected signature for `secret` vs. the provided (already `sha256=`-stripped) hex string. */
+function signatureMatches(rawBody: Buffer, providedHex: string, secret: string): boolean {
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const providedBuf = Buffer.from(providedHex, 'hex');
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, providedBuf);
+}
+
 /**
  * Verifies Meta's `X-Hub-Signature-256` header against the raw request body.
  * MUST be checked against the raw (unparsed) bytes — see app.ts's `verify`
  * callback on express.json(), which stashes `req.rawBody` for this purpose.
+ *
+ * Two separate Meta Apps deliver to this one shared /webhooks/meta endpoint —
+ * the original app (Instagram/Facebook Login, META_APP_SECRET) and
+ * "Joinetraa" (WhatsApp, META_WHATSAPP_APP_SECRET) — each signing with its
+ * OWN App Secret. Meta gives no way to tell which app sent a request before
+ * verifying it, so: try every configured secret and accept on the first
+ * match, rather than guessing from payload shape.
  */
 export function verifyWebhookSignature(rawBody: Buffer, signatureHeader: string | undefined): boolean {
-  if (!signatureHeader || !env.META_APP_SECRET) return false;
-  const expected = crypto.createHmac('sha256', env.META_APP_SECRET).update(rawBody).digest('hex');
+  if (!signatureHeader) return false;
   const provided = signatureHeader.replace(/^sha256=/, '');
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const providedBuf = Buffer.from(provided, 'hex');
-  if (expectedBuf.length !== providedBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, providedBuf);
+  const secrets = [env.META_APP_SECRET, env.META_WHATSAPP_APP_SECRET].filter((s): s is string => !!s);
+  return secrets.some((secret) => signatureMatches(rawBody, provided, secret));
 }
 
 /** Webhook verification handshake (GET /webhooks): Meta calls this once on subscribe. */
