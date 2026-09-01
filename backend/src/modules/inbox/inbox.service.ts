@@ -104,6 +104,12 @@ export async function sendMessage(
       });
       return message;
     } catch (err) {
+      // Send failures are almost always AppError (Graph API 4xx/5xx) — the
+      // global error handler skips console.error for those on purpose (they're
+      // "expected" client-facing errors), which meant the real Graph API
+      // failure reason was only ever visible in the stored message row, never
+      // in server logs. Same gap already fixed in channels.service.ts.
+      console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'Send failed';
       await tx.message.create({
         data: {
