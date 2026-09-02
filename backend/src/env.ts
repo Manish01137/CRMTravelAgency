@@ -41,9 +41,12 @@ const schema = z.object({
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
   // A second, separate Meta App ("Joinetraa") handles WhatsApp specifically —
-  // it has its own App Secret, used only to verify that app's webhook
-  // deliveries (see lib/meta.ts's verifyWebhookSignature). Both apps deliver
-  // to the same shared /webhooks/meta endpoint.
+  // its own App ID + Secret, used for the WhatsApp Embedded Signup token
+  // exchange (lib/meta.ts's exchangeWhatsAppCode) and to verify that app's
+  // webhook deliveries (verifyWebhookSignature). Both apps deliver to the
+  // same shared /webhooks/meta endpoint. Falls back to META_APP_ID/SECRET
+  // when unset, so a single-app setup still works.
+  META_WHATSAPP_APP_ID: z.string().optional(),
   META_WHATSAPP_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
   META_GRAPH_VERSION: z.string().default('v21.0'),

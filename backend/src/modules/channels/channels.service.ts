@@ -2,8 +2,8 @@ import { withTenant } from '../../lib/prisma';
 import { encryptJson } from '../../lib/encryption';
 import { env } from '../../env';
 import {
-  isMetaConfigured,
   isInstagramConfigured,
+  isWhatsAppConfigured,
   exchangeWhatsAppCode,
   fetchWhatsAppPhoneNumber,
   subscribeWabaWebhook,
@@ -70,17 +70,19 @@ const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
 
 /**
  * Public (non-secret) values the frontend needs to launch each OAuth flow —
- * a Meta App ID, its Graph API version, and an Embedded-Signup Configuration
- * ID are meant to be used client-side per Meta's own docs. The App SECRET
- * never leaves the server (see lib/meta.ts). Instagram now reuses the same
- * App ID as WhatsApp (Facebook Login flow) — no separate Instagram app id.
+ * Meta App IDs, the Graph API version, and an Embedded-Signup Configuration
+ * ID are meant to be used client-side per Meta's own docs. App SECRETS never
+ * leave the server (see lib/meta.ts). WhatsApp is its own Meta App
+ * ("Joinetraa") with its own App ID — separate from `metaAppId`, which
+ * Instagram/Facebook Login uses.
  */
 export async function getPlatformConfig() {
   return {
-    whatsappEnabled: isMetaConfigured() && !!env.META_WHATSAPP_CONFIG_ID,
+    whatsappEnabled: isWhatsAppConfigured() && !!env.META_WHATSAPP_CONFIG_ID,
     instagramEnabled: isInstagramConfigured(),
     emailEnabled: true,
     metaAppId: env.META_APP_ID ?? null,
+    whatsappAppId: env.META_WHATSAPP_APP_ID ?? env.META_APP_ID ?? null,
     metaGraphVersion: env.META_GRAPH_VERSION,
     whatsappConfigId: env.META_WHATSAPP_CONFIG_ID ?? null,
   };

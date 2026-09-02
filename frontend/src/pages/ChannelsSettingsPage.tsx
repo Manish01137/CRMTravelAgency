@@ -196,13 +196,13 @@ export function ChannelsSettingsPage() {
 
   const handleConnectWhatsApp = async () => {
     const cfg = configQuery.data;
-    if (!cfg?.metaAppId || !cfg.whatsappConfigId) {
+    if (!cfg?.whatsappAppId || !cfg.whatsappConfigId) {
       toast.error('WhatsApp is not configured on this server yet');
       return;
     }
     setConnectingChannel('WHATSAPP');
     try {
-      const result = await launchWhatsAppEmbeddedSignup(cfg.metaAppId, cfg.whatsappConfigId);
+      const result = await launchWhatsAppEmbeddedSignup(cfg.whatsappAppId, cfg.whatsappConfigId);
       await api.post('/channels/whatsapp/connect', result);
       invalidate();
       toast.success('WhatsApp connected');

@@ -71,12 +71,31 @@ export function checkWebhookVerifyToken(mode: unknown, token: unknown): boolean 
 
 // --- WhatsApp Embedded Signup -----------------------------------------------
 
+/**
+ * WhatsApp is its own separate Meta App ("Joinetraa") — its own App ID/Secret,
+ * distinct from the one Instagram/Facebook Login uses. Falls back to the
+ * shared META_APP_ID/SECRET when the dedicated pair isn't set, same pattern
+ * as META_INSTAGRAM_APP_ID's fallback below.
+ */
+function resolveWhatsAppAppCredentials(): { appId: string; appSecret: string } | null {
+  const appId = env.META_WHATSAPP_APP_ID ?? env.META_APP_ID;
+  const appSecret = env.META_WHATSAPP_APP_SECRET ?? env.META_APP_SECRET;
+  return appId && appSecret ? { appId, appSecret } : null;
+}
+
+export function isWhatsAppConfigured(): boolean {
+  return !!resolveWhatsAppAppCredentials();
+}
+
 /** Exchanges the Embedded Signup `code` for an access token (long-lived for a System User). */
 export async function exchangeWhatsAppCode(code: string): Promise<{ accessToken: string }> {
-  requireMetaConfigured();
+  const creds = resolveWhatsAppAppCredentials();
+  if (!creds) {
+    throw new AppError(503, 'META_NOT_CONFIGURED', 'WhatsApp connection is not configured on the server');
+  }
   const params = new URLSearchParams({
-    client_id: env.META_APP_ID!,
-    client_secret: env.META_APP_SECRET!,
+    client_id: creds.appId,
+    client_secret: creds.appSecret,
     code,
   });
   const data = await graphFetch<{ access_token: string }>(`/oauth/access_token?${params.toString()}`);
