@@ -31,6 +31,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { TrustIndicator } from '@/components/TrustIndicator';
 import { Button } from '@/components/ui/button';
 import { CountUp } from '@/components/ui/count-up';
 import { cn } from '@/lib/utils';
@@ -504,6 +505,7 @@ function ChannelMarquee() {
           ))}
         </div>
       </div>
+      <TrustIndicator className="mt-5 justify-center text-center text-muted-foreground" iconClassName="text-primary" />
     </section>
   );
 }
@@ -1518,9 +1520,12 @@ export function LandingPage() {
             </div>
           </div>
 
-          <div className="mt-14 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-sm text-white/50 sm:flex-row">
-            <p>© {new Date().getFullYear()} Joinetra. All rights reserved.</p>
-            <p>Made for travel agencies ✈️</p>
+          <div className="mt-14 border-t border-white/10 pt-6">
+            <TrustIndicator className="justify-center text-center text-white/50" iconClassName="text-indigo-400" />
+            <div className="mt-4 flex flex-col items-center justify-between gap-3 text-sm text-white/50 sm:flex-row">
+              <p>© {new Date().getFullYear()} Joinetra. All rights reserved.</p>
+              <p>Made for travel agencies ✈️</p>
+            </div>
           </div>
         </div>
       </footer>

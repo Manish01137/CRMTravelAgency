@@ -19,10 +19,23 @@ import ReactFlow, {
   type NodeProps,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { ArrowLeft, HelpCircle, ListChecks, MessageSquareText, Plus, Settings2, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  HelpCircle,
+  Headset,
+  ListChecks,
+  Megaphone,
+  MessageSquareText,
+  Package as PackageIcon,
+  Plus,
+  Settings2,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { BotFlowConfirmOption, BotFlowDetail, BotFlowLeadField, BotFlowStep, BotFlowStepType } from '@/types';
+import type { BotFlowConfirmOption, BotFlowDetail, BotFlowLeadField, BotFlowStep, BotFlowStepType, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -40,6 +53,7 @@ import {
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 const LEAD_FIELD_LABELS: Record<BotFlowLeadField, string> = {
   name: 'Name',
@@ -56,7 +70,27 @@ const STEP_STYLES: Record<BotFlowStepType, { icon: typeof MessageSquareText; lab
   COLLECT: { icon: MessageSquareText, label: 'Collect', accent: 'border-sky-400', bg: 'bg-sky-50' },
   CONFIRM: { icon: HelpCircle, label: 'Confirm', accent: 'border-amber-400', bg: 'bg-amber-50' },
   CLOSING: { icon: ListChecks, label: 'Closing', accent: 'border-emerald-400', bg: 'bg-emerald-50' },
+  MESSAGE: { icon: Megaphone, label: 'Message', accent: 'border-violet-400', bg: 'bg-violet-50' },
+  HANDOFF: { icon: Headset, label: 'Handoff', accent: 'border-rose-400', bg: 'bg-rose-50' },
+  SEND_PACKAGE: { icon: PackageIcon, label: 'Send package', accent: 'border-teal-400', bg: 'bg-teal-50' },
+  AI_OPEN: { icon: Sparkles, label: 'AI conversation', accent: 'border-fuchsia-400', bg: 'bg-fuchsia-50' },
 };
+
+/** Step types that auto-chain to the next step without waiting for a reply — shown as a hint on the node. */
+const NON_INTERACTIVE_TYPES: BotFlowStepType[] = ['MESSAGE', 'SEND_PACKAGE'];
+/** Step types with no outgoing connection at all. */
+const TERMINAL_TYPES: BotFlowStepType[] = ['CLOSING', 'HANDOFF'];
+
+/** "Add step" menu order + one-line descriptions — the whole roster, in the order they're most likely to be reached for. */
+const ADD_STEP_MENU: { type: BotFlowStepType; blurb: string }[] = [
+  { type: 'COLLECT', blurb: 'Ask a question, save the answer to a Lead field' },
+  { type: 'CONFIRM', blurb: 'Yes/no or multiple-choice, branches by answer' },
+  { type: 'MESSAGE', blurb: 'Send info, no reply needed — continues right away' },
+  { type: 'SEND_PACKAGE', blurb: 'Share a package, then continue right away' },
+  { type: 'AI_OPEN', blurb: 'Let the AI Agent converse freely until it moves on' },
+  { type: 'HANDOFF', blurb: 'End the bot\'s turn, flag the lead for your team' },
+  { type: 'CLOSING', blurb: 'Final message — ends the flow' },
+];
 
 /** Custom node — a labeled card matching the step's type, with connection handles. */
 function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
@@ -75,14 +109,24 @@ function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
       <div className={cn('mb-1.5 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide', style.bg)}>
         <Icon className="size-3" /> {style.label}
       </div>
-      <p className="line-clamp-3 text-sm font-medium text-foreground">{step.question || <span className="italic text-muted-foreground">No text yet</span>}</p>
+      {step.type === 'SEND_PACKAGE' ? (
+        <p className="text-sm font-medium text-foreground">
+          {step.config.packageId ? 'Sends the selected package' : <span className="italic text-muted-foreground">No package chosen yet</span>}
+        </p>
+      ) : (
+        <p className="line-clamp-3 text-sm font-medium text-foreground">{step.question || <span className="italic text-muted-foreground">No text yet</span>}</p>
+      )}
       {step.type === 'COLLECT' && step.leadField && (
         <p className="mt-1 text-[11px] text-muted-foreground">→ Lead.{LEAD_FIELD_LABELS[step.leadField]}</p>
       )}
       {step.type === 'CONFIRM' && step.options && (
         <p className="mt-1 text-[11px] text-muted-foreground">{step.options.length} options</p>
       )}
-      {step.type !== 'CLOSING' && <Handle type="source" position={Position.Right} className="!size-2.5 !border-2 !border-white !bg-slate-400" />}
+      {step.type === 'AI_OPEN' && step.config.instructions && (
+        <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">AI: {step.config.instructions}</p>
+      )}
+      {NON_INTERACTIVE_TYPES.includes(step.type) && <p className="mt-1 text-[11px] text-muted-foreground">Auto-continues, no reply needed</p>}
+      {!TERMINAL_TYPES.includes(step.type) && <Handle type="source" position={Position.Right} className="!size-2.5 !border-2 !border-white !bg-slate-400" />}
     </div>
   );
 }
@@ -111,7 +155,16 @@ function StepEditor({
   const [leadField, setLeadField] = useState<BotFlowLeadField | ''>('');
   const [options, setOptions] = useState<BotFlowConfirmOption[]>([]);
   const [nextStepId, setNextStepId] = useState<string | null>(null);
+  const [packageId, setPackageId] = useState('');
+  const [instructions, setInstructions] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const packagesQuery = useQuery({
+    queryKey: ['packages'],
+    queryFn: () => api.get<TravelPackage[]>('/packages'),
+    enabled: step?.type === 'SEND_PACKAGE',
+  });
+  const packages = (packagesQuery.data ?? []).filter((p) => p.isActive);
 
   useEffect(() => {
     if (!step) return;
@@ -119,6 +172,8 @@ function StepEditor({
     setLeadField(step.leadField ?? '');
     setOptions(step.options ?? [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }]);
     setNextStepId(step.nextStepId);
+    setPackageId(step.config.packageId ?? '');
+    setInstructions(step.config.instructions ?? '');
   }, [step]);
 
   if (!step) return null;
@@ -128,10 +183,26 @@ function StepEditor({
   const handleSave = () => {
     if (step.type === 'CONFIRM') {
       onSave({ question, options });
+    } else if (step.type === 'SEND_PACKAGE') {
+      onSave({ question: question || undefined, nextStepId, config: { packageId: packageId || undefined } });
+    } else if (step.type === 'AI_OPEN') {
+      onSave({ question, nextStepId, config: { instructions } });
+    } else if (step.type === 'HANDOFF') {
+      onSave({ question: question || undefined });
     } else {
+      // COLLECT, MESSAGE, CLOSING
       onSave({ question, leadField: leadField || undefined, nextStepId });
     }
   };
+
+  const canSave =
+    step.type === 'HANDOFF' // the only type with no required text
+      ? true
+      : step.type === 'SEND_PACKAGE'
+        ? !!packageId
+        : step.type === 'AI_OPEN'
+          ? !!question.trim() && !!instructions.trim()
+          : !!question.trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,38 +215,78 @@ function StepEditor({
             {step.type === 'COLLECT' && "Ask a question and write the traveller's answer into a Lead field."}
             {step.type === 'CONFIRM' && 'Ask a yes/no or multiple-choice question and branch based on the answer.'}
             {step.type === 'CLOSING' && 'End the flow with a final message.'}
+            {step.type === 'MESSAGE' && 'Send a message with no reply needed — the flow continues on to the next step right away.'}
+            {step.type === 'HANDOFF' && 'End the bot\'s turn and flag this lead for a human — same as a "Needs Review" keyword match.'}
+            {step.type === 'SEND_PACKAGE' && 'Share one of your packages, then continue on to the next step right away.'}
+            {step.type === 'AI_OPEN' && "Let the AI Agent converse freely here, guided by your instructions, until it decides to move the flow on."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto py-2">
-          <Field label={step.type === 'CLOSING' ? 'Closing message' : 'Question'} htmlFor="stepQuestion" required>
-            <Textarea id="stepQuestion" rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What's your destination?" />
-          </Field>
+          {step.type === 'SEND_PACKAGE' ? (
+            <Field label="Package to send" htmlFor="stepPackage" required hint="Sent as the traveller's name/destination/price, plus a link.">
+              <Select value={packageId} onValueChange={setPackageId}>
+                <SelectTrigger id="stepPackage"><SelectValue placeholder={packagesQuery.isLoading ? 'Loading packages…' : 'Choose a package'} /></SelectTrigger>
+                <SelectContent>
+                  {packages.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name} — {p.destination}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : (
+            <Field
+              label={
+                step.type === 'CLOSING' ? 'Closing message'
+                  : step.type === 'MESSAGE' ? 'Message'
+                  : step.type === 'HANDOFF' ? 'Message before handoff'
+                  : step.type === 'AI_OPEN' ? 'Opening message'
+                  : 'Question'
+              }
+              htmlFor="stepQuestion"
+              required={step.type !== 'HANDOFF'}
+              hint={step.type === 'HANDOFF' ? 'Optional — shown to the traveller before your team takes over.' : undefined}
+            >
+              <Textarea id="stepQuestion" rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What's your destination?" />
+            </Field>
+          )}
+
+          {step.type === 'AI_OPEN' && (
+            <Field
+              label="Instructions for the AI"
+              htmlFor="stepInstructions"
+              required
+              hint="Plain language — e.g. 'Answer questions about our Bali packages; once they mention a budget, wrap up.'"
+            >
+              <Textarea id="stepInstructions" rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="What should the AI do here, and when should it move on?" />
+            </Field>
+          )}
 
           {step.type === 'COLLECT' && (
-            <>
-              <Field label="Write the answer into" htmlFor="stepLeadField" required>
-                <Select value={leadField} onValueChange={(v) => setLeadField(v as BotFlowLeadField)}>
-                  <SelectTrigger id="stepLeadField"><SelectValue placeholder="Choose a Lead field" /></SelectTrigger>
-                  <SelectContent>
-                    {LEAD_FIELDS.map((f) => (
-                      <SelectItem key={f} value={f}>{LEAD_FIELD_LABELS[f]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Then go to" htmlFor="stepNext" hint="Or drag a connection on the canvas instead.">
-                <Select value={nextStepId ?? '__end'} onValueChange={(v) => setNextStepId(v === '__end' ? null : v)}>
-                  <SelectTrigger id="stepNext"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__end">End flow here</SelectItem>
-                    {otherSteps.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </>
+            <Field label="Write the answer into" htmlFor="stepLeadField" required>
+              <Select value={leadField} onValueChange={(v) => setLeadField(v as BotFlowLeadField)}>
+                <SelectTrigger id="stepLeadField"><SelectValue placeholder="Choose a Lead field" /></SelectTrigger>
+                <SelectContent>
+                  {LEAD_FIELDS.map((f) => (
+                    <SelectItem key={f} value={f}>{LEAD_FIELD_LABELS[f]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+
+          {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN'] as BotFlowStepType[]).includes(step.type) && (
+            <Field label="Then go to" htmlFor="stepNext" hint="Or drag a connection on the canvas instead.">
+              <Select value={nextStepId ?? '__end'} onValueChange={(v) => setNextStepId(v === '__end' ? null : v)}>
+                <SelectTrigger id="stepNext"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__end">End flow here</SelectItem>
+                  {otherSteps.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
           )}
 
           {step.type === 'CONFIRM' && (
@@ -222,7 +333,7 @@ function StepEditor({
           <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmDeleteOpen(true)}>
             <Trash2 className="size-4" /> Delete step
           </Button>
-          <Button onClick={handleSave} disabled={saving || !question.trim()}>
+          <Button onClick={handleSave} disabled={saving || !canSave}>
             {saving && <Spinner className="size-4" />} Save
           </Button>
         </DialogFooter>
@@ -373,9 +484,15 @@ export function BotFlowBuilderPage() {
       api.post<BotFlowStep>(`/bot-flows/${id}/steps`, {
         type,
         order: steps.length,
-        question: type === 'CLOSING' ? "Thank you! Our team will reach out shortly." : 'New question',
+        question:
+          type === 'CLOSING' ? "Thank you! Our team will reach out shortly."
+            : type === 'HANDOFF' ? "Let me connect you with our team."
+            : type === 'AI_OPEN' ? "Sure, happy to help — what would you like to know?"
+            : type === 'SEND_PACKAGE' ? undefined // unused for this type — the package's own details are the message
+            : 'New question',
         ...(type === 'COLLECT' && { leadField: 'notes' }),
         ...(type === 'CONFIRM' && { options: [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }] }),
+        ...(type === 'AI_OPEN' && { config: { instructions: 'Answer the traveller naturally and helpfully.' } }),
         canvasX: 40 + (steps.length % 3) * GRID_X,
         canvasY: 40 + Math.floor(steps.length / 3) * GRID_Y,
       }),
@@ -466,15 +583,27 @@ export function BotFlowBuilderPage() {
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="size-4" /> Flow settings
           </Button>
-          <Button size="sm" onClick={() => createStepMutation.mutate('COLLECT')} disabled={createStepMutation.isPending}>
-            <Plus className="size-4" /> Collect
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => createStepMutation.mutate('CONFIRM')} disabled={createStepMutation.isPending}>
-            <Plus className="size-4" /> Confirm
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => createStepMutation.mutate('CLOSING')} disabled={createStepMutation.isPending}>
-            <Plus className="size-4" /> Closing
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" disabled={createStepMutation.isPending}>
+                <Plus className="size-4" /> Add step <ChevronDown className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              {ADD_STEP_MENU.map(({ type, blurb }) => {
+                const style = STEP_STYLES[type];
+                return (
+                  <DropdownMenuItem key={type} onClick={() => createStepMutation.mutate(type)} className="items-start py-2">
+                    <style.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground">{style.label}</p>
+                      <p className="text-xs text-muted-foreground">{blurb}</p>
+                    </div>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

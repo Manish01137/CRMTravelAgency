@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Star } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { AuthLayout } from '@/components/layout/AuthLayout';
+import { TrustIndicator } from '@/components/TrustIndicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
@@ -45,14 +46,17 @@ export function LoginPage() {
       title="Welcome back"
       subtitle="Sign in to your Joinetra workspace"
       trust={
-        <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-          <span className="flex text-amber-400" aria-hidden>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} className="size-3 fill-current" strokeWidth={0} />
-            ))}
-          </span>
-          Trusted by travel agencies across India
-        </p>
+        <div className="space-y-2.5">
+          <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex text-amber-400" aria-hidden>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Star key={i} className="size-3 fill-current" strokeWidth={0} />
+              ))}
+            </span>
+            Trusted by travel agencies across India
+          </p>
+          <TrustIndicator className="justify-center text-center text-muted-foreground" iconClassName="text-primary" />
+        </div>
       }
       footer={
         <>

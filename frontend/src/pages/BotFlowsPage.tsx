@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
-import { Instagram, MessageCircle, Plus, Trash2, Workflow } from 'lucide-react';
+import { ArrowLeft, FileText, Instagram, MessageCircle, Plus, Sparkles, Trash2, Workflow } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { BotFlow, BotFlowAssignment, ChannelStatus } from '@/types';
+import type { BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,43 +38,126 @@ interface FormValues {
   name: string;
 }
 
+/** Two ways in: pick a ready-made starter (one click, pre-built steps) or start from a blank canvas. */
 function NewFlowDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [mode, setMode] = useState<'choose' | 'blank'>('choose');
   const { register, handleSubmit, formState: { errors }, reset } = useForm<FormValues>({ defaultValues: { name: '' } });
 
-  const mutation = useMutation({
+  const templatesQuery = useQuery({
+    queryKey: ['bot-flow-templates'],
+    queryFn: () => api.get<BotFlowTemplate[]>('/bot-flows/templates'),
+    enabled: open,
+  });
+
+  const goToFlow = (flow: BotFlow) => {
+    queryClient.invalidateQueries({ queryKey: ['bot-flows'] });
+    setMode('choose');
+    reset();
+    onOpenChange(false);
+    navigate(`/bot-flows/${flow.id}`);
+  };
+
+  const blankMutation = useMutation({
     mutationFn: (v: FormValues) => api.post<BotFlow>('/bot-flows', { name: v.name.trim() }),
     onSuccess: (flow) => {
-      queryClient.invalidateQueries({ queryKey: ['bot-flows'] });
       toast.success('Flow created');
-      reset();
-      onOpenChange(false);
-      navigate(`/bot-flows/${flow.id}`);
+      goToFlow(flow);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create flow'),
+  });
+
+  const templateMutation = useMutation({
+    mutationFn: (templateKey: string) => api.post<BotFlow>('/bot-flows/from-template', { templateKey }),
+    onSuccess: (flow) => {
+      toast.success('Flow created from template');
+      goToFlow(flow);
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create flow'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New Bot Flow</DialogTitle>
-          <DialogDescription>Give it a name, then build the conversation in the canvas.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4" noValidate>
-          <Field label="Flow name" htmlFor="flowName" error={errors.name?.message} required>
-            <Input id="flowName" placeholder="e.g. Kashmir Enquiry Bot" {...register('name', { required: 'Name is required' })} />
-          </Field>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending && <Spinner className="size-4" />} Create & open builder
-            </Button>
-          </DialogFooter>
-        </form>
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setMode('choose'); }}>
+      <DialogContent className="sm:max-w-lg">
+        {mode === 'choose' ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>New Bot Flow</DialogTitle>
+              <DialogDescription>Start from a ready-made flow, or build from a blank canvas.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              {templatesQuery.isLoading ? (
+                <>
+                  <Skeleton className="h-16 rounded-lg" />
+                  <Skeleton className="h-16 rounded-lg" />
+                </>
+              ) : (
+                (templatesQuery.data ?? []).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    disabled={templateMutation.isPending}
+                    onClick={() => templateMutation.mutate(t.key)}
+                    className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Sparkles className="size-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-foreground">{t.name}</span>
+                      <span className="block text-xs text-muted-foreground">{t.description}</span>
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">{t.stepCount} steps, ready to use</span>
+                    </span>
+                  </button>
+                ))
+              )}
+              <button
+                type="button"
+                onClick={() => setMode('blank')}
+                className="flex w-full items-center gap-3 rounded-lg border border-dashed border-border p-3 text-left transition-colors hover:border-primary hover:bg-primary/5"
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <FileText className="size-4" />
+                </span>
+                <span>
+                  <span className="block text-sm font-medium text-foreground">Blank flow</span>
+                  <span className="block text-xs text-muted-foreground">Start from an empty canvas and build it yourself.</span>
+                </span>
+              </button>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">Cancel</Button>
+              </DialogClose>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => setMode('choose')} aria-label="Back">
+                  <ArrowLeft className="size-4" />
+                </Button>
+                Blank flow
+              </DialogTitle>
+              <DialogDescription>Give it a name, then build the conversation in the canvas.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit((v) => blankMutation.mutate(v))} className="space-y-4" noValidate>
+              <Field label="Flow name" htmlFor="flowName" error={errors.name?.message} required>
+                <Input id="flowName" placeholder="e.g. Kashmir Enquiry Bot" {...register('name', { required: 'Name is required' })} />
+              </Field>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button type="submit" disabled={blankMutation.isPending}>
+                  {blankMutation.isPending && <Spinner className="size-4" />} Create & open builder
+                </Button>
+              </DialogFooter>
+            </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

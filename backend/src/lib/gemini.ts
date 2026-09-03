@@ -149,4 +149,60 @@ export async function classifyYesNo(apiKey: string, model: string, question: str
   });
 }
 
+// --- Bot Flow: AI_OPEN step — free-form conversation with its own exit condition ---
+
+export interface OpenStepResult {
+  reply: string;
+  shouldAdvance: boolean;
+  notes?: string;
+}
+
+/**
+ * Bot Flow's AI_OPEN step: the AI Agent persona converses freely, guided by
+ * this one step's own `instructions` (e.g. "Answer questions about our Bali
+ * packages; once they mention a budget, wrap up"), deciding turn-by-turn
+ * whether to keep going or let the flow move on to nextStepId.
+ */
+export async function runOpenStep(
+  apiKey: string,
+  model: string,
+  persona: { systemPrompt: string | null; agencyFacts: string | null; tone: string | null },
+  instructions: string,
+  history: ConversationTurn[],
+  latestMessage: string,
+): Promise<OpenStepResult> {
+  return fail(async () => {
+    const genModel = client(apiKey).getGenerativeModel({
+      model,
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.6 },
+    });
+    const transcript = history
+      .slice(-20)
+      .map((t) => `${t.direction === 'INBOUND' ? 'Traveller' : 'Agent'}: ${t.body}`)
+      .join('\n');
+    const prompt = `${personaPreamble(persona.systemPrompt, persona.agencyFacts, persona.tone)}
+
+For this part of the conversation, follow these instructions: ${instructions}
+
+Conversation so far:
+${transcript}
+Traveller: ${latestMessage}
+
+Reply naturally as the agent (plain text, no markdown), then decide whether this part of the conversation is done and the flow should move on. Return ONLY JSON:
+{"reply": "your reply to send now", "shouldAdvance": true or false, "notes": "anything worth saving to the lead's notes, or an empty string"}`;
+    const result = await genModel.generateContent(prompt);
+    const raw = result.response.text();
+    try {
+      const parsed = JSON.parse(raw) as { reply?: string; shouldAdvance?: boolean; notes?: string };
+      return {
+        reply: parsed.reply?.trim() || "Got it, thanks!",
+        shouldAdvance: !!parsed.shouldAdvance,
+        notes: parsed.notes?.trim() || undefined,
+      };
+    } catch {
+      return { reply: "Got it, thanks!", shouldAdvance: false };
+    }
+  });
+}
+
 export const DEFAULT_GEMINI_MODEL = env.GEMINI_MODEL;

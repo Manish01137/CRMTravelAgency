@@ -922,6 +922,21 @@ enum BotFlowStepType {
   COLLECT
   CONFIRM
   CLOSING
+  /// Sends a fixed message with no reply expected — auto-chains straight to
+  /// nextStepId in the same turn (no waiting for an inbound message).
+  MESSAGE
+  /// Optionally sends a message, then flags the lead needsReview and ends the
+  /// bot's turn — the same human-handoff path a needsReviewKeywords match
+  /// takes, just reachable as an explicit branch target instead of a keyword.
+  HANDOFF
+  /// Shares one package (config.packageId) as a message, then auto-chains to
+  /// nextStepId — same non-interactive auto-chain as MESSAGE.
+  SEND_PACKAGE
+  /// Lets the AI Agent persona converse freely per this step's own
+  /// instructions (config.instructions) until it decides the traveller is
+  /// ready to move on, then advances to nextStepId. Needs an AI Agent
+  /// (Gemini key) configured — see ai-agent.service.ts.
+  AI_OPEN
 }
 
 enum BotFlowSessionStatus {
@@ -976,6 +991,10 @@ model BotFlowStep {
   leadField      String?         @map("lead_field") // COLLECT only — target Lead column (name/email/phone/destination/travelDate/travelerCount/notes)
   options        Json? // CONFIRM only — [{ label, nextStepId }]
   nextStepId     String?         @map("next_step_id") // COLLECT's "what comes next" (CONFIRM branches via options instead; CLOSING leaves this null)
+  /// Per-type extra parameters, kept as one flexible column instead of a new
+  /// nullable field per step type: SEND_PACKAGE -> { packageId }, AI_OPEN ->
+  /// { instructions }. Empty object for types that don't need it.
+  config         Json            @default("{}")
   canvasX        Int?            @map("canvas_x")
   canvasY        Int?            @map("canvas_y")
   createdAt      DateTime        @default(now()) @map("created_at")

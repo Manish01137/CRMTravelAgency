@@ -1,7 +1,8 @@
 import { withTenant } from '../../lib/prisma';
 import { decryptJson } from '../../lib/encryption';
+import { env } from '../../env';
 import { sendWhatsAppText, sendInstagramText } from '../../lib/meta';
-import { extractLeadFields, classifyYesNo, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
+import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -22,17 +23,27 @@ import type { WhatsAppCredentials, InstagramCredentials } from '../channels/chan
  * inside one doesn't just fail its own request, it kills the whole
  * transaction (found and fixed during Phase 4's own end-to-end testing — see
  * the load / decide / commit split below).
+ *
+ * Step types: COLLECT/CONFIRM/AI_OPEN are INTERACTIVE — the engine sends
+ * their message and then stops, waiting for the traveller's next reply.
+ * MESSAGE/SEND_PACKAGE are NON-interactive — they send and immediately
+ * auto-chain to nextStepId in the same turn, no waiting, until an
+ * interactive step (or CLOSING/HANDOFF) is reached. This lets a flow open
+ * with a greeting + package share before its first real question without
+ * the traveller needing to reply to each one individually.
  */
 
+type StepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN';
 type ConfirmOption = { label: string; nextStepId: string | null };
 
 interface StepRow {
   id: string;
-  type: 'COLLECT' | 'CONFIRM' | 'CLOSING';
+  type: StepType;
   question: string | null;
   leadField: string | null;
   options: unknown;
   nextStepId: string | null;
+  config: unknown;
 }
 
 interface LoadedState {
@@ -48,10 +59,12 @@ interface LoadedState {
 type Action =
   | { kind: 'NEEDS_REVIEW'; reason: string }
   | { kind: 'REPEAT_FALLBACK' }
-  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; nextStep: StepRow | null };
+  | { kind: 'REPLY_AND_STAY'; reply: string }
+  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string; nextStep: StepRow | null };
 
 const LEAD_DATE_FIELD = 'travelDate';
 const LEAD_INT_FIELD = 'travelerCount';
+const NON_INTERACTIVE_TYPES: StepType[] = ['MESSAGE', 'SEND_PACKAGE'];
 
 function matchesKeyword(message: string, keywords: string[]): string | null {
   const lower = message.toLowerCase();
@@ -112,6 +125,17 @@ async function loadState(organizationId: string, conversationId: string): Promis
   });
 }
 
+/** Last 20 turns for AI_OPEN's conversational context — its own quick read, not held open across the Gemini call. */
+async function loadRecentHistory(organizationId: string, conversationId: string): Promise<ConversationTurn[]> {
+  return withTenant(organizationId, async (tx) => {
+    const messages = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: 20 });
+    return messages
+      .reverse()
+      .filter((m) => m.body)
+      .map((m) => ({ direction: m.direction, body: m.body as string }));
+  });
+}
+
 // --- Phase 2: decide what to do — pure logic + external calls, no open transaction ---
 
 async function decide(state: LoadedState, messageBody: string, organizationId: string): Promise<Action> {
@@ -152,7 +176,20 @@ async function decide(state: LoadedState, messageBody: string, organizationId: s
     return { kind: 'ADVANCE', nextStep };
   }
 
-  // CLOSING steps don't accept further input — the session should already be COMPLETED by now.
+  if (currentStep.type === 'AI_OPEN') {
+    if (!agent) return { kind: 'REPEAT_FALLBACK' }; // no AI Agent configured — can't run this step type
+    const config = (currentStep.config ?? {}) as { instructions?: string };
+    const history = await loadRecentHistory(organizationId, state.conversation.id);
+    const result = await runOpenStep(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, config.instructions ?? '', history, messageBody).catch(() => null);
+    if (!result) return { kind: 'REPEAT_FALLBACK' };
+    if (!result.shouldAdvance) return { kind: 'REPLY_AND_STAY', reply: result.reply };
+    const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
+    return { kind: 'ADVANCE', leadField: result.notes ? 'notes' : undefined, leadValue: result.notes, reply: result.reply, nextStep };
+  }
+
+  // CLOSING/MESSAGE/HANDOFF/SEND_PACKAGE don't accept further input as the CURRENT
+  // step — they auto-chain or end the session, so the session should already have
+  // moved past them by now. Treat any stray reply as "flow's over."
   return { kind: 'ADVANCE', nextStep: null };
 }
 
@@ -206,6 +243,26 @@ async function recordOutbound(organizationId: string, conversationId: string, bo
     });
     await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 200) } });
   });
+}
+
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
+}
+
+/** SEND_PACKAGE's content — same shareable-summary shape the Inbox's "Send" package button uses, built server-side. */
+async function buildPackageContent(organizationId: string, packageId: string | undefined): Promise<string | null> {
+  if (!packageId) return null;
+  const pkg = await withTenant(organizationId, (tx) => tx.package.findUnique({ where: { id: packageId } }));
+  if (!pkg || pkg.organizationId !== organizationId) return null;
+  const priceText = pkg.priceAmount != null ? formatMoney(pkg.priceAmount, pkg.priceCurrency) : null;
+  const lines = [`*${pkg.name}* — ${pkg.destination}`, `${pkg.days}D / ${pkg.nights}N${priceText ? ` · ${priceText}` : ''}`];
+  if (pkg.whatsappDescription) lines.push('', pkg.whatsappDescription);
+  lines.push('', `${env.CORS_ORIGIN}/p/${pkg.id}`);
+  return lines.join('\n');
 }
 
 // --- Phase 3: commit — fast, DB-only transactions ----------------------------
@@ -263,30 +320,82 @@ export async function advanceBotFlow(
     return;
   }
 
+  if (action.kind === 'REPLY_AND_STAY') {
+    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, action.reply);
+    await recordOutbound(organizationId, conversationId, action.reply, result);
+    await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
+    return;
+  }
+
   // action.kind === 'ADVANCE'
   if (action.leadField) {
     await writeLeadField(organizationId, state.conversation.leadId, action.leadField, action.leadValue);
   }
-
-  if (!action.nextStep) {
-    await withTenant(organizationId, (tx) =>
-      tx.botFlowSession.update({ where: { id: state.sessionId }, data: { status: 'COMPLETED', lastProcessedMessageAt: messageCreatedAt } }),
-    );
-    return;
+  if (action.reply) {
+    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, action.reply);
+    await recordOutbound(organizationId, conversationId, action.reply, result);
   }
 
-  if (action.nextStep.question) {
-    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, action.nextStep.question);
-    await recordOutbound(organizationId, conversationId, action.nextStep.question, result);
+  // Walk forward through any run of non-interactive steps (MESSAGE, SEND_PACKAGE),
+  // sending each one and auto-chaining, until hitting an interactive step
+  // (COLLECT/CONFIRM/AI_OPEN — send its message and stop, waiting for a reply),
+  // a terminal step (CLOSING/HANDOFF), or the end of the flow.
+  let cursor = action.nextStep;
+  let sessionStatus: 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW' = 'ACTIVE';
+  let needsReviewReason: string | null = null;
+
+  while (cursor) {
+    if (cursor.type === 'HANDOFF') {
+      if (cursor.question) {
+        const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, cursor.question);
+        await recordOutbound(organizationId, conversationId, cursor.question, result);
+      }
+      sessionStatus = 'NEEDS_REVIEW';
+      needsReviewReason = cursor.question ? `Flow handoff step: "${cursor.question}"` : 'Flow handoff step';
+      cursor = null;
+      break;
+    }
+
+    if (cursor.type === 'SEND_PACKAGE') {
+      const config = (cursor.config ?? {}) as { packageId?: string };
+      const text = await buildPackageContent(organizationId, config.packageId);
+      if (text) {
+        const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, text);
+        await recordOutbound(organizationId, conversationId, text, result);
+      }
+      cursor = cursor.nextStepId ? state.steps.find((s) => s.id === cursor!.nextStepId) ?? null : null;
+      continue;
+    }
+
+    if (NON_INTERACTIVE_TYPES.includes(cursor.type)) {
+      // MESSAGE
+      if (cursor.question) {
+        const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, cursor.question);
+        await recordOutbound(organizationId, conversationId, cursor.question, result);
+      }
+      cursor = cursor.nextStepId ? state.steps.find((s) => s.id === cursor!.nextStepId) ?? null : null;
+      continue;
+    }
+
+    // Interactive (COLLECT/CONFIRM/AI_OPEN) or terminal (CLOSING) — send its
+    // message, then stop the chain here.
+    if (cursor.question) {
+      const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, cursor.question);
+      await recordOutbound(organizationId, conversationId, cursor.question, result);
+    }
+    if (cursor.type === 'CLOSING') sessionStatus = 'COMPLETED';
+    break;
   }
-  await withTenant(organizationId, (tx) =>
-    tx.botFlowSession.update({
+
+  if (!cursor && sessionStatus === 'ACTIVE') sessionStatus = 'COMPLETED'; // walked off the end of the flow
+
+  await withTenant(organizationId, async (tx) => {
+    await tx.botFlowSession.update({
       where: { id: state.sessionId },
-      data: {
-        currentStepId: action.nextStep!.id,
-        status: action.nextStep!.type === 'CLOSING' ? 'COMPLETED' : 'ACTIVE',
-        lastProcessedMessageAt: messageCreatedAt,
-      },
-    }),
-  );
+      data: { currentStepId: cursor?.id ?? null, status: sessionStatus, lastProcessedMessageAt: messageCreatedAt },
+    });
+    if (sessionStatus === 'NEEDS_REVIEW' && state.conversation.leadId) {
+      await tx.lead.updateMany({ where: { id: state.conversation.leadId, organizationId }, data: { needsReview: true, needsReviewReason } });
+    }
+  });
 }

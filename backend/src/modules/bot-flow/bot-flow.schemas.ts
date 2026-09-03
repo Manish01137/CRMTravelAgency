@@ -31,14 +31,22 @@ const confirmOptionSchema = z.object({
   nextStepId: z.string().uuid().nullable(),
 });
 
+// SEND_PACKAGE's packageId, AI_OPEN's instructions — one shared shape rather
+// than a discriminated union, since each type only ever reads its own key.
+const stepConfigSchema = z.object({
+  packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  instructions: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
+});
+
 export const upsertStepSchema = z
   .object({
-    type: z.enum(['COLLECT', 'CONFIRM', 'CLOSING']),
+    type: z.enum(['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'HANDOFF', 'SEND_PACKAGE', 'AI_OPEN']),
     order: z.coerce.number().int().min(0).max(1000).default(0),
     question: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
     leadField: z.preprocess(emptyToUndefined, z.enum(LEAD_FIELDS).optional()),
     options: z.array(confirmOptionSchema).max(10).optional(),
     nextStepId: z.string().uuid().nullable().optional(),
+    config: stepConfigSchema.default({}),
     canvasX: z.coerce.number().int().optional(),
     canvasY: z.coerce.number().int().optional(),
   })
@@ -49,12 +57,13 @@ export const upsertStepSchema = z
     if (v.type === 'CONFIRM' && (!v.options || v.options.length < 2)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'A CONFIRM step needs at least 2 options', path: ['options'] });
     }
-    if ((v.type === 'COLLECT' || v.type === 'CONFIRM') && !v.question) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Question text is required', path: ['question'] });
+    if (['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'AI_OPEN'].includes(v.type) && !v.question) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Message text is required', path: ['question'] });
     }
-    if (v.type === 'CLOSING' && !v.question) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Closing message is required', path: ['question'] });
-    }
+    // config.packageId (SEND_PACKAGE) / config.instructions (AI_OPEN) are
+    // deliberately NOT required here — a step can be added blank from the
+    // toolbar and configured afterward, same as every other type. The engine
+    // degrades gracefully when either is unset (see bot-flow.engine.ts).
   });
 
 export const assignFlowSchema = z.object({
@@ -64,7 +73,15 @@ export const assignFlowSchema = z.object({
 
 export const unassignParam = z.object({ channel: z.enum(['WHATSAPP', 'INSTAGRAM']) });
 
+// Ready-made starter flows — see bot-flow.templates.ts for the actual step definitions.
+export const TEMPLATE_KEYS = ['travel_enquiry', 'booking_followup'] as const;
+export const createFromTemplateSchema = z.object({
+  templateKey: z.enum(TEMPLATE_KEYS),
+});
+
 export type CreateFlowInput = z.infer<typeof createFlowSchema>;
 export type UpdateFlowInput = z.infer<typeof updateFlowSchema>;
+export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
+export type CreateFromTemplateInput = z.infer<typeof createFromTemplateSchema>;
 export type UpsertStepInput = z.infer<typeof upsertStepSchema>;
 export type AssignFlowInput = z.infer<typeof assignFlowSchema>;

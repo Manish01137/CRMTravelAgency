@@ -1,6 +1,16 @@
 import { withTenant } from '../../lib/prisma';
 import { BadRequest, NotFound } from '../../lib/errors';
-import type { AssignFlowInput, CreateFlowInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
+import { BOT_FLOW_TEMPLATES, instantiateTemplate } from './bot-flow.templates';
+import type { AssignFlowInput, CreateFlowInput, CreateFromTemplateInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
+
+/** Static metadata only — the actual step definitions live in bot-flow.templates.ts. */
+export function listTemplates() {
+  return BOT_FLOW_TEMPLATES.map((t) => ({ key: t.key, name: t.name, description: t.description, stepCount: t.steps.length }));
+}
+
+export async function createFlowFromTemplate(organizationId: string, input: CreateFromTemplateInput) {
+  return withTenant(organizationId, (tx) => instantiateTemplate(tx, organizationId, input.templateKey));
+}
 
 export async function listFlows(organizationId: string) {
   return withTenant(organizationId, (tx) =>
@@ -68,6 +78,7 @@ export async function createStep(organizationId: string, flowId: string, input: 
         leadField: input.leadField,
         options: input.options,
         nextStepId: input.nextStepId,
+        config: input.config,
         canvasX: input.canvasX,
         canvasY: input.canvasY,
       },
@@ -88,6 +99,7 @@ export async function updateStep(organizationId: string, flowId: string, stepId:
         leadField: input.leadField,
         options: input.options,
         nextStepId: input.nextStepId,
+        config: input.config,
         canvasX: input.canvasX,
         canvasY: input.canvasY,
       },

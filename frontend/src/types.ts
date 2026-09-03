@@ -787,7 +787,7 @@ export interface CallLogEntry {
 
 // --- Phase 4: Automation & AI -------------------------------------------------
 
-export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING';
+export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN';
 export type BotFlowSessionStatus = 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
 export type FollowUpStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
 
@@ -799,6 +799,13 @@ export interface BotFlowConfirmOption {
   nextStepId: string | null;
 }
 
+export interface BotFlowStepConfig {
+  /** SEND_PACKAGE only. */
+  packageId?: string;
+  /** AI_OPEN only — guidance for how the AI should handle this part of the conversation. */
+  instructions?: string;
+}
+
 export interface BotFlowStep {
   id: string;
   flowId: string;
@@ -808,6 +815,7 @@ export interface BotFlowStep {
   leadField: BotFlowLeadField | null;
   options: BotFlowConfirmOption[] | null;
   nextStepId: string | null;
+  config: BotFlowStepConfig;
   canvasX: number | null;
   canvasY: number | null;
 }
@@ -833,6 +841,15 @@ export interface BotFlowAssignment {
   channel: ConversationChannel;
   flowId: string;
   flow: { id: string; name: string; isActive: boolean };
+}
+
+export type BotFlowTemplateKey = 'travel_enquiry' | 'booking_followup';
+
+export interface BotFlowTemplate {
+  key: BotFlowTemplateKey;
+  name: string;
+  description: string;
+  stepCount: number;
 }
 
 export interface AiAgentSettings {

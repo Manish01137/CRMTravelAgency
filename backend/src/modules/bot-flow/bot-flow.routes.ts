@@ -7,6 +7,7 @@ import * as controller from './bot-flow.controller';
 import {
   assignFlowSchema,
   createFlowSchema,
+  createFromTemplateSchema,
   flowIdParam,
   stepIdParam,
   unassignParam,
@@ -19,6 +20,8 @@ router.use(requireAuth);
 
 router.get('/', asyncHandler(controller.list));
 router.post('/', requireRole('ADMIN'), validate({ body: createFlowSchema }), asyncHandler(controller.create));
+router.get('/templates', asyncHandler(controller.templates));
+router.post('/from-template', requireRole('ADMIN'), validate({ body: createFromTemplateSchema }), asyncHandler(controller.createFromTemplate));
 router.get('/:id', validate({ params: flowIdParam }), asyncHandler(controller.get));
 router.patch('/:id', requireRole('ADMIN'), validate({ params: flowIdParam, body: updateFlowSchema }), asyncHandler(controller.update));
 router.delete('/:id', requireRole('ADMIN'), validate({ params: flowIdParam }), asyncHandler(controller.remove));

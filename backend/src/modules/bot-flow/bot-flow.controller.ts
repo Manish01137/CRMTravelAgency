@@ -1,9 +1,18 @@
 import type { Request, Response } from 'express';
 import * as service from './bot-flow.service';
-import type { AssignFlowInput, CreateFlowInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
+import type { AssignFlowInput, CreateFlowInput, CreateFromTemplateInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
 
 export async function list(req: Request, res: Response): Promise<void> {
   res.json(await service.listFlows(req.auth!.organizationId));
+}
+
+export async function templates(_req: Request, res: Response): Promise<void> {
+  res.json(service.listTemplates());
+}
+
+export async function createFromTemplate(req: Request, res: Response): Promise<void> {
+  const body = req.body as CreateFromTemplateInput;
+  res.status(201).json(await service.createFlowFromTemplate(req.auth!.organizationId, body));
 }
 
 export async function get(req: Request, res: Response): Promise<void> {
