@@ -197,6 +197,9 @@ export function ItinerariesPage() {
         users={usersQuery.data ?? []}
         packages={packagesQuery.data ?? []}
         onSaved={(saved) => navigate(`/bookings/${saved.id}/itinerary`)}
+        title="New itinerary"
+        description="Choose a package to prefill the trip — or leave it blank — then design the day-by-day plan next."
+        submitLabel="Continue to itinerary"
       />
     </div>
   );

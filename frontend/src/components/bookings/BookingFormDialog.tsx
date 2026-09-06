@@ -56,11 +56,13 @@ function BookingForm({
   users,
   packages,
   onDone,
+  submitLabel,
 }: {
   booking: Booking | null;
   users: User[];
   packages: TravelPackage[];
   onDone: (saved: Booking) => void;
+  submitLabel?: string;
 }) {
   const queryClient = useQueryClient();
 
@@ -304,7 +306,7 @@ function BookingForm({
         </DialogClose>
         <Button type="submit" disabled={mutation.isPending}>
           {mutation.isPending && <Spinner />}
-          {booking ? 'Save changes' : 'Create booking'}
+          {submitLabel ?? (booking ? 'Save changes' : 'Create booking')}
         </Button>
       </DialogFooter>
     </form>
@@ -318,6 +320,9 @@ export function BookingFormDialog({
   users,
   packages,
   onSaved,
+  title,
+  description,
+  submitLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -325,14 +330,18 @@ export function BookingFormDialog({
   users: User[];
   packages: TravelPackage[];
   onSaved?: (saved: Booking) => void;
+  /** Override the dialog's title/description — e.g. Itineraries' "New itinerary" entry point reuses this same form. */
+  title?: string;
+  description?: string;
+  submitLabel?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{booking ? 'Edit booking' : 'New booking'}</DialogTitle>
+          <DialogTitle>{title ?? (booking ? 'Edit booking' : 'New booking')}</DialogTitle>
           <DialogDescription>
-            {booking ? 'Update this booking.' : 'Create a trip booking for a customer.'}
+            {description ?? (booking ? 'Update this booking.' : 'Create a trip booking for a customer.')}
           </DialogDescription>
         </DialogHeader>
         {open && (
@@ -341,6 +350,7 @@ export function BookingFormDialog({
             booking={booking}
             users={users}
             packages={packages}
+            submitLabel={submitLabel}
             onDone={(saved) => {
               onOpenChange(false);
               onSaved?.(saved);
