@@ -85,18 +85,63 @@ export interface WhatsAppSignupResult {
   phoneNumberId: string;
 }
 
+// How long to wait, after FB.login()'s callback fires, for the
+// WA_EMBEDDED_SIGNUP FINISH message to still arrive — Meta doesn't guarantee
+// it arrives before, with, or even close in time to the callback. Generous
+// on purpose (the user may still be clicking through WhatsApp-specific steps
+// in the popup); just a safety net against leaking the listener forever if
+// they abandon the popup instead of cancelling it.
+const EMBEDDED_SIGNUP_TIMEOUT_MS = 45_000;
+
 /**
  * Launches the WhatsApp Embedded Signup popup. Resolves with the values our
  * backend needs to complete the connection, or rejects if the user closes the
- * popup or the flow errors — the caller shows "Connection failed, try again".
+ * popup, the flow times out, or an error occurs — the caller shows
+ * "Connection failed, try again".
+ *
+ * IMPORTANT — two independent completion signals, not one: FB.login()'s
+ * callback fires with `authResponse.code` when the OAuth handshake finishes,
+ * and the WA_EMBEDDED_SIGNUP FINISH `message` event carries `waba_id`/
+ * `phone_number_id` separately, from the popup's embedded signup UI. These
+ * are NOT guaranteed to arrive in any particular order or in sync — Meta
+ * documents them as independent signals. (We previously removed the message
+ * listener the instant FB.login()'s callback fired, which silently dropped
+ * a FINISH event that arrived even a moment later — that was the actual bug
+ * behind "popup completes, backend never gets called.") Both write into
+ * `collected` below; `checkComplete()` runs after each write and only
+ * resolves once all three pieces are present, whichever source finishes last.
  */
 export async function launchWhatsAppEmbeddedSignup(appId: string, configId: string): Promise<WhatsAppSignupResult> {
   await loadFacebookSdk(appId);
 
   return new Promise((resolve, reject) => {
-    let wabaId: string | undefined;
-    let phoneNumberId: string | undefined;
+    const collected: { code?: string; wabaId?: string; phoneNumberId?: string } = {};
     let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    // Single teardown path for every exit (success, cancel, missing code,
+    // timeout) — removes the message listener and cancels the timeout.
+    const cleanup = () => {
+      console.log('[metaSignup] cleanup() — removing "message" listener at', Date.now());
+      console.trace('[metaSignup] stack trace for removeEventListener("message")');
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    /** Runs after either source writes its piece. Resolves once code + wabaId + phoneNumberId are ALL present. */
+    const checkComplete = () => {
+      console.log('[metaSignup] checkComplete() — current collected state:', { ...collected });
+      if (settled) return;
+      const { code, wabaId, phoneNumberId } = collected;
+      if (!code || !wabaId || !phoneNumberId) return;
+      settled = true;
+      console.log('[metaSignup] ALL THREE pieces present (code + wabaId + phoneNumberId) — signup complete, resolving so the caller can call our backend:', { code, wabaId, phoneNumberId });
+      cleanup();
+      resolve({ code, wabaId, phoneNumberId });
+    };
 
     const onMessage = (event: MessageEvent) => {
       // TEMP DEBUG: unconditional — fires for EVERY message event on window,
@@ -126,18 +171,15 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
         }
         console.log('[metaSignup] WA_EMBEDDED_SIGNUP event matched — full payload:', JSON.stringify(data, null, 2));
         if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
-          wabaId = data.data?.waba_id;
-          phoneNumberId = data.data?.phone_number_id;
-          console.log('[metaSignup] WA_EMBEDDED_SIGNUP', data.event, '— extracted wabaId:', wabaId, '| phoneNumberId:', phoneNumberId);
+          collected.wabaId = data.data?.waba_id;
+          collected.phoneNumberId = data.data?.phone_number_id;
+          console.log('[metaSignup] WA_EMBEDDED_SIGNUP', data.event, '— extracted wabaId:', collected.wabaId, '| phoneNumberId:', collected.phoneNumberId);
+          checkComplete();
         }
         if (data.event === 'CANCEL' && !settled) {
           console.log('[metaSignup] WA_EMBEDDED_SIGNUP CANCEL received — rejecting');
           settled = true;
-          console.log('[metaSignup] removing "message" listener (CANCEL path) at', Date.now());
-          console.trace('[metaSignup] stack trace for removeEventListener("message") — CANCEL path');
-          window.removeEventListener('message', onMessage);
-          console.log('[metaSignup] removing "beforeunload" probe listener (CANCEL path) at', Date.now());
-          window.removeEventListener('beforeunload', onBeforeUnload);
+          cleanup();
           reject(new Error('WhatsApp connection was cancelled'));
         }
       } catch (err) {
@@ -154,16 +196,13 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     window.addEventListener('message', onMessage);
     console.log('[metaSignup] "message" listener REGISTERED at Date.now() =', Date.now(), '(', new Date().toISOString(), ') — about to call FB.login() next');
 
-    // TEMP DEBUG: diagnostic-only listener (not part of the real flow) — if
-    // the page itself navigates/unloads while this signup is in progress
-    // (as opposed to just the Meta popup closing), that would explain why no
-    // postMessage from the popup is ever received. Torn down alongside the
-    // "message" listener below.
-    const onBeforeUnload = () => {
-      console.log('[metaSignup] window "beforeunload" fired WHILE the WhatsApp signup flow was still in progress — this page (not just the popup) is navigating away or closing');
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    console.log('[metaSignup] "beforeunload" probe listener attached at', new Date().toISOString());
+    timeoutId = setTimeout(() => {
+      if (settled) return;
+      console.error('[metaSignup] TIMED OUT after', EMBEDDED_SIGNUP_TIMEOUT_MS, 'ms waiting for code + wabaId + phoneNumberId — current collected state:', { ...collected });
+      settled = true;
+      cleanup();
+      reject(new Error('WhatsApp connection did not complete — please try again'));
+    }, EMBEDDED_SIGNUP_TIMEOUT_MS);
 
     const loginConfig = {
       config_id: configId,
@@ -178,25 +217,26 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
       (response) => {
         console.log('[metaSignup] FB.login() callback FIRED at Date.now() =', Date.now());
         console.log('[metaSignup] FB.login() callback — full raw response:', JSON.stringify(response, null, 2));
-        console.log('[metaSignup] removing "message" listener (FB.login callback path) at', Date.now());
-        console.trace('[metaSignup] stack trace for removeEventListener("message") — FB.login callback path');
-        window.removeEventListener('message', onMessage);
-        console.log('[metaSignup] removing "beforeunload" probe listener (FB.login callback path) at', Date.now());
-        window.removeEventListener('beforeunload', onBeforeUnload);
+        // Deliberately NOT removing the message listener here — the
+        // WA_EMBEDDED_SIGNUP FINISH event carrying wabaId/phoneNumberId is
+        // not guaranteed to have arrived yet. It stays alive until
+        // checkComplete() resolves it, CANCEL rejects it, or the timeout
+        // above fires. See the function doc comment.
         if (settled) {
-          console.log('[metaSignup] FB.login() callback fired but the flow was already settled (e.g. cancelled) — ignoring');
+          console.log('[metaSignup] FB.login() callback fired but the flow was already settled (e.g. cancelled or timed out) — ignoring');
           return;
         }
-        settled = true;
         const code = response.authResponse?.code;
-        console.log('[metaSignup] extracted code:', code, '| wabaId (from message events):', wabaId, '| phoneNumberId (from message events):', phoneNumberId);
-        if (!code || !wabaId || !phoneNumberId) {
-          console.error('[metaSignup] WhatsApp signup incomplete — missing code and/or wabaId and/or phoneNumberId:', { code, wabaId, phoneNumberId });
+        collected.code = code;
+        console.log('[metaSignup] extracted code from FB.login() callback:', code, '| current collected state:', { ...collected });
+        if (!code) {
+          console.error('[metaSignup] FB.login() callback fired without an authResponse.code — treating as a failed handshake:', response);
+          settled = true;
+          cleanup();
           reject(new Error('WhatsApp connection did not complete — please try again'));
           return;
         }
-        console.log('[metaSignup] WhatsApp signup complete — resolving with:', { code, wabaId, phoneNumberId });
-        resolve({ code, wabaId, phoneNumberId });
+        checkComplete();
       },
       loginConfig,
     );
