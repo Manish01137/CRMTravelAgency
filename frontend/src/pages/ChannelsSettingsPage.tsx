@@ -203,10 +203,21 @@ export function ChannelsSettingsPage() {
     setConnectingChannel('WHATSAPP');
     try {
       const result = await launchWhatsAppEmbeddedSignup(cfg.whatsappAppId, cfg.whatsappConfigId);
-      await api.post('/channels/whatsapp/connect', result);
+      // TEMP DEBUG: this is the actual call to our backend — if this log
+      // never appears, the flow died inside launchWhatsAppEmbeddedSignup
+      // (see metaSignup.ts logs) before ever getting here.
+      console.log('[ChannelsSettingsPage] calling POST /channels/whatsapp/connect with payload:', result);
+      const response = await api.post('/channels/whatsapp/connect', result);
+      console.log('[ChannelsSettingsPage] POST /channels/whatsapp/connect succeeded — response body:', response);
       invalidate();
       toast.success('WhatsApp connected');
     } catch (err) {
+      // Log the FULL error object (status/code/details for ApiError, or the
+      // raw error otherwise) — not just the message string used for the toast.
+      console.error('[ChannelsSettingsPage] WhatsApp connect flow failed — full error:', err);
+      if (err instanceof ApiError) {
+        console.error('[ChannelsSettingsPage] ApiError details — status:', err.status, '| code:', err.code, '| details:', err.details);
+      }
       toast.error(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Connection failed, try again');
       invalidate();
     } finally {

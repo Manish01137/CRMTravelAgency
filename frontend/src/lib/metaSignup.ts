@@ -99,43 +99,69 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     let settled = false;
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') return;
+      // TEMP DEBUG: log every message event on window, regardless of origin
+      // or shape, so we can see what's actually arriving vs. what we filter
+      // for below.
+      console.log('[metaSignup] window "message" event received — origin:', event.origin, '| data:', event.data);
+
+      if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') {
+        console.log('[metaSignup] ignoring message — origin is not facebook.com/web.facebook.com:', event.origin);
+        return;
+      }
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+        if (data?.type !== 'WA_EMBEDDED_SIGNUP') {
+          console.log('[metaSignup] ignoring message from facebook.com — not a WA_EMBEDDED_SIGNUP event, type was:', data?.type);
+          return;
+        }
+        console.log('[metaSignup] WA_EMBEDDED_SIGNUP event matched — full payload:', JSON.stringify(data, null, 2));
         if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
           wabaId = data.data?.waba_id;
           phoneNumberId = data.data?.phone_number_id;
+          console.log('[metaSignup] WA_EMBEDDED_SIGNUP', data.event, '— extracted wabaId:', wabaId, '| phoneNumberId:', phoneNumberId);
         }
         if (data.event === 'CANCEL' && !settled) {
+          console.log('[metaSignup] WA_EMBEDDED_SIGNUP CANCEL received — rejecting');
           settled = true;
           window.removeEventListener('message', onMessage);
           reject(new Error('WhatsApp connection was cancelled'));
         }
-      } catch {
-        // Not our message — ignore.
+      } catch (err) {
+        // Not our message — ignore. (Logged, not silently swallowed, in case
+        // a genuine WA_EMBEDDED_SIGNUP payload is failing to parse.)
+        console.warn('[metaSignup] failed to JSON.parse a message event from facebook.com — ignoring it:', err, '| raw data:', event.data);
       }
     };
     window.addEventListener('message', onMessage);
 
+    const loginConfig = {
+      config_id: configId,
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: { setup: {}, featureType: 'whatsapp_embedded_signup', sessionInfoVersion: '3' },
+    };
+    console.log('[metaSignup] calling FB.login() with config:', JSON.stringify(loginConfig, null, 2));
+
     window.FB!.login(
       (response) => {
+        console.log('[metaSignup] FB.login() callback fired — full raw response:', JSON.stringify(response, null, 2));
         window.removeEventListener('message', onMessage);
-        if (settled) return;
+        if (settled) {
+          console.log('[metaSignup] FB.login() callback fired but the flow was already settled (e.g. cancelled) — ignoring');
+          return;
+        }
         settled = true;
         const code = response.authResponse?.code;
+        console.log('[metaSignup] extracted code:', code, '| wabaId (from message events):', wabaId, '| phoneNumberId (from message events):', phoneNumberId);
         if (!code || !wabaId || !phoneNumberId) {
+          console.error('[metaSignup] WhatsApp signup incomplete — missing code and/or wabaId and/or phoneNumberId:', { code, wabaId, phoneNumberId });
           reject(new Error('WhatsApp connection did not complete — please try again'));
           return;
         }
+        console.log('[metaSignup] WhatsApp signup complete — resolving with:', { code, wabaId, phoneNumberId });
         resolve({ code, wabaId, phoneNumberId });
       },
-      {
-        config_id: configId,
-        response_type: 'code',
-        override_default_response_type: true,
-        extras: { setup: {}, featureType: 'whatsapp_embedded_signup', sessionInfoVersion: '3' },
-      },
+      loginConfig,
     );
   });
 }
