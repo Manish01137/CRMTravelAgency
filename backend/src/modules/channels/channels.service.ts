@@ -76,13 +76,35 @@ const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
  * ("Joinetraa") with its own App ID — separate from `metaAppId`, which
  * Instagram/Facebook Login uses.
  */
+// Logged at most once per server process — getPlatformConfig() is hit on
+// every Channels Settings page load, and this warning would otherwise spam
+// the logs on every single request.
+let warnedMissingWhatsAppAppId = false;
+
 export async function getPlatformConfig() {
+  const whatsappAppId = env.META_WHATSAPP_APP_ID ?? env.META_APP_ID ?? null;
+  if (whatsappAppId && !env.META_WHATSAPP_APP_ID && !warnedMissingWhatsAppAppId) {
+    warnedMissingWhatsAppAppId = true;
+    // No dedicated WhatsApp app configured — silently reusing META_APP_ID
+    // (the Instagram/Facebook Login app) for WhatsApp Embedded Signup's
+    // FB.init() too. That's fine ONLY if that app also has "Login with the
+    // JavaScript SDK" enabled in Meta's dashboard; if it doesn't (e.g. you
+    // created a separate WhatsApp app for this, like most setups do),
+    // FB.login() fails with "JSSDK Option is Not Toggled". Fix: set
+    // META_WHATSAPP_APP_ID (and META_WHATSAPP_APP_SECRET) to your dedicated
+    // WhatsApp app's credentials.
+    console.warn(
+      '[channels] META_WHATSAPP_APP_ID is not set — WhatsApp Embedded Signup is falling back to META_APP_ID. ' +
+        'If that app does not have "Login with the JavaScript SDK" enabled, connecting WhatsApp will fail with "JSSDK Option is Not Toggled".',
+    );
+  }
+
   return {
     whatsappEnabled: isWhatsAppConfigured() && !!env.META_WHATSAPP_CONFIG_ID,
     instagramEnabled: isInstagramConfigured(),
     emailEnabled: true,
     metaAppId: env.META_APP_ID ?? null,
-    whatsappAppId: env.META_WHATSAPP_APP_ID ?? env.META_APP_ID ?? null,
+    whatsappAppId,
     metaGraphVersion: env.META_GRAPH_VERSION,
     whatsappConfigId: env.META_WHATSAPP_CONFIG_ID ?? null,
   };

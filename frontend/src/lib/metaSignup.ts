@@ -6,6 +6,18 @@
  * and granting permission directly to Meta; we only ever receive the
  * resulting authorization `code`, exchanged server-side for a token (see
  * /api/channels/whatsapp/connect and /instagram/connect).
+ *
+ * IMPORTANT — two separate Meta apps: WhatsApp Embedded Signup below runs
+ * through the Facebook JS SDK (`FB.init` / `FB.login`), which can only be
+ * configured with ONE app id per page load, and that app id MUST have
+ * "Login with the JavaScript SDK" enabled in Meta's dashboard, or FB.login()
+ * fails with "JSSDK Option is Not Toggled". Instagram's connect flow (below,
+ * `buildInstagramAuthUrl`) does NOT use the JS SDK at all — it's a plain
+ * full-page OAuth redirect — so it never calls FB.init and can safely use a
+ * different app id without conflicting with WhatsApp's. Both app ids come
+ * from the backend's /channels/config response (`whatsappAppId` vs
+ * `metaAppId`), which in turn read from separate env vars
+ * (META_WHATSAPP_APP_ID vs META_APP_ID) — see channels.service.ts.
  */
 
 declare global {
@@ -21,14 +33,36 @@ declare global {
   }
 }
 
-let sdkLoadPromise: Promise<void> | null = null;
+let sdkScriptPromise: Promise<void> | null = null;
+// Which app id FB.init() last ran with. The FB JS SDK is a single global —
+// only one app id can be "active" at a time — so if something ever calls
+// loadFacebookSdk with a DIFFERENT app id than what's currently active, we
+// need to re-run FB.init for the new one rather than silently keeping
+// whichever app id happened to load first. Not exercised today (only
+// WhatsApp calls this), but cheap to guard against.
+let initializedAppId: string | null = null;
 
-/** Loads the Facebook JS SDK once and calls FB.init. Safe to call multiple times. */
+/**
+ * Loads the Facebook JS SDK (once) and calls FB.init for the given app id.
+ * Safe to call multiple times, including with a different app id later —
+ * re-initializes rather than reusing whichever app id loaded first.
+ */
 function loadFacebookSdk(appId: string): Promise<void> {
-  if (sdkLoadPromise) return sdkLoadPromise;
-  sdkLoadPromise = new Promise((resolve) => {
+  const initForAppId = () => {
+    if (initializedAppId === appId) return;
+    // Check this log's appId against the Network tab's sdk.js / oauth
+    // requests (see the "how to verify" notes) to confirm the right Meta
+    // app is actually being used for this button.
+    console.log('[metaSignup] FB.init() using appId:', appId);
+    window.FB!.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' });
+    initializedAppId = appId;
+  };
+
+  if (sdkScriptPromise) return sdkScriptPromise.then(initForAppId);
+
+  sdkScriptPromise = new Promise((resolve) => {
     window.fbAsyncInit = () => {
-      window.FB!.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' });
+      initForAppId();
       resolve();
     };
     if (document.getElementById('facebook-jssdk')) {
@@ -42,7 +76,7 @@ function loadFacebookSdk(appId: string): Promise<void> {
     script.defer = true;
     document.body.appendChild(script);
   });
-  return sdkLoadPromise;
+  return sdkScriptPromise;
 }
 
 export interface WhatsAppSignupResult {
