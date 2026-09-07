@@ -133,7 +133,10 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
         if (data.event === 'CANCEL' && !settled) {
           console.log('[metaSignup] WA_EMBEDDED_SIGNUP CANCEL received — rejecting');
           settled = true;
+          console.log('[metaSignup] removing "message" listener (CANCEL path)');
           window.removeEventListener('message', onMessage);
+          console.log('[metaSignup] removing "beforeunload" probe listener (CANCEL path)');
+          window.removeEventListener('beforeunload', onBeforeUnload);
           reject(new Error('WhatsApp connection was cancelled'));
         }
       } catch (err) {
@@ -142,7 +145,24 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
         console.warn('[metaSignup] failed to JSON.parse a message event from facebook.com — ignoring it:', err, '| raw data:', event.data);
       }
     };
+    // TEMP DEBUG: fires the moment the listener is actually registered, so
+    // we can confirm from the console log ORDER that this runs BEFORE
+    // FB.login() is called below (registration is synchronous — there is no
+    // `await` between this line and the FB.login() call further down, so it
+    // should always log first).
     window.addEventListener('message', onMessage);
+    console.log('[metaSignup] "message" listener attached to window at', new Date().toISOString(), '— about to call FB.login() next');
+
+    // TEMP DEBUG: diagnostic-only listener (not part of the real flow) — if
+    // the page itself navigates/unloads while this signup is in progress
+    // (as opposed to just the Meta popup closing), that would explain why no
+    // postMessage from the popup is ever received. Torn down alongside the
+    // "message" listener below.
+    const onBeforeUnload = () => {
+      console.log('[metaSignup] window "beforeunload" fired WHILE the WhatsApp signup flow was still in progress — this page (not just the popup) is navigating away or closing');
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    console.log('[metaSignup] "beforeunload" probe listener attached at', new Date().toISOString());
 
     const loginConfig = {
       config_id: configId,
@@ -155,7 +175,10 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     window.FB!.login(
       (response) => {
         console.log('[metaSignup] FB.login() callback fired — full raw response:', JSON.stringify(response, null, 2));
+        console.log('[metaSignup] removing "message" listener (FB.login callback path)');
         window.removeEventListener('message', onMessage);
+        console.log('[metaSignup] removing "beforeunload" probe listener (FB.login callback path)');
+        window.removeEventListener('beforeunload', onBeforeUnload);
         if (settled) {
           console.log('[metaSignup] FB.login() callback fired but the flow was already settled (e.g. cancelled) — ignoring');
           return;
