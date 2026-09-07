@@ -133,9 +133,10 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
         if (data.event === 'CANCEL' && !settled) {
           console.log('[metaSignup] WA_EMBEDDED_SIGNUP CANCEL received — rejecting');
           settled = true;
-          console.log('[metaSignup] removing "message" listener (CANCEL path)');
+          console.log('[metaSignup] removing "message" listener (CANCEL path) at', Date.now());
+          console.trace('[metaSignup] stack trace for removeEventListener("message") — CANCEL path');
           window.removeEventListener('message', onMessage);
-          console.log('[metaSignup] removing "beforeunload" probe listener (CANCEL path)');
+          console.log('[metaSignup] removing "beforeunload" probe listener (CANCEL path) at', Date.now());
           window.removeEventListener('beforeunload', onBeforeUnload);
           reject(new Error('WhatsApp connection was cancelled'));
         }
@@ -151,7 +152,7 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     // `await` between this line and the FB.login() call further down, so it
     // should always log first).
     window.addEventListener('message', onMessage);
-    console.log('[metaSignup] "message" listener attached to window at', new Date().toISOString(), '— about to call FB.login() next');
+    console.log('[metaSignup] "message" listener REGISTERED at Date.now() =', Date.now(), '(', new Date().toISOString(), ') — about to call FB.login() next');
 
     // TEMP DEBUG: diagnostic-only listener (not part of the real flow) — if
     // the page itself navigates/unloads while this signup is in progress
@@ -171,13 +172,16 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
       extras: { setup: {}, featureType: 'whatsapp_embedded_signup', sessionInfoVersion: '3' },
     };
     console.log('[metaSignup] calling FB.login() with config:', JSON.stringify(loginConfig, null, 2));
+    console.log('[metaSignup] FB.login() CALLED at Date.now() =', Date.now());
 
     window.FB!.login(
       (response) => {
-        console.log('[metaSignup] FB.login() callback fired — full raw response:', JSON.stringify(response, null, 2));
-        console.log('[metaSignup] removing "message" listener (FB.login callback path)');
+        console.log('[metaSignup] FB.login() callback FIRED at Date.now() =', Date.now());
+        console.log('[metaSignup] FB.login() callback — full raw response:', JSON.stringify(response, null, 2));
+        console.log('[metaSignup] removing "message" listener (FB.login callback path) at', Date.now());
+        console.trace('[metaSignup] stack trace for removeEventListener("message") — FB.login callback path');
         window.removeEventListener('message', onMessage);
-        console.log('[metaSignup] removing "beforeunload" probe listener (FB.login callback path)');
+        console.log('[metaSignup] removing "beforeunload" probe listener (FB.login callback path) at', Date.now());
         window.removeEventListener('beforeunload', onBeforeUnload);
         if (settled) {
           console.log('[metaSignup] FB.login() callback fired but the flow was already settled (e.g. cancelled) — ignoring');
