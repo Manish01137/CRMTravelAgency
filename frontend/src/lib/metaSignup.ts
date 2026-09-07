@@ -85,13 +85,14 @@ export interface WhatsAppSignupResult {
   phoneNumberId: string;
 }
 
-// How long to wait, after FB.login()'s callback fires, for the
-// WA_EMBEDDED_SIGNUP FINISH message to still arrive — Meta doesn't guarantee
-// it arrives before, with, or even close in time to the callback. Generous
-// on purpose (the user may still be clicking through WhatsApp-specific steps
-// in the popup); just a safety net against leaking the listener forever if
-// they abandon the popup instead of cancelling it.
-const EMBEDDED_SIGNUP_TIMEOUT_MS = 45_000;
+// How long to wait for the WHOLE signup (FB.login()'s callback AND the
+// WA_EMBEDDED_SIGNUP FINISH message — Meta doesn't guarantee either arrives
+// before, with, or even close in time to the other). A real run measured via
+// [metaSignup] timestamps took ~85s end to end (login + business/WABA
+// selection + phone number step, which can include an SMS/voice OTP wait) —
+// 45s cut that off mid-flow. 3 minutes gives real, human-paced completion
+// room while still being a safety net against a genuinely abandoned popup.
+const EMBEDDED_SIGNUP_TIMEOUT_MS = 180_000;
 
 /**
  * Launches the WhatsApp Embedded Signup popup. Resolves with the values our
