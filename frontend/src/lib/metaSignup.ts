@@ -165,6 +165,11 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
       }
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        // Requested check: confirms the parse-then-read order is already
+        // correct here (event.data.type is never read before this parse) —
+        // shows exactly what shape we're dealing with, win or lose, before
+        // the type check below decides whether to keep going.
+        console.log('[metaSignup] parsed message data (before WA_EMBEDDED_SIGNUP type check):', data, '| was event.data originally a string?', typeof event.data === 'string');
         if (data?.type !== 'WA_EMBEDDED_SIGNUP') {
           console.log('[metaSignup] ignoring message from facebook.com — not a WA_EMBEDDED_SIGNUP event, type was:', data?.type);
           return;
