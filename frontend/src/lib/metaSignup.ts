@@ -99,10 +99,20 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     let settled = false;
 
     const onMessage = (event: MessageEvent) => {
-      // TEMP DEBUG: log every message event on window, regardless of origin
-      // or shape, so we can see what's actually arriving vs. what we filter
-      // for below.
-      console.log('[metaSignup] window "message" event received — origin:', event.origin, '| data:', event.data);
+      // TEMP DEBUG: unconditional — fires for EVERY message event on window,
+      // before any origin filtering. This is what tells us the RAW origin
+      // Meta's WA_EMBEDDED_SIGNUP event actually arrives on, vs. what the
+      // filter below currently expects (https://www.facebook.com /
+      // https://web.facebook.com) — do not move this below the origin check.
+      let rawEventData: string;
+      try {
+        rawEventData = JSON.stringify(event.data);
+      } catch (err) {
+        // event.data wasn't JSON-serializable (e.g. some unrelated postMessage
+        // carrying a non-plain object) — fall back rather than losing the log.
+        rawEventData = `<unserializable: ${String(err)}> ${String(event.data)}`;
+      }
+      console.log('[metaSignup] RAW window "message" event — event.origin:', event.origin, '| JSON.stringify(event.data):', rawEventData);
 
       if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') {
         console.log('[metaSignup] ignoring message — origin is not facebook.com/web.facebook.com:', event.origin);
