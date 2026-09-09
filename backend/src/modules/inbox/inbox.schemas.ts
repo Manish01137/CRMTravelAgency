@@ -2,12 +2,20 @@ import { z } from 'zod';
 
 export const conversationChannelParam = z.enum(['WHATSAPP', 'INSTAGRAM']);
 
+// Inbox filter chips: All / Unread (unreadCount > 0) / Favorites (starred).
+// "Group" isn't offered here — see inbox.service.ts's listConversations doc
+// comment for why.
+export const conversationFilterParam = z.enum(['all', 'unread', 'favorites']).default('all');
+
 export const listConversationsQuerySchema = z.object({
   channel: conversationChannelParam,
   search: z.string().trim().max(200).optional(),
+  filter: conversationFilterParam.optional(),
 });
 
 export const conversationIdParam = z.object({ id: z.string().uuid('Invalid conversation id') });
+
+export const setFavoriteSchema = z.object({ isFavorite: z.boolean() });
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 
@@ -32,3 +40,4 @@ export const createTemplateSchema = z.object({
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
+export type SetFavoriteInput = z.infer<typeof setFavoriteSchema>;

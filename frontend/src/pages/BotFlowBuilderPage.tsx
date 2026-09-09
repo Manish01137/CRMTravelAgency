@@ -24,6 +24,7 @@ import {
   ChevronDown,
   HelpCircle,
   Headset,
+  LayoutList,
   ListChecks,
   Megaphone,
   MessageSquareText,
@@ -74,6 +75,7 @@ const STEP_STYLES: Record<BotFlowStepType, { icon: typeof MessageSquareText; lab
   HANDOFF: { icon: Headset, label: 'Handoff', accent: 'border-rose-400', bg: 'bg-rose-50' },
   SEND_PACKAGE: { icon: PackageIcon, label: 'Send package', accent: 'border-teal-400', bg: 'bg-teal-50' },
   AI_OPEN: { icon: Sparkles, label: 'AI conversation', accent: 'border-fuchsia-400', bg: 'bg-fuchsia-50' },
+  CAROUSEL: { icon: LayoutList, label: 'Carousel', accent: 'border-cyan-400', bg: 'bg-cyan-50' },
 };
 
 /** Step types that auto-chain to the next step without waiting for a reply — shown as a hint on the node. */
@@ -87,6 +89,7 @@ const ADD_STEP_MENU: { type: BotFlowStepType; blurb: string }[] = [
   { type: 'CONFIRM', blurb: 'Yes/no or multiple-choice, branches by answer' },
   { type: 'MESSAGE', blurb: 'Send info, no reply needed — continues right away' },
   { type: 'SEND_PACKAGE', blurb: 'Share a package, then continue right away' },
+  { type: 'CAROUSEL', blurb: 'Show up to 10 packages as a tappable list (WhatsApp only)' },
   { type: 'AI_OPEN', blurb: 'Let the AI Agent converse freely until it moves on' },
   { type: 'HANDOFF', blurb: 'End the bot\'s turn, flag the lead for your team' },
   { type: 'CLOSING', blurb: 'Final message — ends the flow' },
@@ -112,6 +115,12 @@ function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
       {step.type === 'SEND_PACKAGE' ? (
         <p className="text-sm font-medium text-foreground">
           {step.config.packageId ? 'Sends the selected package' : <span className="italic text-muted-foreground">No package chosen yet</span>}
+        </p>
+      ) : step.type === 'CAROUSEL' ? (
+        <p className="text-sm font-medium text-foreground">
+          {step.config.packageIds?.length
+            ? `Sends a list of ${step.config.packageIds.length} package${step.config.packageIds.length === 1 ? '' : 's'}`
+            : <span className="italic text-muted-foreground">No packages chosen yet</span>}
         </p>
       ) : (
         <p className="line-clamp-3 text-sm font-medium text-foreground">{step.question || <span className="italic text-muted-foreground">No text yet</span>}</p>
@@ -156,13 +165,14 @@ function StepEditor({
   const [options, setOptions] = useState<BotFlowConfirmOption[]>([]);
   const [nextStepId, setNextStepId] = useState<string | null>(null);
   const [packageId, setPackageId] = useState('');
+  const [packageIds, setPackageIds] = useState<string[]>([]);
   const [instructions, setInstructions] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const packagesQuery = useQuery({
     queryKey: ['packages'],
     queryFn: () => api.get<TravelPackage[]>('/packages'),
-    enabled: step?.type === 'SEND_PACKAGE',
+    enabled: step?.type === 'SEND_PACKAGE' || step?.type === 'CAROUSEL',
   });
   const packages = (packagesQuery.data ?? []).filter((p) => p.isActive);
 
@@ -173,6 +183,7 @@ function StepEditor({
     setOptions(step.options ?? [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }]);
     setNextStepId(step.nextStepId);
     setPackageId(step.config.packageId ?? '');
+    setPackageIds(step.config.packageIds ?? []);
     setInstructions(step.config.instructions ?? '');
   }, [step]);
 
@@ -185,6 +196,8 @@ function StepEditor({
       onSave({ question, options });
     } else if (step.type === 'SEND_PACKAGE') {
       onSave({ question: question || undefined, nextStepId, config: { packageId: packageId || undefined } });
+    } else if (step.type === 'CAROUSEL') {
+      onSave({ question: question || undefined, nextStepId, config: { packageIds } });
     } else if (step.type === 'AI_OPEN') {
       onSave({ question, nextStepId, config: { instructions } });
     } else if (step.type === 'HANDOFF') {
@@ -200,9 +213,11 @@ function StepEditor({
       ? true
       : step.type === 'SEND_PACKAGE'
         ? !!packageId
-        : step.type === 'AI_OPEN'
-          ? !!question.trim() && !!instructions.trim()
-          : !!question.trim();
+        : step.type === 'CAROUSEL'
+          ? packageIds.length > 0
+          : step.type === 'AI_OPEN'
+            ? !!question.trim() && !!instructions.trim()
+            : !!question.trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -218,6 +233,7 @@ function StepEditor({
             {step.type === 'MESSAGE' && 'Send a message with no reply needed — the flow continues on to the next step right away.'}
             {step.type === 'HANDOFF' && 'End the bot\'s turn and flag this lead for a human — same as a "Needs Review" keyword match.'}
             {step.type === 'SEND_PACKAGE' && 'Share one of your packages, then continue on to the next step right away.'}
+            {step.type === 'CAROUSEL' && 'Send up to 10 packages as a tappable WhatsApp list — the flow waits for the traveller to pick one, then continues.'}
             {step.type === 'AI_OPEN' && "Let the AI Agent converse freely here, guided by your instructions, until it decides to move the flow on."}
           </DialogDescription>
         </DialogHeader>
@@ -233,6 +249,44 @@ function StepEditor({
                   ))}
                 </SelectContent>
               </Select>
+            </Field>
+          ) : step.type === 'CAROUSEL' ? (
+            <Field
+              label="Packages to show"
+              htmlFor="stepPackages"
+              required
+              hint={`Up to 10, shown in this order as a tappable list. ${packageIds.length}/10 selected.`}
+            >
+              <div id="stepPackages" className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1.5">
+                {packagesQuery.isLoading ? (
+                  <p className="p-2 text-sm text-muted-foreground">Loading packages…</p>
+                ) : packages.length === 0 ? (
+                  <p className="p-2 text-sm text-muted-foreground">No active packages yet.</p>
+                ) : (
+                  packages.map((p) => {
+                    const checked = packageIds.includes(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={cn(
+                          'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                          !checked && packageIds.length >= 10 ? 'opacity-50' : 'cursor-pointer hover:bg-muted/60',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!checked && packageIds.length >= 10}
+                          onChange={(e) =>
+                            setPackageIds((prev) => (e.target.checked ? [...prev, p.id] : prev.filter((id) => id !== p.id)))
+                          }
+                        />
+                        <span className="min-w-0 flex-1 truncate">{p.name} — {p.destination}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </Field>
           ) : (
             <Field
@@ -275,7 +329,7 @@ function StepEditor({
             </Field>
           )}
 
-          {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN'] as BotFlowStepType[]).includes(step.type) && (
+          {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL'] as BotFlowStepType[]).includes(step.type) && (
             <Field label="Then go to" htmlFor="stepNext" hint="Or drag a connection on the canvas instead.">
               <Select value={nextStepId ?? '__end'} onValueChange={(v) => setNextStepId(v === '__end' ? null : v)}>
                 <SelectTrigger id="stepNext"><SelectValue /></SelectTrigger>
@@ -489,6 +543,7 @@ export function BotFlowBuilderPage() {
             : type === 'HANDOFF' ? "Let me connect you with our team."
             : type === 'AI_OPEN' ? "Sure, happy to help — what would you like to know?"
             : type === 'SEND_PACKAGE' ? undefined // unused for this type — the package's own details are the message
+            : type === 'CAROUSEL' ? undefined // unused — the list's own body text is fixed, set in bot-flow.engine.ts
             : 'New question',
         ...(type === 'COLLECT' && { leadField: 'notes' }),
         ...(type === 'CONFIRM' && { options: [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }] }),

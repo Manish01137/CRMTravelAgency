@@ -10,13 +10,15 @@ import {
   Inbox as InboxIcon,
   Instagram,
   MessageCircle,
+  MailOpen,
   Search,
   Send,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { ChannelMessage, Conversation, ConversationChannel, MessageTemplate } from '@/types';
+import type { ChannelMessage, Conversation, ConversationChannel, ConversationFilter, MessageTemplate } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -46,41 +48,62 @@ function statusIcon(status: ChannelMessage['status']) {
   }
 }
 
-function ConversationRow({ c, active, onClick }: { c: Conversation; active: boolean; onClick: () => void }) {
+function ConversationRow({
+  c,
+  active,
+  onClick,
+  onToggleFavorite,
+}: {
+  c: Conversation;
+  active: boolean;
+  onClick: () => void;
+  onToggleFavorite: () => void;
+}) {
   const label = c.contactName || c.contactPhone || c.externalContactId;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/60',
-        active && 'bg-primary/5',
-      )}
-    >
-      <Avatar>
-        <AvatarFallback>{initials(label)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-semibold text-foreground">{label}</p>
-          {c.lastMessageAt && <span className="shrink-0 text-[11px] text-muted-foreground">{formatSmartTime(c.lastMessageAt)}</span>}
+    <div className={cn('group relative border-b border-border', active && 'bg-primary/5')}>
+      <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 py-3 pr-9 text-left transition-colors hover:bg-muted/60">
+        <Avatar>
+          <AvatarFallback>{initials(label)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-foreground">{label}</p>
+            {c.lastMessageAt && <span className="shrink-0 text-[11px] text-muted-foreground">{formatSmartTime(c.lastMessageAt)}</span>}
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
+            {c.unreadCount > 0 && (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {c.unreadCount > 9 ? '9+' : c.unreadCount}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
-          {c.unreadCount > 0 && (
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-              {c.unreadCount > 9 ? '9+' : c.unreadCount}
-            </span>
-          )}
-        </div>
-      </div>
-    </button>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite();
+        }}
+        aria-label={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        title={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        className={cn(
+          'absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 transition-opacity',
+          c.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
+        <Star className={cn('size-4', c.isFavorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
+      </button>
+    </div>
   );
 }
 
 export function InboxPage() {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ConversationChannel>('WHATSAPP');
+  const [filter, setFilter] = useState<ConversationFilter>('all');
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput.trim(), 300);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -88,16 +111,23 @@ export function InboxPage() {
   const [templateName, setTemplateName] = useState<string | null>(null);
 
   const conversationsQuery = useQuery({
-    queryKey: ['conversations', channel, search],
+    queryKey: ['conversations', channel, filter, search],
     queryFn: () =>
       api.get<Conversation[]>(
-        `/inbox/conversations?channel=${channel}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+        `/inbox/conversations?channel=${channel}&filter=${filter}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
     refetchInterval: 8000,
   });
 
   const conversations = conversationsQuery.data ?? [];
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  const favoriteMutation = useMutation({
+    mutationFn: ({ id, isFavorite }: { id: string; isFavorite: boolean }) =>
+      api.patch<Conversation>(`/inbox/conversations/${id}/favorite`, { isFavorite }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update favorite'),
+  });
 
   // Switching channels drops the selection — the two channels are entirely separate threads.
   useEffect(() => {
@@ -202,6 +232,27 @@ export function InboxPage() {
                 aria-label="Search conversations"
               />
             </div>
+            <div className="mt-2.5 flex gap-1.5">
+              {(
+                [
+                  { key: 'all', label: 'All' },
+                  { key: 'unread', label: 'Unread' },
+                  { key: 'favorites', label: 'Favorites' },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setFilter(f.key)}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                    filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {conversationsQuery.isLoading ? (
@@ -212,14 +263,26 @@ export function InboxPage() {
               </div>
             ) : conversations.length === 0 ? (
               <EmptyState
-                icon={<InboxIcon />}
-                title="No conversations yet"
-                description={`Incoming ${channel === 'WHATSAPP' ? 'WhatsApp messages' : 'Instagram DMs'} will show up here automatically.`}
+                icon={filter === 'favorites' ? <Star /> : filter === 'unread' ? <MailOpen /> : <InboxIcon />}
+                title={filter === 'favorites' ? 'No favorites yet' : filter === 'unread' ? 'No unread conversations' : 'No conversations yet'}
+                description={
+                  filter === 'favorites'
+                    ? 'Star a conversation to pin it here.'
+                    : filter === 'unread'
+                      ? "You're all caught up."
+                      : `Incoming ${channel === 'WHATSAPP' ? 'WhatsApp messages' : 'Instagram DMs'} will show up here automatically.`
+                }
                 className="border-none"
               />
             ) : (
               conversations.map((c) => (
-                <ConversationRow key={c.id} c={c} active={c.id === selectedId} onClick={() => setSelectedId(c.id)} />
+                <ConversationRow
+                  key={c.id}
+                  c={c}
+                  active={c.id === selectedId}
+                  onClick={() => setSelectedId(c.id)}
+                  onToggleFavorite={() => favoriteMutation.mutate({ id: c.id, isFavorite: !c.isFavorite })}
+                />
               ))
             )}
           </div>

@@ -30,10 +30,11 @@ async function recordInbound(params: {
   contactName: string | null;
   contactPhone: string | null;
   body: string;
+  interactiveSelectionId?: string | null;
   externalMessageId: string | null;
   leadSource: 'WHATSAPP' | 'INSTAGRAM';
 }): Promise<void> {
-  const { organizationId, channel, externalContactId, contactName, contactPhone, body, externalMessageId, leadSource } = params;
+  const { organizationId, channel, externalContactId, contactName, contactPhone, body, interactiveSelectionId, externalMessageId, leadSource } = params;
 
   await withTenant(organizationId, async (tx) => {
     let conversation = await tx.conversation.findUnique({
@@ -72,6 +73,7 @@ async function recordInbound(params: {
         direction: 'INBOUND',
         externalMessageId,
         body,
+        interactiveSelectionId: interactiveSelectionId ?? undefined,
         status: 'DELIVERED',
       },
     });
@@ -130,7 +132,24 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       if (!from) continue;
       const contact = contacts.find((c) => c.wa_id === from);
       const type = String(msg.type ?? 'text');
-      const text = type === 'text' ? String((msg.text as { body?: string })?.body ?? '') : `[${type} message]`;
+      // A tap on a Bot Flow CAROUSEL's list message arrives here as
+      // type: 'interactive' with interactive.list_reply — its `id` is the
+      // packageId we set when we sent the list (see bot-flow.engine.ts's
+      // buildCarouselContent), so the Bot Flow engine can match it directly
+      // instead of trying to parse free text. button_reply covered too, for
+      // any future quick-reply-button use — same shape, different field name.
+      let text: string;
+      let interactiveSelectionId: string | null = null;
+      if (type === 'text') {
+        text = String((msg.text as { body?: string })?.body ?? '');
+      } else if (type === 'interactive') {
+        const interactive = (msg.interactive as { list_reply?: { id?: string; title?: string }; button_reply?: { id?: string; title?: string } }) ?? {};
+        const reply = interactive.list_reply ?? interactive.button_reply;
+        interactiveSelectionId = reply?.id ?? null;
+        text = reply?.title ?? '[interactive message]';
+      } else {
+        text = `[${type} message]`;
+      }
       await recordInbound({
         organizationId,
         channel: 'WHATSAPP',
@@ -138,6 +157,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         contactName: contact?.profile?.name ?? null,
         contactPhone: from,
         body: text,
+        interactiveSelectionId,
         externalMessageId: (msg.id as string) ?? null,
         leadSource: 'WHATSAPP',
       });

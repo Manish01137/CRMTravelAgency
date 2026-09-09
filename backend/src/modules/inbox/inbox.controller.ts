@@ -1,10 +1,15 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput } from './inbox.schemas';
+import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput } from './inbox.schemas';
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
   const query = req.query as unknown as ListConversationsQuery;
   res.json(await service.listConversations(req.auth!.organizationId, query));
+}
+
+export async function setFavorite(req: Request, res: Response): Promise<void> {
+  const { isFavorite } = req.body as SetFavoriteInput;
+  res.json(await service.setFavorite(req.auth!.organizationId, req.params.id, isFavorite));
 }
 
 export async function listMessages(req: Request, res: Response): Promise<void> {

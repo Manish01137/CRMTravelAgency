@@ -724,9 +724,12 @@ export interface Conversation {
   lastMessagePreview: string | null;
   lastInboundAt: string | null;
   unreadCount: number;
+  isFavorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export type ConversationFilter = 'all' | 'unread' | 'favorites';
 
 export type MessageDirection = 'INBOUND' | 'OUTBOUND';
 export type MessageStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -787,7 +790,7 @@ export interface CallLogEntry {
 
 // --- Phase 4: Automation & AI -------------------------------------------------
 
-export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN';
+export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN' | 'CAROUSEL';
 export type BotFlowSessionStatus = 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
 export type FollowUpStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
 
@@ -804,6 +807,8 @@ export interface BotFlowStepConfig {
   packageId?: string;
   /** AI_OPEN only — guidance for how the AI should handle this part of the conversation. */
   instructions?: string;
+  /** CAROUSEL only — up to 10 packages, sent as a WhatsApp Interactive List, in this order. */
+  packageIds?: string[];
 }
 
 export interface BotFlowStep {

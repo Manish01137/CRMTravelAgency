@@ -822,6 +822,7 @@ model Conversation {
   lastMessagePreview String?             @map("last_message_preview")
   lastInboundAt      DateTime?           @map("last_inbound_at") // start of WhatsApp's 24h free-form reply window
   unreadCount        Int                 @default(0) @map("unread_count")
+  isFavorite         Boolean             @default(false) @map("is_favorite") // starred by an agent, Inbox filter chip
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
@@ -846,6 +847,12 @@ model Message {
   direction         MessageDirection
   externalMessageId String?          @map("external_message_id")
   body              String?
+  // Set on an INBOUND message when it's a tap on a WhatsApp interactive list/
+  // button message (interactive.list_reply.id / button_reply.id) — the id we
+  // originally set when sending it, e.g. a packageId for a Bot Flow CAROUSEL
+  // step, matched back against it to decide what to do next. Null for a
+  // plain text reply.
+  interactiveSelectionId String?     @map("interactive_selection_id")
   mediaUrl          String?          @map("media_url")
   templateName      String?          @map("template_name") // set when sent as a WhatsApp template (outside the 24h window)
   status            MessageStatus    @default(SENT)
@@ -937,6 +944,15 @@ enum BotFlowStepType {
   /// ready to move on, then advances to nextStepId. Needs an AI Agent
   /// (Gemini key) configured — see ai-agent.service.ts.
   AI_OPEN
+  /// Sends a WhatsApp Interactive List message listing multiple packages
+  /// (config.packageIds, up to 10) for the traveller to tap one — INTERACTIVE
+  /// like COLLECT/CONFIRM (sends and stops, waiting for the tap), not an
+  /// auto-chaining step. The tap arrives as an inbound message carrying
+  /// Message.interactiveSelectionId, matched back against packageIds to pick
+  /// nextStepId. Not Meta's separate/unrelated "Carousel Template" feature
+  /// (that needs an approved message template) — this is a free-form list
+  /// message, sendable within the normal 24h session window like plain text.
+  CAROUSEL
 }
 
 enum BotFlowSessionStatus {

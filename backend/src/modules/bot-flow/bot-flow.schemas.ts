@@ -31,16 +31,18 @@ const confirmOptionSchema = z.object({
   nextStepId: z.string().uuid().nullable(),
 });
 
-// SEND_PACKAGE's packageId, AI_OPEN's instructions — one shared shape rather
-// than a discriminated union, since each type only ever reads its own key.
+// SEND_PACKAGE's packageId, AI_OPEN's instructions, CAROUSEL's packageIds —
+// one shared shape rather than a discriminated union, since each type only
+// ever reads its own key.
 const stepConfigSchema = z.object({
   packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   instructions: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
+  packageIds: z.array(z.string().uuid()).max(10, 'A WhatsApp list message can hold at most 10 rows').optional(),
 });
 
 export const upsertStepSchema = z
   .object({
-    type: z.enum(['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'HANDOFF', 'SEND_PACKAGE', 'AI_OPEN']),
+    type: z.enum(['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'HANDOFF', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL']),
     order: z.coerce.number().int().min(0).max(1000).default(0),
     question: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
     leadField: z.preprocess(emptyToUndefined, z.enum(LEAD_FIELDS).optional()),
@@ -60,10 +62,11 @@ export const upsertStepSchema = z
     if (['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'AI_OPEN'].includes(v.type) && !v.question) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Message text is required', path: ['question'] });
     }
-    // config.packageId (SEND_PACKAGE) / config.instructions (AI_OPEN) are
-    // deliberately NOT required here — a step can be added blank from the
-    // toolbar and configured afterward, same as every other type. The engine
-    // degrades gracefully when either is unset (see bot-flow.engine.ts).
+    // config.packageId (SEND_PACKAGE) / config.instructions (AI_OPEN) /
+    // config.packageIds (CAROUSEL) are deliberately NOT required here — a
+    // step can be added blank from the toolbar and configured afterward,
+    // same as every other type. The engine degrades gracefully when any of
+    // them is unset (see bot-flow.engine.ts).
   });
 
 export const assignFlowSchema = z.object({

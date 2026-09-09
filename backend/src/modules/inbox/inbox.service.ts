@@ -7,12 +7,22 @@ import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput } fr
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Inbox filter chips: "all" (default), "unread" (unreadCount > 0, already
+ * tracked on every conversation), "favorites" (isFavorite, toggled via
+ * setFavorite below). No "group" chip — the WhatsApp Cloud API a business
+ * connects here doesn't support group messaging at all (it's built for 1:1
+ * business-to-customer conversations only), so there would never be any
+ * group conversations to show; a chip for it would just always be empty.
+ */
 export async function listConversations(organizationId: string, query: ListConversationsQuery) {
   return withTenant(organizationId, (tx) =>
     tx.conversation.findMany({
       where: {
         organizationId,
         channel: query.channel,
+        ...(query.filter === 'unread' ? { unreadCount: { gt: 0 } } : {}),
+        ...(query.filter === 'favorites' ? { isFavorite: true } : {}),
         ...(query.search
           ? {
               OR: [
@@ -26,6 +36,14 @@ export async function listConversations(organizationId: string, query: ListConve
       take: 200,
     }),
   );
+}
+
+export async function setFavorite(organizationId: string, conversationId: string, isFavorite: boolean) {
+  return withTenant(organizationId, async (tx) => {
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
+    if (!conversation) throw NotFound('Conversation not found');
+    return tx.conversation.update({ where: { id: conversationId }, data: { isFavorite } });
+  });
 }
 
 export async function listMessages(organizationId: string, conversationId: string) {

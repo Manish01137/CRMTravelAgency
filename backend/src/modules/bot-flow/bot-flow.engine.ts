@@ -1,7 +1,7 @@
 import { withTenant } from '../../lib/prisma';
 import { decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
-import { sendWhatsAppText, sendInstagramText } from '../../lib/meta';
+import { sendWhatsAppText, sendInstagramText, sendWhatsAppList, type WhatsAppListRow } from '../../lib/meta';
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
@@ -33,7 +33,7 @@ import type { WhatsAppCredentials, InstagramCredentials } from '../channels/chan
  * the traveller needing to reply to each one individually.
  */
 
-type StepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN';
+type StepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN' | 'CAROUSEL';
 type ConfirmOption = { label: string; nextStepId: string | null };
 
 interface StepRow {
@@ -138,7 +138,12 @@ async function loadRecentHistory(organizationId: string, conversationId: string)
 
 // --- Phase 2: decide what to do — pure logic + external calls, no open transaction ---
 
-async function decide(state: LoadedState, messageBody: string, organizationId: string): Promise<Action> {
+async function decide(
+  state: LoadedState,
+  messageBody: string,
+  organizationId: string,
+  interactiveSelectionId: string | null,
+): Promise<Action> {
   const matched = matchesKeyword(messageBody, state.flowNeedsReviewKeywords);
   if (matched) return { kind: 'NEEDS_REVIEW', reason: `Matched "Needs Review" keyword: "${matched}"` };
 
@@ -187,6 +192,18 @@ async function decide(state: LoadedState, messageBody: string, organizationId: s
     return { kind: 'ADVANCE', leadField: result.notes ? 'notes' : undefined, leadValue: result.notes, reply: result.reply, nextStep };
   }
 
+  if (currentStep.type === 'CAROUSEL') {
+    const config = (currentStep.config ?? {}) as { packageIds?: string[] };
+    const packageIds = config.packageIds ?? [];
+    // Only a genuine tap on one of the rows we sent counts — a typed reply
+    // ("first one please") isn't matched against titles, same tradeoff
+    // CONFIRM makes for anything beyond its 2-option Gemini fallback.
+    const picked = interactiveSelectionId && packageIds.includes(interactiveSelectionId) ? interactiveSelectionId : null;
+    if (!picked) return { kind: 'REPEAT_FALLBACK' };
+    const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
+    return { kind: 'ADVANCE', nextStep };
+  }
+
   // CLOSING/MESSAGE/HANDOFF/SEND_PACKAGE don't accept further input as the CURRENT
   // step — they auto-chain or end the session, so the session should already have
   // moved past them by now. Treat any stray reply as "flow's over."
@@ -221,6 +238,28 @@ async function attemptSend(
     }
     const creds = decryptJson<InstagramCredentials>(connection.credentials);
     const sent = await sendInstagramText(creds.igUserId, creds.accessToken, externalContactId, body);
+    return { ok: true, externalMessageId: sent.externalMessageId };
+  } catch (err) {
+    return { ok: false, errorMessage: err instanceof Error ? err.message : 'Send failed' };
+  }
+}
+
+/** CAROUSEL's send path — a WhatsApp Interactive List message, not plain text. No Instagram equivalent. */
+async function attemptSendList(
+  organizationId: string,
+  channel: 'WHATSAPP' | 'INSTAGRAM',
+  externalContactId: string,
+  content: { bodyText: string; buttonLabel: string; rows: WhatsAppListRow[] },
+): Promise<SendResult | null> {
+  if (channel !== 'WHATSAPP') return null;
+  const connection = await withTenant(organizationId, (tx) =>
+    tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel } } }),
+  );
+  if (!connection?.credentials) return null;
+
+  try {
+    const creds = decryptJson<WhatsAppCredentials>(connection.credentials);
+    const sent = await sendWhatsAppList(creds.phoneNumberId, creds.accessToken, externalContactId, content.bodyText, content.buttonLabel, content.rows);
     return { ok: true, externalMessageId: sent.externalMessageId };
   } catch (err) {
     return { ok: false, errorMessage: err instanceof Error ? err.message : 'Send failed' };
@@ -265,6 +304,35 @@ async function buildPackageContent(organizationId: string, packageId: string | u
   return lines.join('\n');
 }
 
+/**
+ * CAROUSEL's content — a WhatsApp Interactive List of up to 10 packages.
+ * Each row's `id` is the packageId itself, so the customer's tap comes back
+ * as Message.interactiveSelectionId and `decide()` above can match it
+ * directly — no free-text guessing needed.
+ */
+async function buildCarouselContent(
+  organizationId: string,
+  packageIds: string[] | undefined,
+): Promise<{ bodyText: string; buttonLabel: string; rows: WhatsAppListRow[]; summaryText: string } | null> {
+  if (!packageIds || packageIds.length === 0) return null;
+  const found = await withTenant(organizationId, (tx) => tx.package.findMany({ where: { id: { in: packageIds }, organizationId } }));
+  // Preserve the order configured in the step, not whatever order the DB returns.
+  const ordered = packageIds.map((id) => found.find((p) => p.id === id)).filter((p): p is (typeof found)[number] => !!p);
+  if (ordered.length === 0) return null;
+
+  const rows: WhatsAppListRow[] = ordered.map((pkg) => ({
+    id: pkg.id,
+    title: pkg.name.slice(0, 24),
+    description: [pkg.destination, pkg.priceAmount != null ? formatMoney(pkg.priceAmount, pkg.priceCurrency) : null]
+      .filter(Boolean)
+      .join(' · ')
+      .slice(0, 72),
+  }));
+  const bodyText = 'Take a look at these packages:';
+  const summaryText = [bodyText, ...ordered.map((pkg) => `• ${pkg.name} — ${pkg.destination}`)].join('\n');
+  return { bodyText, buttonLabel: 'View packages', rows, summaryText };
+}
+
 // --- Phase 3: commit — fast, DB-only transactions ----------------------------
 
 async function writeLeadField(organizationId: string, leadId: string | null, field: string, rawValue: unknown): Promise<void> {
@@ -297,11 +365,12 @@ export async function advanceBotFlow(
   conversationId: string,
   messageBody: string,
   messageCreatedAt: Date,
+  interactiveSelectionId: string | null = null,
 ): Promise<void> {
   const state = await loadState(organizationId, conversationId);
   if (!state) return;
 
-  const action = await decide(state, messageBody, organizationId);
+  const action = await decide(state, messageBody, organizationId, interactiveSelectionId);
 
   if (action.kind === 'NEEDS_REVIEW') {
     await withTenant(organizationId, async (tx) => {
@@ -353,6 +422,18 @@ export async function advanceBotFlow(
       sessionStatus = 'NEEDS_REVIEW';
       needsReviewReason = cursor.question ? `Flow handoff step: "${cursor.question}"` : 'Flow handoff step';
       cursor = null;
+      break;
+    }
+
+    if (cursor.type === 'CAROUSEL') {
+      const config = (cursor.config ?? {}) as { packageIds?: string[] };
+      const content = await buildCarouselContent(organizationId, config.packageIds);
+      if (content) {
+        const result = await attemptSendList(organizationId, state.conversation.channel, state.conversation.externalContactId, content);
+        await recordOutbound(organizationId, conversationId, content.summaryText, result);
+      }
+      // Interactive — stop here and wait for the customer's tap, same as
+      // COLLECT/CONFIRM/AI_OPEN below, just with its own send mechanism.
       break;
     }
 

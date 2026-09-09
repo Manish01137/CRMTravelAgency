@@ -55,7 +55,7 @@ async function scan(): Promise<void> {
       if (session?.lastProcessedMessageAt && session.lastProcessedMessageAt >= latestInbound.createdAt) continue;
 
       try {
-        await advanceBotFlow(organizationId, conversation.id, latestInbound.body ?? '', latestInbound.createdAt);
+        await advanceBotFlow(organizationId, conversation.id, latestInbound.body ?? '', latestInbound.createdAt, latestInbound.interactiveSelectionId);
       } catch (err) {
         // One conversation's failure must never stop the rest of the scan.
         // eslint-disable-next-line no-console
