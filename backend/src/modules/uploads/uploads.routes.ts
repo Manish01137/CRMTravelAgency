@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../../env';
 import { requireAuth } from '../../middleware/auth';
 import { AppError, BadRequest } from '../../lib/errors';
+import { asyncHandler } from '../../lib/http';
 
 const ALLOWED = new Map<string, string>([
   ['image/jpeg', 'jpg'],
@@ -29,10 +30,21 @@ let supabase: SupabaseClient | null = null;
 function getSupabase(): SupabaseClient | null {
   if (supabase) return supabase;
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
-  supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return supabase;
+  try {
+    supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    return supabase;
+  } catch (err) {
+    // createClient() can throw synchronously (e.g. its Realtime client's
+    // WebSocket setup failing on a Node version without native WebSocket —
+    // exactly what took the whole process down in production once, since
+    // this route wasn't wrapped in asyncHandler at the time). Never let a
+    // third-party SDK's internal init crash request handling — degrade to
+    // "not configured" instead, same as a missing env var.
+    console.error('getSupabase(): createClient() failed:', err);
+    return null;
+  }
 }
 
 const router = Router();
@@ -52,7 +64,7 @@ router.post(
       return next(BadRequest('Could not read the uploaded file'));
     });
   },
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const client = getSupabase();
     if (!client) {
       throw new AppError(503, 'UPLOADS_DISABLED', 'Image uploads are not configured on the server');
@@ -73,7 +85,7 @@ router.post(
 
     const { data } = client.storage.from(env.SUPABASE_STORAGE_BUCKET).getPublicUrl(key);
     res.status(201).json({ url: data.publicUrl });
-  },
+  }),
 );
 
 // --- Video uploads (LinkTree background) -------------------------------------
@@ -108,7 +120,7 @@ router.post(
       return next(BadRequest('Could not read the uploaded file'));
     });
   },
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const client = getSupabase();
     if (!client) {
       throw new AppError(503, 'UPLOADS_DISABLED', 'Uploads are not configured on the server');
@@ -128,7 +140,7 @@ router.post(
 
     const { data } = client.storage.from(env.SUPABASE_STORAGE_BUCKET).getPublicUrl(key);
     res.status(201).json({ url: data.publicUrl });
-  },
+  }),
 );
 
 export default router;
