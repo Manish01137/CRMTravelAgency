@@ -214,7 +214,7 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
       config_id: configId,
       response_type: 'code',
       override_default_response_type: true,
-      extras: { setup: {}, featureType: 'whatsapp_embedded_signup', sessionInfoVersion: '3' },
+      extras: { setup: {}, featureType: 'whatsapp_embedded_signup', version: 'v4' },
     };
     console.log('[metaSignup] calling FB.login() with config:', JSON.stringify(loginConfig, null, 2));
     console.log('[metaSignup] FB.login() CALLED at Date.now() =', Date.now());
