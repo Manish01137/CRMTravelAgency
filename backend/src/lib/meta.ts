@@ -102,6 +102,65 @@ export async function exchangeWhatsAppCode(code: string): Promise<{ accessToken:
   return { accessToken: data.access_token };
 }
 
+export type WhatsAppDiscoveryResult =
+  | { status: 'found'; wabaId: string; phoneNumberId: string }
+  | { status: 'not_found' }
+  /** More than one WABA (across any of the token's businesses) or more than one phone number on the one WABA found — genuinely ambiguous, not ours to guess. */
+  | { status: 'ambiguous'; reason: string };
+
+/**
+ * Fallback for when the client couldn't hand us wabaId/phoneNumberId (see
+ * connectWhatsAppSchema's comment) — discovers them from the exchanged token
+ * itself via Graph API. Assumes a single-WABA business: checks for ambiguity
+ * across EVERY business the token can see (not just the first one with any
+ * WABA) before ever returning a match — never silently picks among multiple
+ * candidates. No picker UI yet for the ambiguous case (see
+ * channels.service.ts) — it's surfaced as an error instead of guessed.
+ */
+export async function discoverWhatsAppWabaAndPhoneNumber(accessToken: string): Promise<WhatsAppDiscoveryResult> {
+  const businesses = await graphFetch<{ data: { id: string; name?: string }[] }>('/me/businesses', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => null);
+  if (!businesses?.data?.length) return { status: 'not_found' };
+
+  // Gather every WABA across every business this token can see — ambiguity
+  // has to be judged across ALL of them, not just whichever business we
+  // happen to check first.
+  const wabas: { id: string; businessId: string }[] = [];
+  for (const business of businesses.data) {
+    const result = await graphFetch<{ data: { id: string; name?: string }[] }>(
+      `/${business.id}/owned_whatsapp_business_accounts`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    ).catch(() => null);
+    for (const w of result?.data ?? []) wabas.push({ id: w.id, businessId: business.id });
+  }
+
+  if (wabas.length === 0) return { status: 'not_found' };
+  if (wabas.length > 1) {
+    console.warn(
+      `discoverWhatsAppWabaAndPhoneNumber: ${wabas.length} WhatsApp Business Accounts found across ${businesses.data.length} business(es) — refusing to guess`,
+      wabas,
+    );
+    return { status: 'ambiguous', reason: `Found ${wabas.length} WhatsApp Business Accounts — can't tell which one to connect` };
+  }
+
+  const wabaId = wabas[0].id;
+  const phoneNumbers = await graphFetch<{ data: { id: string; display_phone_number?: string }[] }>(
+    `/${wabaId}/phone_numbers`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  ).catch(() => null);
+  if (!phoneNumbers?.data?.length) return { status: 'not_found' };
+  if (phoneNumbers.data.length > 1) {
+    console.warn(
+      `discoverWhatsAppWabaAndPhoneNumber: WABA ${wabaId} has ${phoneNumbers.data.length} phone numbers — refusing to guess`,
+      phoneNumbers.data,
+    );
+    return { status: 'ambiguous', reason: `This WhatsApp Business Account has ${phoneNumbers.data.length} phone numbers — can't tell which one to connect` };
+  }
+
+  return { status: 'found', wabaId, phoneNumberId: phoneNumbers.data[0].id };
+}
+
 export async function fetchWhatsAppPhoneNumber(
   phoneNumberId: string,
   accessToken: string,

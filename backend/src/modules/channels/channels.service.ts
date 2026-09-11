@@ -5,6 +5,7 @@ import {
   isInstagramConfigured,
   isWhatsAppConfigured,
   exchangeWhatsAppCode,
+  discoverWhatsAppWabaAndPhoneNumber,
   fetchWhatsAppPhoneNumber,
   subscribeWabaWebhook,
   exchangeFacebookUserCode,
@@ -141,10 +142,29 @@ async function markFailed(organizationId: string, channel: (typeof ALL_CHANNELS)
 export async function connectWhatsApp(organizationId: string, input: ConnectWhatsAppInput): Promise<ChannelStatus> {
   try {
     const { accessToken } = await exchangeWhatsAppCode(input.code);
-    const { displayPhoneNumber } = await fetchWhatsAppPhoneNumber(input.phoneNumberId, accessToken);
-    await subscribeWabaWebhook(input.wabaId, accessToken);
 
-    const credentials: WhatsAppCredentials = { accessToken, phoneNumberId: input.phoneNumberId, wabaId: input.wabaId };
+    let wabaId = input.wabaId;
+    let phoneNumberId = input.phoneNumberId;
+    if (!wabaId || !phoneNumberId) {
+      // Client couldn't capture these from the popup (see connectWhatsAppSchema's
+      // comment) — fall back to discovering them ourselves from the token.
+      const discovered = await discoverWhatsAppWabaAndPhoneNumber(accessToken);
+      if (discovered.status === 'not_found') {
+        throw new AppError(502, 'WABA_DISCOVERY_FAILED', 'Could not find a WhatsApp Business Account for this login — please try connecting again');
+      }
+      if (discovered.status === 'ambiguous') {
+        // Multiple candidates — connecting the wrong one silently would be
+        // worse than failing here. No picker UI yet, so this just stops.
+        throw new AppError(409, 'WABA_NEEDS_SELECTION', 'Multiple WhatsApp accounts found — contact support to complete setup', { reason: discovered.reason });
+      }
+      wabaId = discovered.wabaId;
+      phoneNumberId = discovered.phoneNumberId;
+    }
+
+    const { displayPhoneNumber } = await fetchWhatsAppPhoneNumber(phoneNumberId, accessToken);
+    await subscribeWabaWebhook(wabaId, accessToken);
+
+    const credentials: WhatsAppCredentials = { accessToken, phoneNumberId, wabaId };
     const row = await withTenant(organizationId, (tx) =>
       tx.channelConnection.upsert({
         where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
@@ -153,7 +173,7 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
           channel: 'WHATSAPP',
           status: 'CONNECTED',
           displayName: displayPhoneNumber,
-          externalId: input.wabaId,
+          externalId: wabaId,
           credentials: encryptJson(credentials),
           connectedAt: new Date(),
           lastError: null,
@@ -161,7 +181,7 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
         update: {
           status: 'CONNECTED',
           displayName: displayPhoneNumber,
-          externalId: input.wabaId,
+          externalId: wabaId,
           credentials: encryptJson(credentials),
           connectedAt: new Date(),
           lastError: null,
@@ -173,6 +193,10 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
     console.error(err);
     const message = err instanceof AppError ? err.message : 'Could not connect WhatsApp — please try again';
     await markFailed(organizationId, 'WHATSAPP', message);
+    // Preserve a specific AppError's own status/code (e.g. WABA_NEEDS_SELECTION)
+    // instead of collapsing everything to a generic 502 — the frontend needs
+    // to tell "ambiguous, needs a human" apart from "just failed, try again".
+    if (err instanceof AppError) throw err;
     throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
   }
 }

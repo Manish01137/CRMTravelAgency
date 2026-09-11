@@ -81,8 +81,12 @@ function loadFacebookSdk(appId: string): Promise<void> {
 
 export interface WhatsAppSignupResult {
   code: string;
-  wabaId: string;
-  phoneNumberId: string;
+  // Optional: on some mobile browsers, the popup's window.opener link gets
+  // severed, so its WA_EMBEDDED_SIGNUP postMessage (the only source of these)
+  // never arrives at all — see CODE_ONLY_GRACE_MS below. The backend
+  // discovers them itself via Graph API when they're missing.
+  wabaId?: string;
+  phoneNumberId?: string;
 }
 
 // How long to wait for the WHOLE signup (FB.login()'s callback AND the
@@ -93,6 +97,16 @@ export interface WhatsAppSignupResult {
 // 45s cut that off mid-flow. 3 minutes gives real, human-paced completion
 // room while still being a safety net against a genuinely abandoned popup.
 const EMBEDDED_SIGNUP_TIMEOUT_MS = 180_000;
+
+// Once FB.login()'s callback delivers a `code`, how long to still wait for
+// the WA_EMBEDDED_SIGNUP FINISH message before giving up on it and resolving
+// with just `code`. On some mobile browsers that message never arrives at
+// all (window.opener severed) even though the popup itself completed
+// successfully — waiting the full 3-minute timeout for something that will
+// never come would make a working signup look like it failed. 5s is enough
+// slack for the normal case (message arriving a moment after the callback)
+// without making a genuinely-missing message feel slow.
+const CODE_ONLY_GRACE_MS = 5_000;
 
 /**
  * Launches the WhatsApp Embedded Signup popup. Resolves with the values our
@@ -109,8 +123,15 @@ const EMBEDDED_SIGNUP_TIMEOUT_MS = 180_000;
  * listener the instant FB.login()'s callback fired, which silently dropped
  * a FINISH event that arrived even a moment later — that was the actual bug
  * behind "popup completes, backend never gets called.") Both write into
- * `collected` below; `checkComplete()` runs after each write and only
- * resolves once all three pieces are present, whichever source finishes last.
+ * `collected` below; `checkComplete()` runs after each write and resolves
+ * once all three pieces are present, whichever source finishes last.
+ *
+ * On some mobile browsers the FINISH message never arrives at all — the
+ * popup's window.opener link gets severed, breaking postMessage entirely,
+ * even though the popup itself completes successfully. So this doesn't wait
+ * forever for wabaId/phoneNumberId once `code` is in hand: see
+ * CODE_ONLY_GRACE_MS. When that fires, this resolves with `code` alone;
+ * channels.service.ts discovers wabaId/phoneNumberId itself via Graph API.
  */
 export async function launchWhatsAppEmbeddedSignup(appId: string, configId: string): Promise<WhatsAppSignupResult> {
   await loadFacebookSdk(appId);
@@ -119,9 +140,10 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
     const collected: { code?: string; wabaId?: string; phoneNumberId?: string } = {};
     let settled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let graceTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     // Single teardown path for every exit (success, cancel, missing code,
-    // timeout) — removes the message listener and cancels the timeout.
+    // timeout) — removes the message listener and cancels both timers.
     const cleanup = () => {
       console.log('[metaSignup] cleanup() — removing "message" listener at', Date.now());
       console.trace('[metaSignup] stack trace for removeEventListener("message")');
@@ -129,6 +151,10 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
         timeoutId = null;
+      }
+      if (graceTimeoutId !== null) {
+        clearTimeout(graceTimeoutId);
+        graceTimeoutId = null;
       }
     };
 
@@ -242,7 +268,24 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
           reject(new Error('WhatsApp connection did not complete — please try again'));
           return;
         }
-        checkComplete();
+        checkComplete(); // resolves immediately if the FINISH message already arrived before this callback did
+
+        if (!settled) {
+          // Have code, still missing wabaId/phoneNumberId — give the FINISH
+          // message a short grace window (it may just be a moment behind)
+          // before falling back to a code-only resolution. See
+          // CODE_ONLY_GRACE_MS above for why this can't just wait forever.
+          console.log('[metaSignup] code received but wabaId/phoneNumberId not yet present — starting', CODE_ONLY_GRACE_MS, 'ms grace period');
+          graceTimeoutId = setTimeout(() => {
+            if (settled) return;
+            console.warn(
+              '[metaSignup] grace period elapsed without wabaId/phoneNumberId — resolving with code only; backend will attempt Graph API discovery',
+            );
+            settled = true;
+            cleanup();
+            resolve({ code: collected.code!, wabaId: collected.wabaId, phoneNumberId: collected.phoneNumberId });
+          }, CODE_ONLY_GRACE_MS);
+        }
       },
       loginConfig,
     );

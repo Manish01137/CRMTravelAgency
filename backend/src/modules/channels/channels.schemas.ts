@@ -3,10 +3,16 @@ import { z } from 'zod';
 export const CHANNEL_TYPES = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
 export const channelParam = z.object({ channel: z.enum(CHANNEL_TYPES) });
 
+// wabaId/phoneNumberId are optional: on some mobile browsers, the WhatsApp
+// Embedded Signup popup's window.opener link gets severed, so its
+// WA_EMBEDDED_SIGNUP postMessage (which is where these normally come from)
+// never arrives — the frontend falls back to sending just `code` after a
+// short grace period (see metaSignup.ts). channels.service.ts then discovers
+// them itself via Graph API using the exchanged token.
 export const connectWhatsAppSchema = z.object({
   code: z.string().trim().min(1, 'Missing authorization code'),
-  wabaId: z.string().trim().min(1, 'Missing WhatsApp Business Account id'),
-  phoneNumberId: z.string().trim().min(1, 'Missing phone number id'),
+  wabaId: z.string().trim().min(1).optional(),
+  phoneNumberId: z.string().trim().min(1).optional(),
 });
 
 export const connectInstagramSchema = z.object({
