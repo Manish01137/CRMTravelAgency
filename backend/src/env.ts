@@ -56,6 +56,13 @@ const schema = z.object({
   // Instagram Login app id — usually the same as META_APP_ID under one Meta
   // App, but kept separate in case the client uses a dedicated Instagram app.
   META_INSTAGRAM_APP_ID: z.string().optional(),
+  // That dedicated Instagram app's own App Secret — needed to verify ITS
+  // webhook deliveries (verifyWebhookSignature tries this against
+  // META_APP_SECRET/META_WHATSAPP_APP_SECRET too, same shared endpoint, same
+  // "try every configured secret" pattern). NOT currently used for the
+  // Instagram OAuth token exchange itself (exchangeFacebookUserCode still
+  // hardcodes META_APP_ID/SECRET — see the note where it's called).
+  META_INSTAGRAM_APP_SECRET: z.string().optional(),
 
   // --- Phase 4: Automation (Redis + BullMQ) ------------------------------
   // Bot Flow's inbound-message poller and the follow-up nudge scheduler both
