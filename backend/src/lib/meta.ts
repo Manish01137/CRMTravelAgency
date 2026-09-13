@@ -50,18 +50,63 @@ function signatureMatches(rawBody: Buffer, providedHex: string, secret: string):
  * MUST be checked against the raw (unparsed) bytes — see app.ts's `verify`
  * callback on express.json(), which stashes `req.rawBody` for this purpose.
  *
- * Two separate Meta Apps deliver to this one shared /webhooks/meta endpoint —
- * the original app (Instagram/Facebook Login, META_APP_SECRET) and
- * "Joinetraa" (WhatsApp, META_WHATSAPP_APP_SECRET) — each signing with its
- * OWN App Secret. Meta gives no way to tell which app sent a request before
- * verifying it, so: try every configured secret and accept on the first
- * match, rather than guessing from payload shape.
+ * THREE separate Meta Apps can deliver to this one shared /webhooks/meta
+ * endpoint — the original app (Facebook Login, META_APP_SECRET), "Joinetraa"
+ * (WhatsApp, META_WHATSAPP_APP_SECRET), and a dedicated Instagram app
+ * (META_INSTAGRAM_APP_SECRET) — each signing with its OWN App Secret. Meta
+ * gives no way to tell which app sent a request before verifying it, so: try
+ * every configured secret and accept on the first match, rather than
+ * guessing from payload shape.
  */
 export function verifyWebhookSignature(rawBody: Buffer, signatureHeader: string | undefined): boolean {
-  if (!signatureHeader) return false;
+  // TEMP DEBUG — logs the received signature, the raw bytes actually being
+  // signed (to catch a re-serialized/re-parsed body, a very common way to
+  // silently break HMAC verification), and every configured secret's
+  // computed expected signature + individual match result. Never logs a
+  // secret's actual value — only its name and length.
+  console.log('[verifyWebhookSignature] received X-Hub-Signature-256:', signatureHeader);
+  console.log(
+    '[verifyWebhookSignature] rawBody length:',
+    rawBody.length,
+    '| rawBody (first 500 chars):',
+    rawBody.toString('utf8').slice(0, 500),
+  );
+
+  if (!signatureHeader) {
+    console.log('[verifyWebhookSignature] REJECTED — no signature header present at all');
+    return false;
+  }
   const provided = signatureHeader.replace(/^sha256=/, '');
-  const secrets = [env.META_APP_SECRET, env.META_WHATSAPP_APP_SECRET].filter((s): s is string => !!s);
-  return secrets.some((secret) => signatureMatches(rawBody, provided, secret));
+  console.log('[verifyWebhookSignature] provided signature (sha256= stripped):', provided);
+
+  const namedSecrets: { name: string; secret: string | undefined }[] = [
+    { name: 'META_APP_SECRET', secret: env.META_APP_SECRET },
+    { name: 'META_WHATSAPP_APP_SECRET', secret: env.META_WHATSAPP_APP_SECRET },
+    { name: 'META_INSTAGRAM_APP_SECRET', secret: env.META_INSTAGRAM_APP_SECRET },
+  ];
+  console.log(
+    '[verifyWebhookSignature] configured secrets:',
+    namedSecrets.map((s) => `${s.name}=${s.secret ? `set (${s.secret.length} chars)` : 'UNSET'}`).join(', '),
+  );
+
+  let matchedName: string | null = null;
+  for (const { name, secret } of namedSecrets) {
+    if (!secret) continue;
+    // Real accept/reject decision still goes through the unmodified
+    // signatureMatches() below — this expected-hex is computed separately,
+    // purely so it can be logged; it does not change what gets accepted.
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    const matches = signatureMatches(rawBody, provided, secret);
+    console.log(`[verifyWebhookSignature] tried ${name} — expected: ${expected} | matches: ${matches}`);
+    if (matches && !matchedName) matchedName = name;
+  }
+
+  if (matchedName) {
+    console.log('[verifyWebhookSignature] ACCEPTED — matched', matchedName);
+    return true;
+  }
+  console.log('[verifyWebhookSignature] REJECTED — no configured secret matched');
+  return false;
 }
 
 /** Webhook verification handshake (GET /webhooks): Meta calls this once on subscribe. */
