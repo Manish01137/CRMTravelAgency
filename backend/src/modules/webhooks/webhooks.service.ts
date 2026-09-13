@@ -221,18 +221,31 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
  */
 async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
   const pageId = String(entry.id ?? '');
+  console.log('[webhooks] processPageEntry — pageId:', pageId);
   if (!pageId) return;
   const organizationId = await findConnectionOrgIdByPageId(pageId);
-  if (!organizationId) return;
+  console.log('[webhooks] processPageEntry — findConnectionOrgIdByPageId result:', organizationId);
+  if (!organizationId) {
+    console.log('[webhooks] processPageEntry — no CONNECTED Instagram connection has secondaryExternalId =', pageId, '— dropping');
+    return;
+  }
 
   const messaging = Array.isArray(entry.messaging) ? (entry.messaging as Record<string, unknown>[]) : [];
+  console.log('[webhooks] processPageEntry — messaging event count:', messaging.length, '| raw entry:', JSON.stringify(entry));
   for (const event of messaging) {
     const sender = String((event.sender as { id?: string })?.id ?? '');
     // Skip echoes of our own outbound sends (Meta can echo them back depending on subscription fields).
-    if (!sender || sender === pageId) continue;
+    if (!sender || sender === pageId) {
+      console.log('[webhooks] processPageEntry — skipping event (no sender, or echo of our own page):', JSON.stringify(event));
+      continue;
+    }
     const message = event.message as { mid?: string; text?: string } | undefined;
-    if (!message?.text) continue;
+    if (!message?.text) {
+      console.log('[webhooks] processPageEntry — skipping event with no message.text:', JSON.stringify(event));
+      continue;
+    }
 
+    console.log('[webhooks] processPageEntry — recording inbound from sender:', sender, '| text:', message.text);
     await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
@@ -249,16 +262,26 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
 /** Entry point for POST /webhooks/meta. Always resolves — callers must still respond 200 quickly to Meta. */
 export async function processMetaWebhook(body: unknown): Promise<void> {
   const payload = body as { object?: string; entry?: Record<string, unknown>[] };
+  // TEMP DEBUG: unconditional — every single webhook hit, whatever shape it
+  // turns out to be, so we can see exactly what Meta actually sends for a
+  // real Instagram DM instead of guessing at the payload shape again.
+  console.log('[webhooks] RAW payload — object:', payload.object, '| full body:', JSON.stringify(body));
+
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  console.log('[webhooks] entry count:', entries.length);
 
   for (const entry of entries) {
     try {
       if (payload.object === 'whatsapp_business_account') {
         await processWhatsAppEntry(entry);
       } else if (payload.object === 'instagram') {
+        console.log('[webhooks] routing entry to processInstagramEntry — entry.id:', entry.id);
         await processInstagramEntry(entry);
       } else if (payload.object === 'page') {
+        console.log('[webhooks] routing entry to processPageEntry — entry.id:', entry.id);
         await processPageEntry(entry);
+      } else {
+        console.log('[webhooks] unrecognized object type, no handler:', payload.object);
       }
     } catch (err) {
       // One malformed/unexpected entry must never take down the rest of the batch
