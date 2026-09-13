@@ -22,6 +22,15 @@ async function findConnectionOrgId(channel: 'WHATSAPP' | 'INSTAGRAM', externalId
   return connection?.organizationId ?? null;
 }
 
+/** Instagram-via-Page routing — object:"page" webhooks identify themselves by Facebook Page id, stored separately from the IG-scoped account id. */
+async function findConnectionOrgIdByPageId(pageId: string): Promise<string | null> {
+  const connection = await systemPrisma.channelConnection.findFirst({
+    where: { channel: 'INSTAGRAM', secondaryExternalId: pageId, status: 'CONNECTED' },
+    select: { organizationId: true },
+  });
+  return connection?.organizationId ?? null;
+}
+
 /** Finds-or-creates the Lead + Conversation for an inbound message, then records it. */
 async function recordInbound(params: {
   organizationId: string;
@@ -202,18 +211,44 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
   }
 }
 
+/**
+ * Real Instagram DMs, for an account connected via a linked Facebook Page
+ * (this app's Instagram connect flow — see saveInstagramConnection), arrive
+ * this way: object:"page", entry.id is the PAGE's id (not the IG-scoped
+ * account id processInstagramEntry above matches on), same `messaging` array
+ * shape otherwise. Was previously just logged and dropped — see the
+ * "RAW PAGE WEBHOOK PAYLOAD" comment history for why.
+ */
+async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
+  const pageId = String(entry.id ?? '');
+  if (!pageId) return;
+  const organizationId = await findConnectionOrgIdByPageId(pageId);
+  if (!organizationId) return;
+
+  const messaging = Array.isArray(entry.messaging) ? (entry.messaging as Record<string, unknown>[]) : [];
+  for (const event of messaging) {
+    const sender = String((event.sender as { id?: string })?.id ?? '');
+    // Skip echoes of our own outbound sends (Meta can echo them back depending on subscription fields).
+    if (!sender || sender === pageId) continue;
+    const message = event.message as { mid?: string; text?: string } | undefined;
+    if (!message?.text) continue;
+
+    await recordInbound({
+      organizationId,
+      channel: 'INSTAGRAM',
+      externalContactId: sender,
+      contactName: null, // Instagram DMs don't carry a display name in the webhook payload
+      contactPhone: null,
+      body: message.text,
+      externalMessageId: message.mid ?? null,
+      leadSource: 'INSTAGRAM',
+    });
+  }
+}
+
 /** Entry point for POST /webhooks/meta. Always resolves — callers must still respond 200 quickly to Meta. */
 export async function processMetaWebhook(body: unknown): Promise<void> {
   const payload = body as { object?: string; entry?: Record<string, unknown>[] };
-
-  // TEMPORARY — logging the raw shape Meta actually sends for Page events
-  // (the new Instagram-via-Facebook-Page subscription) before writing real
-  // parsing/routing for it. Not processed yet.
-  if (payload.object === 'page') {
-    console.log('RAW PAGE WEBHOOK PAYLOAD:', JSON.stringify(body));
-    return;
-  }
-
   const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
   for (const entry of entries) {
@@ -222,6 +257,8 @@ export async function processMetaWebhook(body: unknown): Promise<void> {
         await processWhatsAppEntry(entry);
       } else if (payload.object === 'instagram') {
         await processInstagramEntry(entry);
+      } else if (payload.object === 'page') {
+        await processPageEntry(entry);
       }
     } catch (err) {
       // One malformed/unexpected entry must never take down the rest of the batch

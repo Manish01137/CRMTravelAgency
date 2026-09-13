@@ -794,6 +794,11 @@ model ChannelConnection {
   status         ChannelConnectionStatus @default(NOT_CONNECTED)
   displayName    String?                 @map("display_name") // phone number / IG handle / from-address / sender id shown in Settings
   externalId     String?                 @map("external_id") // WABA id / IG-scoped account id — routes inbound webhooks to this org
+  // Instagram only: the linked Facebook Page's id. Real inbound Instagram DMs
+  // (for an account connected via a Page, which is how this app's Instagram
+  // connect flow works) arrive as a webhook with object:"page", identified by
+  // Page id — NOT the IG-scoped account id above — so routing needs both.
+  secondaryExternalId String?            @map("secondary_external_id")
   credentials    String?                 // AES-256-GCM encrypted JSON blob
   lastError      String?                 @map("last_error")
   connectedAt    DateTime?               @map("connected_at")
