@@ -46,11 +46,12 @@ async function recordInbound(params: {
   const { organizationId, channel, externalContactId, contactName, contactPhone, body, interactiveSelectionId, externalMessageId, leadSource } = params;
 
   await withTenant(organizationId, async (tx) => {
-    let conversation = await tx.conversation.findUnique({
+    const existing = await tx.conversation.findUnique({
       where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
     });
 
-    if (!conversation) {
+    let leadId: string | undefined;
+    if (!existing) {
       // Auto-create (or attach to) a Lead for a brand-new contact.
       let lead = contactPhone
         ? await tx.lead.findFirst({ where: { organizationId, phone: contactPhone } })
@@ -68,12 +69,24 @@ async function recordInbound(params: {
           },
         });
       }
-      conversation = await tx.conversation.create({
-        data: { organizationId, channel, externalContactId, contactName, contactPhone, leadId: lead.id },
-      });
-    } else if (contactName && conversation.contactName !== contactName) {
-      conversation = await tx.conversation.update({ where: { id: conversation.id }, data: { contactName } });
+      leadId = lead.id;
     }
+
+    // upsert, not findUnique-then-create: two webhook deliveries for the same
+    // brand-new contact can arrive as separate concurrent requests, each
+    // seeing `existing` as null. A plain create() then races on the unique
+    // constraint below — and catching that failure doesn't work either:
+    // Postgres aborts the WHOLE transaction on a constraint violation, so any
+    // further statement in it (even a harmless re-fetch) fails with 25P02
+    // until rollback — confirmed by testing that approach here first, before
+    // landing on upsert. Postgres resolves the conflict inside one atomic
+    // INSERT ... ON CONFLICT statement instead, so there's never a separate
+    // failed statement to recover from.
+    const conversation = await tx.conversation.upsert({
+      where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
+      create: { organizationId, channel, externalContactId, contactName, contactPhone, leadId },
+      update: contactName ? { contactName } : {},
+    });
 
     await tx.message.create({
       data: {
