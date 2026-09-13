@@ -3,6 +3,7 @@ import { withTenant, type TenantTx } from '../../lib/prisma';
 import { BadRequest, NotFound } from '../../lib/errors';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 import { createBookingFromLeadTx } from '../bookings/bookings.service';
+import { createLeadSchema } from './leads.schemas';
 import type { CreateActivityInput, CreateLeadInput, ListLeadsQuery, UpdateLeadInput } from './leads.schemas';
 
 const assignedToSelect = {
@@ -112,6 +113,40 @@ export async function createLead(organizationId: string, input: CreateLeadInput)
       include: assignedToSelect,
     });
   });
+}
+
+export interface BulkImportLeadsResult {
+  created: number;
+  failed: { row: number; error: string }[];
+}
+
+/**
+ * CSV bulk import (frontend parses the file + maps columns to lead fields;
+ * this just receives the resulting row objects). Each row is validated and
+ * created independently — one bad or duplicate-looking row is recorded in
+ * `failed` and skipped, it never rejects the whole batch. Reuses createLead's
+ * own validation/repeat-customer-detection exactly, one row at a time, so a
+ * bulk import behaves identically to adding each lead by hand.
+ */
+export async function bulkImportLeads(organizationId: string, rows: unknown[]): Promise<BulkImportLeadsResult> {
+  const failed: { row: number; error: string }[] = [];
+  let created = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const parsed = createLeadSchema.safeParse(rows[i]);
+    if (!parsed.success) {
+      failed.push({ row: i + 1, error: parsed.error.issues[0]?.message ?? 'Invalid row' });
+      continue;
+    }
+    try {
+      await createLead(organizationId, parsed.data);
+      created++;
+    } catch (err) {
+      failed.push({ row: i + 1, error: err instanceof Error ? err.message : 'Could not create this lead' });
+    }
+  }
+
+  return { created, failed };
 }
 
 export async function updateLead(

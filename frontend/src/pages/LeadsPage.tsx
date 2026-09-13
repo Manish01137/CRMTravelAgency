@@ -27,6 +27,7 @@ import {
   SearchX,
   SlidersHorizontal,
   Trash2,
+  Upload,
   UserRound,
   UsersRound,
   Wallet,
@@ -61,6 +62,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { LeadFormDialog } from '@/components/leads/LeadFormDialog';
 import { LeadActivityBoard } from '@/components/leads/LeadActivityBoard';
+import { LeadImportDialog } from '@/components/leads/LeadImportDialog';
 import {
   LEAD_SOURCES,
   LEAD_STATUSES,
@@ -533,6 +535,7 @@ export function LeadsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [formOpen, setFormOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [deletingLead, setDeletingLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
@@ -741,6 +744,9 @@ export function LeadsPage() {
   return (
     <div>
       <PageHeader title="Leads" description="Track and manage every enquiry in one place.">
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Upload /> Import CSV
+        </Button>
         <Button onClick={openCreate}>
           <Plus /> New lead
         </Button>
@@ -1074,6 +1080,14 @@ export function LeadsPage() {
       )}
 
       <LeadFormDialog open={formOpen} onOpenChange={setFormOpen} lead={editingLead} users={users} />
+
+      <LeadImportDialog
+        open={importOpen}
+        onOpenChange={(v) => {
+          setImportOpen(v);
+          if (!v) invalidate();
+        }}
+      />
 
       <LeadActivityBoard lead={boardLead} open={!!boardLead} onOpenChange={(o) => !o && setBoardLead(null)} />
 

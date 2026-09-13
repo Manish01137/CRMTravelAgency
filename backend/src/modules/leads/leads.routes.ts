@@ -4,6 +4,7 @@ import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as controller from './leads.controller';
 import {
+  bulkImportLeadsSchema,
   createActivitySchema,
   createLeadSchema,
   leadIdParam,
@@ -19,6 +20,7 @@ router.use(requireAuth);
 router.get('/', validate({ query: listLeadsQuerySchema }), asyncHandler(controller.list));
 router.get('/stats', asyncHandler(controller.stats));
 router.post('/', validate({ body: createLeadSchema }), asyncHandler(controller.create));
+router.post('/bulk-import', validate({ body: bulkImportLeadsSchema }), asyncHandler(controller.bulkImport));
 router.get('/:id', validate({ params: leadIdParam }), asyncHandler(controller.get));
 router.patch(
   '/:id',

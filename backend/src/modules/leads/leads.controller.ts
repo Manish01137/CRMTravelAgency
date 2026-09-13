@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import * as leadsService from './leads.service';
-import type { ListLeadsQuery } from './leads.schemas';
+import type { BulkImportLeadsInput, ListLeadsQuery } from './leads.schemas';
 
 export async function list(req: Request, res: Response): Promise<void> {
   const result = await leadsService.listLeads(
@@ -23,6 +23,12 @@ export async function get(req: Request, res: Response): Promise<void> {
 export async function create(req: Request, res: Response): Promise<void> {
   const lead = await leadsService.createLead(req.auth!.organizationId, req.body);
   res.status(201).json(lead);
+}
+
+export async function bulkImport(req: Request, res: Response): Promise<void> {
+  const { leads } = req.body as BulkImportLeadsInput;
+  const result = await leadsService.bulkImportLeads(req.auth!.organizationId, leads);
+  res.status(201).json(result);
 }
 
 export async function update(req: Request, res: Response): Promise<void> {

@@ -105,7 +105,16 @@ export const createActivitySchema = z.object({
   moveTo: LeadStatusEnum.optional(),
 });
 
+// Bulk CSV import: only the outer shape (an array, size-capped) is validated
+// here — each row is checked against createLeadSchema individually inside
+// leads.service.ts, so one bad row doesn't reject an entire batch of
+// otherwise-good ones.
+export const bulkImportLeadsSchema = z.object({
+  leads: z.array(z.record(z.unknown())).min(1, 'No rows to import').max(500, 'Import at most 500 leads at a time'),
+});
+
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
+export type BulkImportLeadsInput = z.infer<typeof bulkImportLeadsSchema>;
 export type UpdateLeadInput = z.infer<typeof updateLeadSchema>;
 export type ListLeadsQuery = z.infer<typeof listLeadsQuerySchema>;
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
