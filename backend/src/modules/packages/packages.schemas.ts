@@ -52,21 +52,9 @@ const gallerySchema = z.array(z.string().url().max(2000)).max(30);
 // stay valid; the renderer no longer branches on it.
 const PDF_TEMPLATES = ['signature'] as const;
 
-const VIEW_TYPES = [
-  'CLASSIC',
-  'MODERN',
-  'MINIMAL',
-  'ADVENTURE',
-  'BEACH',
-  'PILGRIMAGE',
-  'ROMANCE',
-  'WILDLIFE',
-  'WEEKEND',
-  'LUXURY',
-  'BACKPACK',
-  'FAMILY',
-  'HILLS',
-] as const;
+// Which "Signature" template color variant a package renders in — set only
+// by the builder's template picker (Basics step), never an independent field.
+const SIGNATURE_THEMES = ['SUNRISE', 'OCEAN', 'HERITAGE'] as const;
 
 // Shared shape used by create + update (create makes core fields required).
 const builderFields = {
@@ -81,7 +69,7 @@ const builderFields = {
       .regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers and hyphens only')
       .optional(),
   ),
-  viewType: z.enum(VIEW_TYPES).default('CLASSIC'),
+  signatureTheme: z.enum(SIGNATURE_THEMES).default('SUNRISE'),
   categories: categoriesSchema.default([]),
   bookingTitle: optText(200),
   originalPrice: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
@@ -142,7 +130,7 @@ export const updatePackageSchema = z
       emptyToNull,
       z.string().trim().toLowerCase().max(80).regex(/^[a-z0-9-]+$/, 'Use lowercase letters, numbers and hyphens only').nullable(),
     ).optional(),
-    viewType: z.enum(VIEW_TYPES).optional(),
+    signatureTheme: z.enum(SIGNATURE_THEMES).optional(),
     categories: categoriesSchema.optional(),
     bookingTitle: nullText(200),
     originalPrice: z.preprocess(emptyToNull, z.coerce.number().int().nonnegative().max(1_000_000_000).nullable()).optional(),

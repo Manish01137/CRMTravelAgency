@@ -527,7 +527,12 @@ model Package {
   // --- Premium builder fields (Basics) ---
   code                String? // package code, auto-generated if blank
   slug                String? // public URL slug
-  viewType            String  @default("CLASSIC") @map("view_type")
+  // Which "Signature" template color variant this package renders in —
+  // SUNRISE (blue/yellow) | OCEAN (teal/coral) | HERITAGE (maroon/gold). Set
+  // ONLY by picking a template in the builder's "Start from a template"
+  // step — there is no separate layout/view-type control anymore. Layout and
+  // theme are a single concept now, owned by the template.
+  signatureTheme      String  @default("SUNRISE") @map("signature_theme")
   categories          Json    @default("[]") // string[]
   bookingTitle        String? @map("booking_title")
   originalPrice       Int?    @map("original_price") // strike-through / discount

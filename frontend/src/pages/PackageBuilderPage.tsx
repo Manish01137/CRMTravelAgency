@@ -26,7 +26,7 @@ import {
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
-import type { LinktreeCategory as CategoryType, Hotel, PackageViewType, PdfTemplateId, SightseeingActivity, TravelPackage } from '@/types';
+import type { LinktreeCategory as CategoryType, Hotel, PdfTemplateId, SightseeingActivity, SignatureTheme, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -59,7 +59,7 @@ import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates'
 export interface Values {
   name: string;
   code: string;
-  viewType: PackageViewType;
+  signatureTheme: SignatureTheme;
   categories: { value: string }[];
   slug: string;
   destination: string;
@@ -147,23 +147,6 @@ function LinktreeCategoriesField({ form }: { form: ReturnType<typeof useForm<Val
   );
 }
 
-/** Public page design themes — each renders a distinct look on /p/:id. */
-const THEME_OPTIONS: { value: PackageViewType; label: string }[] = [
-  { value: 'CLASSIC', label: 'Classic — bright & friendly' },
-  { value: 'MODERN', label: 'Modern — dark editorial' },
-  { value: 'MINIMAL', label: 'Minimal — airy white' },
-  { value: 'ADVENTURE', label: '🏔️ Adventure — rugged blaze' },
-  { value: 'BEACH', label: '🏖️ Beach — sun & surf' },
-  { value: 'PILGRIMAGE', label: '🛕 Pilgrimage — saffron heritage' },
-  { value: 'ROMANCE', label: '💞 Romance — blush elegance' },
-  { value: 'WILDLIFE', label: '🐯 Wildlife — deep jungle' },
-  { value: 'WEEKEND', label: '🚗 Weekend — vibrant pop' },
-  { value: 'LUXURY', label: '✨ Luxury — ivory & gold' },
-  { value: 'BACKPACK', label: '🎒 Backpack — indie journal' },
-  { value: 'FAMILY', label: '👨‍👩‍👧‍👦 Family — cheerful sky' },
-  { value: 'HILLS', label: '⛰️ Hills — misty pine' },
-];
-
 const STEPS = [
   { key: 'basics', label: 'Basics', Icon: PackageIcon },
   { key: 'itinerary', label: 'Itinerary', Icon: MapPin },
@@ -184,7 +167,7 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
   return {
     name: pkg?.name ?? '',
     code: pkg?.code ?? '',
-    viewType: pkg?.viewType ?? 'CLASSIC',
+    signatureTheme: pkg?.signatureTheme ?? 'SUNRISE',
     categories: (pkg?.categories ?? []).map((value) => ({ value })),
     slug: pkg?.slug ?? '',
     destination: pkg?.destination ?? '',
@@ -239,7 +222,7 @@ function toPayload(v: Values): Record<string, unknown> {
   return {
     name: v.name.trim(),
     code: v.code.trim() || null,
-    viewType: v.viewType,
+    signatureTheme: v.signatureTheme,
     categories: v.categories.map((c) => c.value.trim()).filter(Boolean),
     slug: v.slug.trim() || null,
     destination: v.destination.trim(),
@@ -368,31 +351,6 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
             <Input id="code" placeholder="Optional" {...register('code')} />
           </Field>
         </div>
-
-        <Field
-          label="Package view type"
-          className="mt-4"
-          hint="Controls which public page layout this package renders."
-        >
-          <Controller
-            control={control}
-            name="viewType"
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {THEME_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </Field>
       </div>
 
       <div className="rounded-xl border border-border bg-surface/60 p-5">

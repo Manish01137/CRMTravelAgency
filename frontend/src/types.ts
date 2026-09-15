@@ -241,20 +241,8 @@ export type BillStatus = 'UNPAID' | 'PAID';
 /** The package PDF brochure has a single fixed design — every package uses it. */
 export type PdfTemplateId = 'signature';
 
-export type PackageViewType =
-  | 'CLASSIC'
-  | 'MODERN'
-  | 'MINIMAL'
-  | 'ADVENTURE'
-  | 'BEACH'
-  | 'PILGRIMAGE'
-  | 'ROMANCE'
-  | 'WILDLIFE'
-  | 'WEEKEND'
-  | 'LUXURY'
-  | 'BACKPACK'
-  | 'FAMILY'
-  | 'HILLS';
+/** Which "Signature" template color variant a package renders in — set only by picking a template in the builder, never an independent field. */
+export type SignatureTheme = 'SUNRISE' | 'OCEAN' | 'HERITAGE';
 
 export interface PricingOption {
   label: string;
@@ -301,7 +289,7 @@ export interface TravelPackage {
 
   code: string | null;
   slug: string | null;
-  viewType: PackageViewType;
+  signatureTheme: SignatureTheme;
   categories: string[];
   bookingTitle: string | null;
   originalPrice: number | null;
