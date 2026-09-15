@@ -7,17 +7,18 @@ import {
   BedDouble,
   Check,
   Download,
+  Instagram as InstagramIcon,
+  Mail,
   MapPin,
   Moon,
+  Phone,
   Plane,
   Send,
   Sparkles,
   Sun,
   UtensilsCrossed,
-  X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import type { SignatureTheme, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, initials } from '@/lib/format';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+const DISPLAY_FONT = "'Baloo 2', 'Figtree', sans-serif";
+const BODY_FONT = "'Poppins', 'Figtree', sans-serif";
 
 interface BrochureOrg {
   name: string;
@@ -35,6 +38,10 @@ interface BrochureOrg {
   logoUrl: string | null;
   brandPrimaryColor: string;
   brandSecondaryColor: string;
+  /** Derived server-side from the org's saved links — the same source LinkTree/Host Page use. */
+  instagramUrl: string | null;
+  /** Derived server-side: org contact phone, falling back to the package's own — digits only. */
+  whatsappNumber: string | null;
 }
 interface PublicBrochure {
   package: TravelPackage;
@@ -45,101 +52,86 @@ const lines = (s: string | null | undefined) =>
   (s ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
 
 /**
- * The 3 "Signature" template color variants, set by which template the agent
- * picked in the builder (Basics step) — Sunrise/Ocean/Heritage each have a
- * fixed accent palette so they read as distinct identities even though they
- * currently share this same page's structure. See THEMES below for the note
- * on eventually rendering from the actual brochure template structure.
+ * Real color values from the "Signature" brochure template (see the attached
+ * joinetra-signature-package-template.html — these are its :root / .theme-ocean
+ * / .theme-heritage custom properties), applied here as CSS custom properties
+ * on the page root — the exact same mechanism the reference file itself uses,
+ * so every themed color below (`var(--blue)` etc.) traces back to one place.
  */
-interface Theme {
-  page: string;
-  heroH: string;
-  overlay: string;
-  title: string;
-  /** CSS font-family for the hero title (defaults to Figtree). */
-  titleFont?: string;
-  /** CSS font-family for section headings. */
-  headFont?: string;
-  /** Fixed accent palette; falls back to the org's brand colors when unset. */
-  accent?: string;
-  accent2?: string;
-  destChip: string;
-  metaChip: string;
-  card: string;
-  body: string;
-  muted: string;
-  sectionTitle: string;
-  highlightChip: string;
-  timelineLine: string;
-  priceCard: string;
-}
-
-// Real color values from the "Signature" brochure template (see the attached
-// joinetra-signature-package-template.html — these are its :root / .theme-ocean
-// / .theme-heritage custom properties) — kept as the single source of truth
-// for these 3 colors until the page itself renders from that template's
-// actual structure (a separate, larger follow-up).
-const THEMES: Record<SignatureTheme, Theme> = {
-  // Sunrise — blue & yellow, the default Signature look.
+const THEME_VARS: Record<SignatureTheme, Record<string, string>> = {
   SUNRISE: {
-    page: 'bg-surface text-foreground',
-    heroH: 'h-64 sm:h-80',
-    overlay: 'bg-gradient-to-t from-black/70 via-black/20 to-black/25',
-    title: 'font-display text-3xl font-extrabold leading-tight drop-shadow sm:text-4xl',
-    accent: '#1867B4',
-    accent2: '#FFC72C',
-    destChip: 'bg-white/20 backdrop-blur',
-    metaChip: 'bg-white/20',
-    card: 'rounded-2xl border border-border bg-card shadow-card',
-    body: 'text-foreground',
-    muted: 'text-muted-foreground',
-    sectionTitle: 'font-display text-xl font-bold text-foreground',
-    highlightChip: 'bg-card text-foreground shadow-card',
-    timelineLine: 'before:bg-border',
-    priceCard: 'border border-border bg-card shadow-pop',
+    '--blue': '#1867B4',
+    '--blue-dark': '#0E4C87',
+    '--blue-pale': '#EAF3FC',
+    '--yellow': '#FFC72C',
+    '--yellow-pale': '#FFF4D6',
+    '--orange': '#F2801E',
   },
-  // Ocean — teal & coral.
   OCEAN: {
-    page: 'bg-[#F4FBFB] text-[#0A3236]',
-    heroH: 'h-72 sm:h-[26rem]',
-    overlay: 'bg-gradient-to-t from-[#0A3236]/80 via-teal-900/15 to-teal-900/20',
-    title: 'font-display text-3xl font-extrabold leading-tight drop-shadow sm:text-5xl',
-    accent: '#0E7C86',
-    accent2: '#FF8A65',
-    destChip: 'bg-white/25 backdrop-blur',
-    metaChip: 'bg-white/25',
-    card: 'rounded-3xl border border-teal-100 bg-white shadow-[0_12px_35px_-18px_rgba(14,124,134,0.35)]',
-    body: 'text-[#0A3236]',
-    muted: 'text-[#4C7378]',
-    sectionTitle: 'font-display text-xl font-extrabold text-[#0A5860]',
-    highlightChip: 'rounded-full border border-teal-100 bg-teal-50 text-[#0A5860]',
-    timelineLine: 'before:bg-teal-200',
-    priceCard: 'rounded-3xl border border-teal-100 bg-white shadow-[0_12px_35px_-18px_rgba(14,124,134,0.35)]',
+    '--blue': '#0E7C86',
+    '--blue-dark': '#0A5860',
+    '--blue-pale': '#E4F5F6',
+    '--yellow': '#FF8A65',
+    '--yellow-pale': '#FFE9DE',
+    '--orange': '#E85D2A',
   },
-  // Heritage — maroon & gold.
   HERITAGE: {
-    page: 'bg-[#FBF6EE] text-[#3A1A21]',
-    heroH: 'h-72 sm:h-[26rem]',
-    overlay: 'bg-gradient-to-t from-[#3A1A21]/85 via-rose-950/20 to-rose-950/25',
-    title: 'font-display text-3xl font-extrabold leading-tight drop-shadow sm:text-5xl',
-    accent: '#7A2E3B',
-    accent2: '#D8A24A',
-    destChip: 'bg-white/25 backdrop-blur',
-    metaChip: 'bg-white/25',
-    card: 'rounded-xl border border-[#E9D9BE] bg-white',
-    body: 'text-[#3A1A21]',
-    muted: 'text-[#8A6B6F]',
-    sectionTitle: 'font-display text-xl font-extrabold text-[#521D27]',
-    highlightChip: 'rounded-full border border-[#E9D9BE] bg-[#F6EAD1] text-[#521D27]',
-    timelineLine: 'before:bg-[#D8A24A]/60',
-    priceCard: 'rounded-xl border-2 border-[#D8A24A]/70 bg-white',
+    '--blue': '#7A2E3B',
+    '--blue-dark': '#521D27',
+    '--blue-pale': '#F6E9EA',
+    '--yellow': '#D8A24A',
+    '--yellow-pale': '#F6EAD1',
+    '--orange': '#B5651D',
   },
 };
+// Constant across all 3 variants in the reference template — only blue/yellow/orange shift.
+const INK = '#1B1F27';
+const MUTED = '#57626F';
+const HAIRLINE = '#E4E9EF';
+
+/** The reference template's pill-shaped section header ("BRIEF ITINERARY", "INCLUSIONS", …). */
+function Banner({ children, yellow }: { children: React.ReactNode; yellow?: boolean }) {
+  return (
+    <div className="my-5 text-center">
+      <span
+        className="inline-block rounded-2xl px-6 py-2.5 text-lg font-bold tracking-wide"
+        style={{
+          fontFamily: DISPLAY_FONT,
+          backgroundColor: yellow ? 'var(--yellow)' : 'var(--blue)',
+          color: yellow ? INK : '#fff',
+        }}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function BulletList({ items, dotColor }: { items: string[]; dotColor?: string }) {
+  return (
+    <ul className="space-y-2.5">
+      {items.map((l, i) => (
+        <li key={i} className="flex items-start gap-2.5 text-[15px] leading-relaxed" style={{ color: INK }}>
+          <span
+            className="mt-2 size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: dotColor ?? 'var(--blue)' }}
+          />
+          {l}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * PUBLIC customer-facing package page: /p/:id
- * A shareable, mobile-first web page showing the day-by-day plan, with a
- * Book-on-WhatsApp CTA, an enquiry form (files a lead), and a PDF download.
+ * Redesigned to match the "Signature" brochure template's visual language
+ * (brand mark, Baloo 2 display type, blue/yellow banner headers, themed
+ * accent colors) as one continuous responsive page — not the reference's
+ * literal fixed-height print pages, which don't apply to a scrolling site.
+ * Highlights/"why choose us" deliberately kept as this app's own existing
+ * chip layout rather than the template's dedicated section; there is no
+ * payment/bank/QR section — booking stays WhatsApp + the enquiry form below.
  */
 export function PublicPackagePage() {
   const { id } = useParams<{ id: string }>();
@@ -196,16 +188,15 @@ export function PublicPackagePage() {
     );
   }
 
-  const t = THEMES[pkg.signatureTheme] ?? THEMES.SUNRISE;
-  // Theme accents win over org branding so each Signature variant has a fixed identity.
-  const brand = t.accent ?? org?.brandPrimaryColor ?? '#4F46E5';
-  const brand2 = t.accent2 ?? org?.brandSecondaryColor ?? '#0D9488';
+  const vars = THEME_VARS[pkg.signatureTheme] ?? THEME_VARS.SUNRISE;
   const orgName = org?.name ?? 'Travel Agency';
   const discounted = pkg.originalPrice != null && pkg.originalPrice > pkg.priceAmount;
   const inclusions = lines(pkg.inclusions);
   const exclusions = lines(pkg.exclusions);
+  const thingsToCarry = lines(pkg.thingsToCarry);
+  const terms = lines(pkg.termsConditions);
 
-  const waDigits = (pkg.contactNumber ?? '').replace(/\D/g, '');
+  const waDigits = org?.whatsappNumber ?? (pkg.contactNumber ?? '').replace(/\D/g, '');
   const waText = encodeURIComponent(
     `Hi ${orgName}, I'm interested in *${pkg.name}* (${pkg.destination}, ${pkg.days}D/${pkg.nights}N). Please share details.`,
   );
@@ -217,190 +208,258 @@ export function PublicPackagePage() {
       : { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.55, delay, ease: EASE } };
 
   return (
-    <div className={cn('min-h-dvh pb-28 sm:pb-16', t.page)}>
-      {/* Hero */}
-      <div className={cn('relative w-full overflow-hidden', t.heroH)} style={{ background: `linear-gradient(120deg, ${brand}, ${brand2})` }}>
-        {pkg.bannerImageUrl && <img src={pkg.bannerImageUrl} alt="" className="h-full w-full object-cover" />}
-        <div className={cn('absolute inset-0', t.overlay)} />
-        <div className="absolute left-0 right-0 top-0 flex items-center gap-2.5 p-4 text-white">
-          {org?.logoUrl ? (
-            <img src={org.logoUrl} alt="" className="size-9 rounded-lg object-cover" />
-          ) : (
-            <span className="flex size-9 items-center justify-center rounded-lg bg-white/20 text-sm font-bold">
-              {initials(orgName)}
-            </span>
-          )}
-          <span className="font-display text-sm font-bold">{orgName}</span>
-        </div>
-        <motion.div {...rise(0.05)} className="absolute bottom-0 left-0 right-0 p-5 text-white sm:p-7">
-          <span className={cn('inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold', t.destChip)}>
+    <div
+      className="min-h-dvh pb-28 sm:pb-16"
+      style={{ ...vars, backgroundColor: '#fff', color: INK, fontFamily: BODY_FONT } as React.CSSProperties}
+    >
+      <div className="mx-auto max-w-2xl px-4 pt-6">
+        {/* Brand mark */}
+        <motion.div {...rise(0)} className="flex flex-col items-center gap-2.5 text-center">
+          <span
+            className="flex size-16 items-center justify-center overflow-hidden rounded-full border-2"
+            style={{ borderColor: 'var(--blue)', backgroundColor: 'var(--blue-pale)' }}
+          >
+            {org?.logoUrl ? (
+              <img src={org.logoUrl} alt="" className="size-full object-cover" />
+            ) : (
+              <span className="font-bold" style={{ color: 'var(--blue)', fontFamily: DISPLAY_FONT }}>
+                {initials(orgName)}
+              </span>
+            )}
+          </span>
+          <p className="text-sm font-bold leading-tight" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>
+            {orgName}
+          </p>
+        </motion.div>
+
+        {/* Cover */}
+        <motion.div {...rise(0.05)} className="mt-4 text-center">
+          <span className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold" style={{ backgroundColor: 'var(--blue-pale)', color: 'var(--blue-dark)' }}>
             <MapPin className="size-3.5" /> {pkg.destination}
           </span>
-          <h1 className={cn('mt-2', t.title)} style={t.titleFont ? { fontFamily: t.titleFont } : undefined}>
+          <h1
+            className="mt-2 text-4xl font-extrabold uppercase leading-[0.95] sm:text-5xl"
+            style={{ fontFamily: DISPLAY_FONT, color: 'var(--blue-dark)' }}
+          >
             {pkg.bookingTitle || pkg.name}
           </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium">
-            <span className={cn('flex items-center gap-1 rounded-full px-2.5 py-1', t.metaChip)}>
-              <Moon className="size-3.5" /> {pkg.nights}N
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2.5 text-sm font-bold">
+            <span className="flex items-center gap-1.5 rounded-full px-4 py-1.5" style={{ backgroundColor: 'var(--yellow)', color: INK }}>
+              <Moon className="size-3.5" /> {pkg.nights} NIGHTS
             </span>
-            <span className={cn('flex items-center gap-1 rounded-full px-2.5 py-1', t.metaChip)}>
-              <Sun className="size-3.5" /> {pkg.days}D
+            <span className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-white" style={{ backgroundColor: 'var(--blue)' }}>
+              <Sun className="size-3.5" /> {pkg.days} DAYS
             </span>
           </div>
         </motion.div>
-      </div>
 
-      <div className="mx-auto max-w-2xl px-4">
+        {pkg.bannerImageUrl && (
+          <motion.img
+            {...rise(0.1)}
+            src={pkg.bannerImageUrl}
+            alt=""
+            className="mt-5 h-56 w-full rounded-2xl object-cover sm:h-72"
+          />
+        )}
+
         {/* Price + PDF */}
-        <motion.div {...rise(0.1)} className={cn('-mt-6 flex items-center justify-between gap-3 rounded-2xl p-4', t.priceCard)}>
+        <motion.div
+          {...rise(0.12)}
+          className="mt-5 flex items-center justify-between gap-3 rounded-2xl p-4"
+          style={{ border: `1.5px solid ${HAIRLINE}` }}
+        >
           <div>
-            <p className="font-display text-2xl font-bold" style={{ color: brand }}>
+            <p className="text-2xl font-bold" style={{ fontFamily: DISPLAY_FONT, color: 'var(--blue-dark)' }}>
               {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
               {discounted && (
-                <span className={cn('ml-2 text-sm font-medium line-through', t.muted)}>
+                <span className="ml-2 text-sm font-medium line-through" style={{ color: MUTED }}>
                   {formatCurrency(pkg.originalPrice!, pkg.priceCurrency)}
                 </span>
               )}
             </p>
-            <p className={cn('text-xs', t.muted)}>per person</p>
+            <p className="text-xs" style={{ color: MUTED }}>per person</p>
           </div>
           <Button variant="outline" onClick={() => window.open(`/p/${pkg.id}/pdf`, '_blank')}>
             <Download /> PDF
           </Button>
         </motion.div>
 
-        {/* Highlights */}
+        {/* Highlights — "why choose us", kept as this app's own existing chip layout */}
         {pkg.highlights.length > 0 && (
-          <motion.div {...rise(0.15)} className="mt-6">
-            <div className="flex flex-wrap gap-2">
-              {pkg.highlights.map((h, i) => (
-                <span key={i} className={cn('flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium', t.highlightChip)}>
-                  <Sparkles className="size-3.5" style={{ color: brand }} /> {h}
-                </span>
-              ))}
-            </div>
+          <motion.div {...rise(0.15)} className="mt-6 flex flex-wrap gap-2">
+            {pkg.highlights.map((h, i) => (
+              <span
+                key={i}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium"
+                style={{ backgroundColor: 'var(--blue-pale)', color: 'var(--blue-dark)' }}
+              >
+                <Sparkles className="size-3.5" style={{ color: 'var(--orange)' }} /> {h}
+              </span>
+            ))}
           </motion.div>
         )}
 
         {pkg.description && (
-          <motion.p {...rise(0.18)} className={cn('mt-6 whitespace-pre-line text-[15px] leading-relaxed', t.body)}>
+          <motion.p {...rise(0.18)} className="mt-6 whitespace-pre-line text-[15px] leading-relaxed">
             {pkg.description}
           </motion.p>
         )}
 
-        {/* Day-wise itinerary */}
+        {/* Brief itinerary */}
         {pkg.itinerary.length > 0 && (
-          <motion.div {...rise(0.22)} className="mt-8">
-            <h2 className={t.sectionTitle} style={t.headFont ? { fontFamily: t.headFont } : undefined}>
-              Day-by-day plan
-            </h2>
-            <div className={cn('relative mt-4 space-y-4 before:absolute before:left-[15px] before:top-2 before:h-full before:w-0.5', t.timelineLine)}>
+          <motion.div {...rise(0.2)}>
+            <Banner>BRIEF ITINERARY</Banner>
+            <div className="space-y-1">
               {pkg.itinerary.map((d) => (
-                <div key={d.day} className="relative pl-11">
+                <div key={d.day} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--blue-pale)' }}>
                   <span
-                    className="absolute left-0 top-0 flex size-8 items-center justify-center rounded-full font-display text-xs font-bold text-white shadow"
-                    style={{ backgroundColor: brand }}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                    style={{ backgroundColor: 'var(--blue)', fontFamily: DISPLAY_FONT }}
                   >
                     {d.day}
                   </span>
-                  <div className={cn('p-4', t.card)}>
-                    <h3
-                      className={cn('font-display text-base font-bold', t.body)}
-                      style={t.headFont ? { fontFamily: t.headFont } : undefined}
-                    >
-                      {d.title}
-                    </h3>
-                    {d.description && <p className={cn('mt-1 whitespace-pre-line text-sm', t.muted)}>{d.description}</p>}
-                    {(d.images?.length ?? 0) > 0 && (
-                      <div className="mt-3 flex gap-2 overflow-x-auto">
-                        {d.images!.map((src, k) => (
-                          <img key={k} src={src} alt="" className="h-24 w-32 shrink-0 rounded-lg object-cover" />
-                        ))}
-                      </div>
-                    )}
-                    {/* Selected activities (copied from the library) */}
-                    {(d.activityBlocks?.length ?? 0) > 0 && (
-                      <div className="mt-3 space-y-2.5">
-                        {d.activityBlocks!.map((b, k) => (
-                          <div key={k} className="flex gap-3">
-                            {b.imageUrl && (
-                              <img src={b.imageUrl} alt="" className="size-16 shrink-0 rounded-lg object-cover" />
-                            )}
-                            <div className="min-w-0">
-                              <p className={cn('text-sm font-semibold', t.body)}>{b.name}</p>
-                              {b.description && <p className={cn('mt-0.5 text-xs', t.muted)}>{b.description}</p>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className={cn('mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-medium', t.muted)}>
-                      {d.stay && (
-                        <span className="flex items-center gap-1.5">
-                          <BedDouble className="size-3.5" style={{ color: brand }} /> {d.stay}
-                        </span>
-                      )}
-                      {(d.activities?.length ?? 0) > 0 && (
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="size-3.5" style={{ color: brand }} /> {d.activities!.join(' · ')}
-                        </span>
-                      )}
-                      {d.meals && (
-                        <span className="flex items-center gap-1.5">
-                          <UtensilsCrossed className="size-3.5" style={{ color: brand }} /> {d.meals}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--blue-dark)' }}>{d.title}</span>
                 </div>
               ))}
             </div>
           </motion.div>
         )}
 
+        {/* Day-by-day detail */}
+        {pkg.itinerary.length > 0 && (
+          <motion.div {...rise(0.24)} className="mt-8 space-y-4">
+            {pkg.itinerary.map((d) => (
+              <div key={d.day} className="overflow-hidden rounded-2xl" style={{ border: `1.5px solid ${HAIRLINE}` }}>
+                <div className="px-5 pt-5 text-center">
+                  <span
+                    className="inline-block rounded-xl px-5 py-1.5 text-sm font-bold text-white"
+                    style={{ backgroundColor: 'var(--blue)', fontFamily: DISPLAY_FONT }}
+                  >
+                    DAY {d.day}
+                  </span>
+                  <h3 className="mt-2 text-lg font-extrabold uppercase" style={{ fontFamily: DISPLAY_FONT, color: INK }}>
+                    {d.title}
+                  </h3>
+                </div>
+                <div className="px-5 pb-5">
+                  {d.description && (
+                    <ul className="mt-3">
+                      <BulletList items={lines(d.description)} />
+                    </ul>
+                  )}
+                  {(d.images?.length ?? 0) > 0 && (
+                    <div className="mt-3 flex gap-2 overflow-x-auto">
+                      {d.images!.map((src, k) => (
+                        <img key={k} src={src} alt="" className="h-24 w-32 shrink-0 rounded-lg object-cover" />
+                      ))}
+                    </div>
+                  )}
+                  {(d.activityBlocks?.length ?? 0) > 0 && (
+                    <div className="mt-3 space-y-2.5">
+                      {d.activityBlocks!.map((b, k) => (
+                        <div key={k} className="flex gap-3">
+                          {b.imageUrl && <img src={b.imageUrl} alt="" className="size-16 shrink-0 rounded-lg object-cover" />}
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold">{b.name}</p>
+                            {b.description && <p className="mt-0.5 text-xs" style={{ color: MUTED }}>{b.description}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-medium" style={{ color: MUTED }}>
+                    {d.stay && (
+                      <span className="flex items-center gap-1.5">
+                        <BedDouble className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.stay}
+                      </span>
+                    )}
+                    {(d.activities?.length ?? 0) > 0 && (
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.activities!.join(' · ')}
+                      </span>
+                    )}
+                    {d.meals && (
+                      <span className="flex items-center gap-1.5">
+                        <UtensilsCrossed className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.meals}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+
         {/* Inclusions / Exclusions */}
-        {(inclusions.length > 0 || exclusions.length > 0) && (
-          <motion.div {...rise(0.26)} className="mt-8 grid gap-4 sm:grid-cols-2">
-            {inclusions.length > 0 && (
-              <div className={cn('p-5', t.card)}>
-                <h3 className="font-display text-base font-bold text-emerald-600">What's included</h3>
-                <ul className="mt-3 space-y-2">
-                  {inclusions.map((l, i) => (
-                    <li key={i} className={cn('flex items-start gap-2 text-sm', t.body)}>
-                      <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" /> {l}
-                    </li>
+        {inclusions.length > 0 && (
+          <motion.div {...rise(0.28)} className="mt-8">
+            <Banner>INCLUSIONS</Banner>
+            <BulletList items={inclusions} />
+          </motion.div>
+        )}
+        {exclusions.length > 0 && (
+          <motion.div {...rise(0.3)} className="mt-6">
+            <Banner yellow>EXCLUSIONS</Banner>
+            <BulletList items={exclusions} dotColor="var(--orange)" />
+          </motion.div>
+        )}
+
+        {/* Pricing — tiers only; no payment/bank/QR section */}
+        {pkg.pricingOptions.length > 0 && (
+          <motion.div {...rise(0.32)} className="mt-8">
+            <Banner>PRICING</Banner>
+            <div className="overflow-hidden rounded-xl" style={{ border: `1.5px solid ${HAIRLINE}` }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--blue-pale)' }}>
+                    <th className="px-4 py-2.5 text-left font-bold" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>Option</th>
+                    <th className="px-4 py-2.5 text-left font-bold" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pkg.pricingOptions.map((p, i) => (
+                    <tr key={i} style={{ borderTop: `1px solid ${HAIRLINE}` }}>
+                      <td className="px-4 py-2.5 font-medium">
+                        {p.label} {p.season === 'PEAK' && <span className="text-xs" style={{ color: 'var(--orange)' }}>(Peak season)</span>}
+                      </td>
+                      <td className="px-4 py-2.5 font-semibold">{formatCurrency(p.price, pkg.priceCurrency)}</td>
+                    </tr>
                   ))}
-                </ul>
-              </div>
-            )}
-            {exclusions.length > 0 && (
-              <div className={cn('p-5', t.card)}>
-                <h3 className="font-display text-base font-bold text-red-500">Not included</h3>
-                <ul className="mt-3 space-y-2">
-                  {exclusions.map((l, i) => (
-                    <li key={i} className={cn('flex items-start gap-2 text-sm', t.body)}>
-                      <X className="mt-0.5 size-4 shrink-0 text-red-500" /> {l}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+                </tbody>
+              </table>
+            </div>
           </motion.div>
         )}
 
         {/* Gallery */}
         {pkg.galleryImages.length > 0 && (
-          <motion.div {...rise(0.3)} className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <motion.div {...rise(0.34)} className="mt-8 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {pkg.galleryImages.slice(0, 6).map((src, i) => (
               <img key={i} src={src} alt="" className="aspect-square w-full rounded-xl object-cover" />
             ))}
           </motion.div>
         )}
 
-        {/* Enquiry — always a light card so the form stays readable on every theme */}
-        <motion.div {...rise(0.34)} id="enquire" className="mt-10 rounded-2xl border border-border bg-card p-6 text-foreground shadow-soft">
-          <h2 className="font-display text-lg font-bold text-foreground">Interested? Get a callback</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Leave your number and {orgName} will reach out with dates & offers.</p>
+        {/* Things to carry */}
+        {thingsToCarry.length > 0 && (
+          <motion.div {...rise(0.36)} className="mt-8">
+            <Banner>THINGS TO CARRY</Banner>
+            <BulletList items={thingsToCarry} />
+          </motion.div>
+        )}
+
+        {/* Terms & conditions */}
+        {terms.length > 0 && (
+          <motion.div {...rise(0.38)} className="mt-8">
+            <Banner yellow>TERMS &amp; CONDITIONS</Banner>
+            <BulletList items={terms} dotColor="var(--orange)" />
+          </motion.div>
+        )}
+
+        {/* Enquiry */}
+        <motion.div {...rise(0.4)} id="enquire" className="mt-10 rounded-2xl border border-border bg-card p-6 text-foreground shadow-soft">
+          <h2 className="text-lg font-bold" style={{ fontFamily: DISPLAY_FONT }}>Interested? Get a callback</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Leave your number and {orgName} will reach out with dates &amp; offers.</p>
           {sent ? (
             <div className="mt-5 flex flex-col items-center py-4 text-center">
               <span className="flex size-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -425,15 +484,45 @@ export function PublicPackagePage() {
               {enquiryMutation.isError && (
                 <p className="text-xs font-medium text-destructive">Something went wrong — please try WhatsApp instead.</p>
               )}
-              <Button type="submit" className="w-full text-white" style={{ backgroundColor: brand }} disabled={enquiryMutation.isPending}>
+              <Button type="submit" className="w-full text-white" style={{ backgroundColor: 'var(--blue)' }} disabled={enquiryMutation.isPending}>
                 {enquiryMutation.isPending ? <Spinner /> : <Send />} Request a callback
               </Button>
             </form>
           )}
         </motion.div>
 
-        <p className={cn('mt-8 text-center text-xs', t.muted)}>
-          Powered by <span className={cn('font-semibold', t.body)}>{orgName}</span> ✈
+        {/* Contact */}
+        {(pkg.contactNumber || pkg.contactEmail || org?.instagramUrl) && (
+          <motion.div {...rise(0.44)} className="mt-10">
+            <Banner>CONTACT US!</Banner>
+            <div className="space-y-2.5">
+              {pkg.contactNumber && (
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold" style={{ border: `1.5px solid var(--yellow)` }}>
+                  <Phone className="size-4" style={{ color: 'var(--blue)' }} /> {pkg.contactNumber}
+                </div>
+              )}
+              {pkg.contactEmail && (
+                <div className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold" style={{ border: `1.5px solid var(--yellow)` }}>
+                  <Mail className="size-4" style={{ color: 'var(--blue)' }} /> {pkg.contactEmail}
+                </div>
+              )}
+              {org?.instagramUrl && (
+                <a
+                  href={org.instagramUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 font-semibold"
+                  style={{ border: `1.5px solid var(--yellow)`, color: INK }}
+                >
+                  <InstagramIcon className="size-4" style={{ color: 'var(--blue)' }} /> Follow us on Instagram
+                </a>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        <p className="mt-8 text-center text-xs" style={{ color: MUTED }}>
+          Powered by <span className="font-semibold" style={{ color: INK }}>{orgName}</span> ✈
         </p>
       </div>
 
@@ -441,7 +530,7 @@ export function PublicPackagePage() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 p-3 backdrop-blur sm:hidden">
         <div className="mx-auto flex max-w-2xl items-center gap-3">
           <div className="min-w-0 flex-1">
-            <p className="font-display text-lg font-bold" style={{ color: brand }}>
+            <p className="text-lg font-bold" style={{ fontFamily: DISPLAY_FONT, color: 'var(--blue-dark)' }}>
               {formatCurrency(pkg.priceAmount, pkg.priceCurrency)}
             </p>
             <p className="-mt-0.5 text-[11px] text-muted-foreground">per person</p>
@@ -459,7 +548,7 @@ export function PublicPackagePage() {
             <a
               href="#enquire"
               className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white"
-              style={{ backgroundColor: brand }}
+              style={{ backgroundColor: 'var(--blue)' }}
             >
               <Send className="size-4" /> Enquire
             </a>
