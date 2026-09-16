@@ -4,15 +4,17 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Instagram, MapPin, MessageCircle, Phone, Printer } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { HostReview, PackageItineraryDay, PricingOption, TravelPackage } from '@/types';
+import type { HostReview, PackageItineraryDay, PricingOption, SignatureTheme, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/format';
 
 /**
- * JOINETRA — the single, fixed package brochure template (reference-matched
- * rebuild: cream/brown/yellow/blue palette, Anton/Baloo 2/Caveat/Poppins,
- * fixed 1280x720 "spread" pages — one per section, one per itinerary day).
+ * JOINETRA — the single package brochure template, in the package's own
+ * Signature theme (cream/brown neutrals stay fixed; yellow/blue accent comes
+ * from signatureTheme so this matches the public web page), Baloo 2/Caveat/
+ * Poppins, fixed 1280x720 "spread" pages — one per section, one per itinerary
+ * day.
  *
  * Presentation-only: renders existing package / itinerary / review data.
  * Adds no required data fields — every section is omitted gracefully when its
@@ -32,17 +34,25 @@ interface PublicBrochure {
 }
 
 // --- Fixed design tokens (not agency-editable) -------------------------------
+// Neutral tones stay constant across all 3 Signature themes (same pattern the
+// public web page uses) — only the accent (yellow/blue/blueDark) shifts,
+// looked up below from the package's own signatureTheme so this brochure
+// actually matches the web page instead of always looking the same regardless
+// of which template the agent picked.
 const CREAM = '#f1eee7';
 const CREAM_DARK = '#e7e2d8';
 const BROWN = '#3a2a1b';
 const TEXT = '#4a3826';
-const YELLOW = '#f6c60f';
-const BLUE = '#3f6fe0';
-const BLUE_DARK = '#2c4fb0';
 const RED = '#d92b2b';
 const WHITE = '#ffffff';
 
-const FONT_DISPLAY = "'Anton', sans-serif";
+const SIGNATURE_ACCENT: Record<SignatureTheme, { yellow: string; blue: string; blueDark: string }> = {
+  SUNRISE: { yellow: '#FFC72C', blue: '#1867B4', blueDark: '#0E4C87' },
+  OCEAN: { yellow: '#FF8A65', blue: '#0E7C86', blueDark: '#0A5860' },
+  HERITAGE: { yellow: '#D8A24A', blue: '#7A2E3B', blueDark: '#521D27' },
+};
+
+const FONT_DISPLAY = "'Baloo 2', sans-serif";
 const FONT_SCRIPT = "'Caveat', cursive";
 const FONT_HEADING = "'Baloo 2', sans-serif";
 const FONT_BODY = "'Poppins', sans-serif";
@@ -101,12 +111,15 @@ function BrandBadge({
   logoUrl,
   size = 'md',
   corner,
+  accentColor,
 }: {
   orgName: string;
   logoUrl: string | null;
   size?: 'sm' | 'md';
   /** Pins the badge to the page's top-left corner — used on every page but the cover. */
   corner?: boolean;
+  /** Fallback-icon color — the calling page's theme accent (defaults to Sunrise yellow). */
+  accentColor?: string;
 }) {
   const small = size === 'sm';
   return (
@@ -115,7 +128,11 @@ function BrandBadge({
         {logoUrl ? (
           <img src={logoUrl} alt={orgName} className="pbx-badge__logo" />
         ) : (
-          <svg viewBox="0 0 24 24" className={small ? 'pbx-icon-sm' : 'pbx-icon-md'} style={{ color: YELLOW }}>
+          <svg
+            viewBox="0 0 24 24"
+            className={small ? 'pbx-icon-sm' : 'pbx-icon-md'}
+            style={{ color: accentColor ?? SIGNATURE_ACCENT.SUNRISE.yellow }}
+          >
             <path
               fill="currentColor"
               d="M14 3L9 12l3 3-4 6h16L14 3zM6 10L1 21h6l3-4.5L6 10z"
@@ -257,6 +274,14 @@ export function PackageBrochurePage() {
       </div>
     );
   }
+
+  // Shadow the module-level neutral accent with this package's Signature theme
+  // so the <style> block below (and BrandBadge, via the accentColor prop)
+  // render in the same colors as the public web page.
+  const accent = SIGNATURE_ACCENT[pkg.signatureTheme] ?? SIGNATURE_ACCENT.SUNRISE;
+  const YELLOW = accent.yellow;
+  const BLUE = accent.blue;
+  const BLUE_DARK = accent.blueDark;
 
   // --- Derived, presentation-only values -----------------------------------
   const orgName = org?.name ?? 'Travel Agency';
@@ -435,7 +460,7 @@ export function PackageBrochurePage() {
         {heroPhoto && <img className="pbx-bg" src={heroPhoto} alt="" />}
         <div className="pbx-scrim-dark" />
         <div className="relative z-[2] flex h-full flex-col items-center justify-center gap-4">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} accentColor={YELLOW} />
           <div className="mt-2">
             <HeadlineBlock display={title} script={accentWord} />
           </div>
@@ -450,7 +475,7 @@ export function PackageBrochurePage() {
         <Page label="02 · itinerary overview">
           {heroPhoto && <img className="pbx-bg" src={heroPhoto} alt="" />}
           <div className="pbx-scrim-soft" />
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="relative z-[2] h-full px-16 py-12">
             <HeadlineBlock display="ITINERARY" script={pkg.destination} dark />
             <div className="pbx-itinerary-grid">
@@ -473,7 +498,7 @@ export function PackageBrochurePage() {
         return (
           <Page key={`day-${d.day}`} label={`day ${d.day} detail`}>
             <div className="pbx-day-corner-badge">DAY {d.day}</div>
-            <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+            <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
             <div className={cn('pbx-day-detail', reverse && 'pbx-day-detail--reverse')}>
               <div className="pbx-day-detail__text">
                 <h2>DAY {d.day} : {d.title.toUpperCase()}</h2>
@@ -493,7 +518,7 @@ export function PackageBrochurePage() {
       {/* ===================== 4 · CUSTOMER REVIEWS ===================== */}
       {reviews.length > 0 && (
         <Page label="customer reviews">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="h-full px-14 py-12">
             <div className="pbx-reviews-title">
               <h2>CUSTOMER&apos;S REVIEWS</h2>
@@ -549,7 +574,7 @@ export function PackageBrochurePage() {
       {/* ===================== 6 · TERMS & CONDITIONS ===================== */}
       {termsLines.length > 0 && (
         <Page label="terms & conditions">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="h-full px-14 py-11">
             <div className="pbx-section-title-center">TERMS &amp; CONDITIONS</div>
             <div className="mx-auto max-w-md">
@@ -574,7 +599,7 @@ export function PackageBrochurePage() {
       {/* ===================== 7 · WHY CHOOSE US ===================== */}
       {whyChooseUs.length > 0 && (
         <Page label="why choose us">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="flex h-full items-center gap-12 px-14 py-12">
             <div className="pbx-why-list flex-[1.1]">
               <div className="pbx-section-title-center pbx-section-title-center--left">WHY CHOOSE US</div>
@@ -599,7 +624,7 @@ export function PackageBrochurePage() {
       {/* ===================== 8 · SPECIAL PRICING ===================== */}
       {(pricingCards.length > 0 || peakPricing.length > 0) && (
         <Page label="special pricing">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="h-full px-14 py-11 text-center">
             <div className="pbx-section-title-center">SPECIAL PRICING</div>
             <div className="mx-auto max-w-xs">
@@ -641,7 +666,7 @@ export function PackageBrochurePage() {
       {/* ===================== 9 · CONTACT ===================== */}
       {hasContact && (
         <Page label="contact us" className="flex flex-col">
-          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner />
+          <BrandBadge orgName={orgName} logoUrl={logoUrl} size="sm" corner accentColor={YELLOW} />
           <div className="pbx-section-title-center" style={{ marginTop: 34 }}>
             CONTACT US
           </div>
