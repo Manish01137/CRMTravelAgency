@@ -19,7 +19,7 @@ import {
   UtensilsCrossed,
 } from 'lucide-react';
 import { api } from '@/lib/api';
-import type { SignatureTheme, TravelPackage } from '@/types';
+import type { TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,10 +27,9 @@ import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, initials } from '@/lib/format';
+import { Banner, BulletList, BODY_FONT, DISPLAY_FONT, HAIRLINE, INK, MUTED, THEME_VARS } from '@/lib/signatureTheme';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
-const DISPLAY_FONT = "'Baloo 2', 'Figtree', sans-serif";
-const BODY_FONT = "'Poppins', 'Figtree', sans-serif";
 
 interface BrochureOrg {
   name: string;
@@ -50,78 +49,6 @@ interface PublicBrochure {
 
 const lines = (s: string | null | undefined) =>
   (s ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
-
-/**
- * Real color values from the "Signature" brochure template (see the attached
- * joinetra-signature-package-template.html — these are its :root / .theme-ocean
- * / .theme-heritage custom properties), applied here as CSS custom properties
- * on the page root — the exact same mechanism the reference file itself uses,
- * so every themed color below (`var(--blue)` etc.) traces back to one place.
- */
-const THEME_VARS: Record<SignatureTheme, Record<string, string>> = {
-  SUNRISE: {
-    '--blue': '#1867B4',
-    '--blue-dark': '#0E4C87',
-    '--blue-pale': '#EAF3FC',
-    '--yellow': '#FFC72C',
-    '--yellow-pale': '#FFF4D6',
-    '--orange': '#F2801E',
-  },
-  OCEAN: {
-    '--blue': '#0E7C86',
-    '--blue-dark': '#0A5860',
-    '--blue-pale': '#E4F5F6',
-    '--yellow': '#FF8A65',
-    '--yellow-pale': '#FFE9DE',
-    '--orange': '#E85D2A',
-  },
-  HERITAGE: {
-    '--blue': '#7A2E3B',
-    '--blue-dark': '#521D27',
-    '--blue-pale': '#F6E9EA',
-    '--yellow': '#D8A24A',
-    '--yellow-pale': '#F6EAD1',
-    '--orange': '#B5651D',
-  },
-};
-// Constant across all 3 variants in the reference template — only blue/yellow/orange shift.
-const INK = '#1B1F27';
-const MUTED = '#57626F';
-const HAIRLINE = '#E4E9EF';
-
-/** The reference template's pill-shaped section header ("BRIEF ITINERARY", "INCLUSIONS", …). */
-function Banner({ children, yellow }: { children: React.ReactNode; yellow?: boolean }) {
-  return (
-    <div className="my-5 text-center">
-      <span
-        className="inline-block rounded-2xl px-6 py-2.5 text-lg font-bold tracking-wide"
-        style={{
-          fontFamily: DISPLAY_FONT,
-          backgroundColor: yellow ? 'var(--yellow)' : 'var(--blue)',
-          color: yellow ? INK : '#fff',
-        }}
-      >
-        {children}
-      </span>
-    </div>
-  );
-}
-
-function BulletList({ items, dotColor }: { items: string[]; dotColor?: string }) {
-  return (
-    <ul className="space-y-2.5">
-      {items.map((l, i) => (
-        <li key={i} className="flex items-start gap-2.5 text-[15px] leading-relaxed" style={{ color: INK }}>
-          <span
-            className="mt-2 size-2 shrink-0 rounded-full"
-            style={{ backgroundColor: dotColor ?? 'var(--blue)' }}
-          />
-          {l}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /**
  * PUBLIC customer-facing package page: /p/:id
