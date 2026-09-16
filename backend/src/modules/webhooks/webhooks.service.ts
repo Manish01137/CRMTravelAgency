@@ -31,6 +31,23 @@ async function findConnectionOrgIdByPageId(pageId: string): Promise<string | nul
   return connection?.organizationId ?? null;
 }
 
+type InboundLeadSource = 'WHATSAPP' | 'INSTAGRAM' | 'META_ADS' | 'INSTAGRAM_ADS';
+
+/**
+ * Instagram ad-originated conversations ("Send message" CTA ads, or DMs
+ * opened from an ad) carry a `referral` object — either on the messaging
+ * event itself (Messenger-style m.me referral) or nested in `message.referral`
+ * — whose `source`/`type` names the ad. Anything else is an organic DM.
+ */
+function instagramLeadSource(
+  event: Record<string, unknown>,
+  message: { referral?: { source?: string; type?: string } } | undefined,
+): InboundLeadSource {
+  const referral = (event.referral as { source?: string; type?: string } | undefined) ?? message?.referral;
+  const isAd = referral?.source === 'ADS' || referral?.type === 'OPEN_THREAD' || referral?.source === 'ad';
+  return isAd ? 'INSTAGRAM_ADS' : 'INSTAGRAM';
+}
+
 /** Finds-or-creates the Lead + Conversation for an inbound message, then records it. */
 async function recordInbound(params: {
   organizationId: string;
@@ -41,7 +58,7 @@ async function recordInbound(params: {
   body: string;
   interactiveSelectionId?: string | null;
   externalMessageId: string | null;
-  leadSource: 'WHATSAPP' | 'INSTAGRAM';
+  leadSource: InboundLeadSource;
 }): Promise<void> {
   const { organizationId, channel, externalContactId, contactName, contactPhone, body, interactiveSelectionId, externalMessageId, leadSource } = params;
 
@@ -61,7 +78,7 @@ async function recordInbound(params: {
         lead = await tx.lead.create({
           data: {
             organizationId,
-            name: contactName || (contactPhone ? contactPhone : `${leadSource === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} contact`),
+            name: contactName || (contactPhone ? contactPhone : `${channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} contact`),
             phone: contactPhone ?? undefined,
             source: leadSource,
             isRepeatCustomer: !!repeatBooking,
@@ -172,6 +189,13 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       } else {
         text = `[${type} message]`;
       }
+      // "Click to WhatsApp" ad conversations carry a `referral` object on the
+      // first message (source_type: "ad") — Meta's own signal that this
+      // contact came from a paid ad rather than an organic WhatsApp message,
+      // so the auto-created Lead can be tagged accordingly instead of always
+      // landing as generic 'WHATSAPP'.
+      const referral = msg.referral as { source_type?: string } | undefined;
+      const leadSource: InboundLeadSource = referral?.source_type === 'ad' ? 'META_ADS' : 'WHATSAPP';
       await recordInbound({
         organizationId,
         channel: 'WHATSAPP',
@@ -181,7 +205,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         body: text,
         interactiveSelectionId,
         externalMessageId: (msg.id as string) ?? null,
-        leadSource: 'WHATSAPP',
+        leadSource,
       });
     }
 
@@ -208,7 +232,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
     const sender = String((event.sender as { id?: string })?.id ?? '');
     // Skip echoes of our own outbound sends (Meta can echo them back depending on subscription fields).
     if (!sender || sender === igAccountId) continue;
-    const message = event.message as { mid?: string; text?: string } | undefined;
+    const message = event.message as { mid?: string; text?: string; referral?: { source?: string; type?: string } } | undefined;
     if (!message?.text) continue;
 
     await recordInbound({
@@ -219,7 +243,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       contactPhone: null,
       body: message.text,
       externalMessageId: message.mid ?? null,
-      leadSource: 'INSTAGRAM',
+      leadSource: instagramLeadSource(event, message),
     });
   }
 }
@@ -252,7 +276,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       console.log('[webhooks] processPageEntry — skipping event (no sender, or echo of our own page):', JSON.stringify(event));
       continue;
     }
-    const message = event.message as { mid?: string; text?: string } | undefined;
+    const message = event.message as { mid?: string; text?: string; referral?: { source?: string; type?: string } } | undefined;
     if (!message?.text) {
       console.log('[webhooks] processPageEntry — skipping event with no message.text:', JSON.stringify(event));
       continue;
@@ -267,7 +291,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       contactPhone: null,
       body: message.text,
       externalMessageId: message.mid ?? null,
-      leadSource: 'INSTAGRAM',
+      leadSource: instagramLeadSource(event, message),
     });
   }
 }

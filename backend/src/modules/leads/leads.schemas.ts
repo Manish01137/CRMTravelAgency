@@ -16,6 +16,9 @@ export const LeadSourceEnum = z.enum([
   'EMAIL',
   'JUSTDIAL',
   'EXHIBITION',
+  'META_ADS',
+  'FACEBOOK_ADS',
+  'INSTAGRAM_ADS',
 ]);
 
 export const CustomerTypeEnum = z.enum(['B2C', 'B2B', 'CORPORATE', 'VIP']);

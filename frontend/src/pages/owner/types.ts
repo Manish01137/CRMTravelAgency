@@ -115,7 +115,25 @@ export interface SearchResults {
 }
 
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL_SENT' | 'NEGOTIATION' | 'WON' | 'LOST';
-export type LeadSource = 'WHATSAPP' | 'INSTAGRAM' | 'FACEBOOK' | 'WEBSITE' | 'REFERRAL' | 'WALK_IN' | 'PHONE' | 'MANUAL' | 'OTHER';
+export type LeadSource =
+  | 'WHATSAPP'
+  | 'INSTAGRAM'
+  | 'FACEBOOK'
+  | 'WEBSITE'
+  | 'REFERRAL'
+  | 'WALK_IN'
+  | 'PHONE'
+  | 'MANUAL'
+  | 'OTHER'
+  | 'GOOGLE_ADS'
+  | 'GOOGLE_MY_BUSINESS'
+  | 'YOUTUBE'
+  | 'EMAIL'
+  | 'JUSTDIAL'
+  | 'EXHIBITION'
+  | 'META_ADS'
+  | 'FACEBOOK_ADS'
+  | 'INSTAGRAM_ADS';
 
 export interface OwnerLeadRow {
   id: string;

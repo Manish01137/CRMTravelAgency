@@ -18,7 +18,10 @@ export type LeadSource =
   | 'YOUTUBE'
   | 'EMAIL'
   | 'JUSTDIAL'
-  | 'EXHIBITION';
+  | 'EXHIBITION'
+  | 'META_ADS'
+  | 'FACEBOOK_ADS'
+  | 'INSTAGRAM_ADS';
 
 export type CustomerType = 'B2C' | 'B2B' | 'CORPORATE' | 'VIP';
 

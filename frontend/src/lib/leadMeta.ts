@@ -4,8 +4,10 @@ import {
   Camera,
   CircleDashed,
   Crown,
+  Facebook,
   Footprints,
   Globe,
+  Instagram,
   Mail,
   MapPin,
   Megaphone,
@@ -144,6 +146,13 @@ export const LEAD_SOURCE_STYLES: Record<LeadSource, LeadSourceStyle> = {
   EMAIL: { label: 'Email', Icon: Mail, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
   JUSTDIAL: { label: 'JustDial', Icon: Building2, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
   EXHIBITION: { label: 'Exhibition', Icon: Tent, badge: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  META_ADS: { label: 'Meta Ads', Icon: Megaphone, badge: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  FACEBOOK_ADS: { label: 'Facebook Ads', Icon: Facebook, badge: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  INSTAGRAM_ADS: {
+    label: 'Instagram Ads',
+    Icon: Instagram,
+    badge: 'bg-gradient-to-br from-fuchsia-500 via-pink-500 to-amber-400 text-white ring-0 shadow-sm',
+  },
 };
 
 /** Customer type — set at lead entry, one deliberate colour each (reference: B2C/B2B/Corporate/VIP). */

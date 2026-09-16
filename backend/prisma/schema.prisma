@@ -57,6 +57,9 @@ enum LeadSource {
   EMAIL
   JUSTDIAL
   EXHIBITION
+  META_ADS
+  FACEBOOK_ADS
+  INSTAGRAM_ADS
 }
 
 enum CustomerType {
