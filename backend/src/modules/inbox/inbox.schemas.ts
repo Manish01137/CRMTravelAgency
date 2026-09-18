@@ -19,10 +19,15 @@ export const setFavoriteSchema = z.object({ isFavorite: z.boolean() });
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 
-export const sendMessageSchema = z.object({
-  body: z.string().trim().min(1, 'Message cannot be empty').max(4096),
-  templateName: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
-});
+export const sendMessageSchema = z
+  .object({
+    body: z.string().trim().max(4096).optional(),
+    mediaUrl: z.preprocess(emptyToUndefined, z.string().trim().url().optional()),
+    templateName: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
+  })
+  // A plain text message still requires real text; an image message can go out
+  // with just a caption-less mediaUrl, same as WhatsApp/Instagram themselves allow.
+  .refine((v) => !!v.body?.trim() || !!v.mediaUrl, { message: 'Message cannot be empty', path: ['body'] });
 
 export const createTemplateSchema = z.object({
   name: z

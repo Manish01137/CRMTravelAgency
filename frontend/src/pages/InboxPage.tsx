@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -11,10 +11,12 @@ import {
   Instagram,
   MessageCircle,
   MailOpen,
+  Paperclip,
   Search,
   Send,
   Sparkles,
   Star,
+  X,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -109,6 +111,7 @@ export function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [templateName, setTemplateName] = useState<string | null>(null);
+  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
 
   const conversationsQuery = useQuery({
     queryKey: ['conversations', channel, filter, search],
@@ -134,6 +137,7 @@ export function InboxPage() {
     setSelectedId(null);
     setDraft('');
     setTemplateName(null);
+    setPendingImageUrl(null);
   }, [channel]);
 
   const threadQuery = useQuery({
@@ -158,16 +162,24 @@ export function InboxPage() {
   const sendMutation = useMutation({
     mutationFn: () =>
       api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, {
-        body: draft.trim(),
+        body: draft.trim() || undefined,
+        mediaUrl: pendingImageUrl || undefined,
         templateName: templateName || undefined,
       }),
     onSuccess: () => {
       setDraft('');
       setTemplateName(null);
+      setPendingImageUrl(null);
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Send failed'),
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => api.upload('/uploads', file),
+    onSuccess: (data) => setPendingImageUrl(data.url),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not upload image'),
   });
 
   // AI Agent Builder (Phase 4) — human-in-the-loop only: these fill the
@@ -183,6 +195,13 @@ export function InboxPage() {
     onSuccess: (res) => setSummary(res.summary),
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not summarize'),
   });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // let picking the same file twice in a row still fire onChange
+    if (file) uploadMutation.mutate(file);
+  };
 
   const pickTemplate = (name: string) => {
     const tpl = approvedTemplates.find((t) => t.name === name);
@@ -335,7 +354,12 @@ export function InboxPage() {
                               Template: {m.templateName}
                             </p>
                           )}
-                          <p className="whitespace-pre-line">{m.body}</p>
+                          {m.mediaUrl && (
+                            <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="-mx-1 -mt-1 mb-1 block">
+                              <img src={m.mediaUrl} alt="" className="max-h-64 w-full rounded-lg object-cover" />
+                            </a>
+                          )}
+                          {m.body && <p className="whitespace-pre-line">{m.body}</p>}
                           <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', m.direction === 'OUTBOUND' ? 'justify-end text-white/70' : 'text-muted-foreground')}>
                             {formatSmartTime(m.createdAt)}
                             {m.direction === 'OUTBOUND' && statusIcon(m.status)}
@@ -379,14 +403,57 @@ export function InboxPage() {
                     )}
                   </div>
                 )}
+                {(pendingImageUrl || uploadMutation.isPending) && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
+                    {uploadMutation.isPending ? (
+                      <div className="flex size-14 items-center justify-center rounded-md bg-muted">
+                        <Spinner className="size-4" />
+                      </div>
+                    ) : (
+                      <img src={pendingImageUrl!} alt="" className="size-14 rounded-md object-cover" />
+                    )}
+                    <p className="flex-1 text-xs text-muted-foreground">
+                      {uploadMutation.isPending ? 'Uploading…' : 'Photo ready to send'}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7"
+                      disabled={uploadMutation.isPending}
+                      onClick={() => setPendingImageUrl(null)}
+                      aria-label="Remove photo"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </div>
+                )}
                 <div className="flex items-end gap-2">
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelected} />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={uploadMutation.isPending || (outsideWindow && !templateName)}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Attach a photo"
+                    title="Attach a photo"
+                  >
+                    <Paperclip className="size-4" />
+                  </Button>
                   <Textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder={outsideWindow ? 'Template message…' : 'Type a message…'}
+                    placeholder={
+                      outsideWindow
+                        ? 'Template message…'
+                        : pendingImageUrl
+                          ? channel === 'INSTAGRAM'
+                            ? "Instagram photos can't have a caption"
+                            : 'Add a caption…'
+                          : 'Type a message…'
+                    }
                     rows={2}
                     className="resize-none"
-                    disabled={outsideWindow && !templateName}
+                    disabled={(outsideWindow && !templateName) || (!!pendingImageUrl && channel === 'INSTAGRAM')}
                   />
                   <Button
                     variant="outline"
@@ -400,7 +467,7 @@ export function InboxPage() {
                   </Button>
                   <Button
                     size="icon"
-                    disabled={!draft.trim() || sendMutation.isPending || (outsideWindow && !templateName)}
+                    disabled={(!draft.trim() && !pendingImageUrl) || sendMutation.isPending || (outsideWindow && !templateName)}
                     onClick={() => sendMutation.mutate()}
                     aria-label="Send message"
                   >

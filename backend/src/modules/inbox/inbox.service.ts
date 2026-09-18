@@ -1,6 +1,13 @@
 import { withTenant } from '../../lib/prisma';
 import { decryptJson } from '../../lib/encryption';
-import { sendWhatsAppText, sendWhatsAppTemplate, sendInstagramText, createWhatsAppTemplate } from '../../lib/meta';
+import {
+  sendWhatsAppText,
+  sendWhatsAppImage,
+  sendWhatsAppTemplate,
+  sendInstagramText,
+  sendInstagramImage,
+  createWhatsAppTemplate,
+} from '../../lib/meta';
 import { BadRequest, NotFound } from '../../lib/errors';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput } from './inbox.schemas';
@@ -83,6 +90,8 @@ export async function sendMessage(
       throw BadRequest('This conversation is outside the 24-hour window — send an approved template instead');
     }
 
+    const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : (input.body ?? '');
+
     try {
       let externalMessageId: string;
       if (conversation.channel === 'WHATSAPP') {
@@ -94,14 +103,26 @@ export async function sendMessage(
           if (!template) throw BadRequest('That template was not found or is not yet approved');
           const sent = await sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, template.name, template.language);
           externalMessageId = sent.externalMessageId;
+        } else if (input.mediaUrl) {
+          // WhatsApp supports a caption on the image itself — one message, not two.
+          const sent = await sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.mediaUrl, input.body?.trim() || undefined);
+          externalMessageId = sent.externalMessageId;
         } else {
-          const sent = await sendWhatsAppText(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.body);
+          const sent = await sendWhatsAppText(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.body!);
           externalMessageId = sent.externalMessageId;
         }
       } else {
         const creds = decryptJson<InstagramCredentials>(connection.credentials);
-        const sent = await sendInstagramText(creds.igUserId, creds.accessToken, conversation.externalContactId, input.body);
-        externalMessageId = sent.externalMessageId;
+        if (input.mediaUrl) {
+          // Instagram's attachment message has no caption field — any typed
+          // text alongside a photo is dropped rather than silently sent as a
+          // separate, unlabeled second message.
+          const sent = await sendInstagramImage(creds.igUserId, creds.accessToken, conversation.externalContactId, input.mediaUrl);
+          externalMessageId = sent.externalMessageId;
+        } else {
+          const sent = await sendInstagramText(creds.igUserId, creds.accessToken, conversation.externalContactId, input.body!);
+          externalMessageId = sent.externalMessageId;
+        }
       }
 
       const message = await tx.message.create({
@@ -110,7 +131,8 @@ export async function sendMessage(
           conversationId,
           direction: 'OUTBOUND',
           externalMessageId,
-          body: input.body,
+          body: input.body || null,
+          mediaUrl: input.mediaUrl,
           templateName: input.templateName,
           status: 'SENT',
           sentById: userId,
@@ -118,7 +140,7 @@ export async function sendMessage(
       });
       await tx.conversation.update({
         where: { id: conversationId },
-        data: { lastMessageAt: new Date(), lastMessagePreview: input.body.slice(0, 200) },
+        data: { lastMessageAt: new Date(), lastMessagePreview: preview.slice(0, 200) },
       });
       return message;
     } catch (err) {
@@ -134,7 +156,8 @@ export async function sendMessage(
           organizationId,
           conversationId,
           direction: 'OUTBOUND',
-          body: input.body,
+          body: input.body || null,
+          mediaUrl: input.mediaUrl,
           templateName: input.templateName,
           status: 'FAILED',
           errorMessage,

@@ -1,12 +1,10 @@
-import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import multer from 'multer';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { env } from '../../env';
 import { requireAuth } from '../../middleware/auth';
-import { AppError, BadRequest } from '../../lib/errors';
+import { BadRequest } from '../../lib/errors';
 import { asyncHandler } from '../../lib/http';
+import { uploadBufferToStorage } from '../../lib/storage';
 
 const ALLOWED = new Map<string, string>([
   ['image/jpeg', 'jpg'],
@@ -26,27 +24,6 @@ const upload = multer({
   },
 });
 
-let supabase: SupabaseClient | null = null;
-function getSupabase(): SupabaseClient | null {
-  if (supabase) return supabase;
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
-  try {
-    supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    return supabase;
-  } catch (err) {
-    // createClient() can throw synchronously (e.g. its Realtime client's
-    // WebSocket setup failing on a Node version without native WebSocket —
-    // exactly what took the whole process down in production once, since
-    // this route wasn't wrapped in asyncHandler at the time). Never let a
-    // third-party SDK's internal init crash request handling — degrade to
-    // "not configured" instead, same as a missing env var.
-    console.error('getSupabase(): createClient() failed:', err);
-    return null;
-  }
-}
-
 const router = Router();
 
 router.post(
@@ -65,26 +42,12 @@ router.post(
     });
   },
   asyncHandler(async (req: Request, res: Response) => {
-    const client = getSupabase();
-    if (!client) {
-      throw new AppError(503, 'UPLOADS_DISABLED', 'Image uploads are not configured on the server');
-    }
     if (!req.file) throw BadRequest('No file was uploaded (field name must be "file")');
 
     const ext = ALLOWED.get(req.file.mimetype) ?? 'bin';
     // Org-scoped, unguessable path so agencies can't reference each other's files.
-    const key = `${req.auth!.organizationId}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}.${ext}`;
-
-    const { error } = await client.storage
-      .from(env.SUPABASE_STORAGE_BUCKET)
-      .upload(key, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
-
-    if (error) {
-      throw new AppError(502, 'UPLOAD_FAILED', 'Could not store the image');
-    }
-
-    const { data } = client.storage.from(env.SUPABASE_STORAGE_BUCKET).getPublicUrl(key);
-    res.status(201).json({ url: data.publicUrl });
+    const url = await uploadBufferToStorage(req.file.buffer, req.file.mimetype, ext, req.auth!.organizationId);
+    res.status(201).json({ url });
   }),
 );
 
@@ -121,25 +84,11 @@ router.post(
     });
   },
   asyncHandler(async (req: Request, res: Response) => {
-    const client = getSupabase();
-    if (!client) {
-      throw new AppError(503, 'UPLOADS_DISABLED', 'Uploads are not configured on the server');
-    }
     if (!req.file) throw BadRequest('No file was uploaded (field name must be "file")');
 
     const ext = VIDEO_ALLOWED.get(req.file.mimetype) ?? 'mp4';
-    const key = `${req.auth!.organizationId}/video/${Date.now()}-${crypto.randomBytes(8).toString('hex')}.${ext}`;
-
-    const { error } = await client.storage
-      .from(env.SUPABASE_STORAGE_BUCKET)
-      .upload(key, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
-
-    if (error) {
-      throw new AppError(502, 'UPLOAD_FAILED', 'Could not store the video');
-    }
-
-    const { data } = client.storage.from(env.SUPABASE_STORAGE_BUCKET).getPublicUrl(key);
-    res.status(201).json({ url: data.publicUrl });
+    const url = await uploadBufferToStorage(req.file.buffer, req.file.mimetype, ext, `${req.auth!.organizationId}/video`);
+    res.status(201).json({ url });
   }),
 );
 

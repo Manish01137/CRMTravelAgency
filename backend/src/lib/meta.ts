@@ -239,6 +239,28 @@ export async function sendWhatsAppText(
   return { externalMessageId: data.messages[0].id };
 }
 
+/** Sends a WhatsApp image message from a publicly reachable URL (our own
+ *  Supabase Storage upload) — Meta fetches it directly, no upload-to-Meta step. */
+export async function sendWhatsAppImage(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  imageUrl: string,
+  caption?: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: caption ? { link: imageUrl, caption } : { link: imageUrl },
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
 export interface WhatsAppListRow {
   /** Sent back verbatim as interactive.list_reply.id when the customer taps this row — keep it short and parseable. */
   id: string;
@@ -413,6 +435,24 @@ export async function sendInstagramText(
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }),
+  });
+  return { externalMessageId: data.message_id };
+}
+
+/** Sends an Instagram DM image from a publicly reachable URL, same pattern as sendWhatsAppImage. */
+export async function sendInstagramImage(
+  igUserId: string,
+  accessToken: string,
+  recipientId: string,
+  imageUrl: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: { attachment: { type: 'image', payload: { url: imageUrl } } },
+    }),
   });
   return { externalMessageId: data.message_id };
 }

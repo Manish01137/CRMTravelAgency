@@ -1,5 +1,9 @@
 import { systemPrisma, withTenant } from '../../lib/prisma';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
+import { decryptJson } from '../../lib/encryption';
+import { uploadBufferToStorage } from '../../lib/storage';
+import { env } from '../../env';
+import type { WhatsAppCredentials } from '../channels/channels.service';
 
 /**
  * Meta sends WhatsApp + Instagram events to ONE shared webhook URL, so we
@@ -48,6 +52,60 @@ function instagramLeadSource(
   return isAd ? 'INSTAGRAM_ADS' : 'INSTAGRAM';
 }
 
+/**
+ * Downloads a WhatsApp media object (image/video/document) and re-hosts it at
+ * a public Supabase Storage URL. Meta's own media URLs require the same
+ * short-lived, per-app access token to fetch and expire after a few minutes —
+ * unusable as a plain `<img src>` in the frontend — so this is a genuine
+ * two-step fetch (metadata, then bytes) followed by our own upload, not just
+ * a URL passthrough. Returns null (never throws) on any failure — an inbound
+ * message with a broken media re-host still gets recorded, just without a
+ * photo attached, rather than being dropped entirely.
+ */
+async function downloadWhatsAppMedia(organizationId: string, mediaId: string): Promise<string | null> {
+  try {
+    const connection = await systemPrisma.channelConnection.findUnique({
+      where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
+    });
+    if (!connection?.credentials) return null;
+    const { accessToken } = decryptJson<WhatsAppCredentials>(connection.credentials);
+
+    const metaRes = await fetch(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!metaRes.ok) return null;
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta.url) return null;
+
+    const fileRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!fileRes.ok) return null;
+    const buffer = Buffer.from(await fileRes.arrayBuffer());
+    const mimeType = meta.mime_type ?? 'image/jpeg';
+    const ext = mimeType.split('/')[1]?.split(';')[0] ?? 'jpg';
+    return await uploadBufferToStorage(buffer, mimeType, ext, `${organizationId}/whatsapp-media`);
+  } catch (err) {
+    console.error('downloadWhatsAppMedia failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Same idea for an Instagram DM attachment — Meta's CDN attachment URL is
+ *  fetchable directly (no access-token header needed) but is not guaranteed
+ *  to stay valid long-term, so it's re-hosted the same way. */
+async function downloadAndRehostImage(organizationId: string, sourceUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(sourceUrl);
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const ext = contentType.split('/')[1]?.split(';')[0] ?? 'jpg';
+    return await uploadBufferToStorage(buffer, contentType, ext, `${organizationId}/instagram-media`);
+  } catch (err) {
+    console.error('downloadAndRehostImage failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /** Finds-or-creates the Lead + Conversation for an inbound message, then records it. */
 async function recordInbound(params: {
   organizationId: string;
@@ -56,11 +114,12 @@ async function recordInbound(params: {
   contactName: string | null;
   contactPhone: string | null;
   body: string;
+  mediaUrl?: string | null;
   interactiveSelectionId?: string | null;
   externalMessageId: string | null;
   leadSource: InboundLeadSource;
 }): Promise<void> {
-  const { organizationId, channel, externalContactId, contactName, contactPhone, body, interactiveSelectionId, externalMessageId, leadSource } = params;
+  const { organizationId, channel, externalContactId, contactName, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource } = params;
 
   await withTenant(organizationId, async (tx) => {
     const existing = await tx.conversation.findUnique({
@@ -111,17 +170,19 @@ async function recordInbound(params: {
         conversationId: conversation.id,
         direction: 'INBOUND',
         externalMessageId,
-        body,
+        body: body || null,
+        mediaUrl: mediaUrl ?? undefined,
         interactiveSelectionId: interactiveSelectionId ?? undefined,
         status: 'DELIVERED',
       },
     });
+    const preview = mediaUrl ? (body.trim() ? body : '📷 Photo') : body;
     await tx.conversation.update({
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
         lastInboundAt: new Date(),
-        lastMessagePreview: body.slice(0, 200),
+        lastMessagePreview: preview.slice(0, 200),
         unreadCount: { increment: 1 },
       },
     });
@@ -178,6 +239,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // instead of trying to parse free text. button_reply covered too, for
       // any future quick-reply-button use — same shape, different field name.
       let text: string;
+      let mediaUrl: string | null = null;
       let interactiveSelectionId: string | null = null;
       if (type === 'text') {
         text = String((msg.text as { body?: string })?.body ?? '');
@@ -186,6 +248,10 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         const reply = interactive.list_reply ?? interactive.button_reply;
         interactiveSelectionId = reply?.id ?? null;
         text = reply?.title ?? '[interactive message]';
+      } else if (type === 'image') {
+        const image = msg.image as { id?: string; caption?: string } | undefined;
+        text = image?.caption ?? '';
+        if (image?.id) mediaUrl = await downloadWhatsAppMedia(organizationId, image.id);
       } else {
         text = `[${type} message]`;
       }
@@ -203,6 +269,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         contactName: contact?.profile?.name ?? null,
         contactPhone: from,
         body: text,
+        mediaUrl,
         interactiveSelectionId,
         externalMessageId: (msg.id as string) ?? null,
         leadSource,
@@ -221,6 +288,18 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
   }
 }
 
+type InstagramMessage = {
+  mid?: string;
+  text?: string;
+  referral?: { source?: string; type?: string };
+  attachments?: { type?: string; payload?: { url?: string } }[];
+};
+
+/** The first image attachment's Meta-hosted CDN URL, if this message carries one. */
+function igImageAttachmentUrl(message: InstagramMessage | undefined): string | null {
+  return message?.attachments?.find((a) => a.type === 'image')?.payload?.url ?? null;
+}
+
 async function processInstagramEntry(entry: Record<string, unknown>): Promise<void> {
   const igAccountId = String(entry.id ?? '');
   if (!igAccountId) return;
@@ -232,8 +311,9 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
     const sender = String((event.sender as { id?: string })?.id ?? '');
     // Skip echoes of our own outbound sends (Meta can echo them back depending on subscription fields).
     if (!sender || sender === igAccountId) continue;
-    const message = event.message as { mid?: string; text?: string; referral?: { source?: string; type?: string } } | undefined;
-    if (!message?.text) continue;
+    const message = event.message as InstagramMessage | undefined;
+    const attachmentUrl = igImageAttachmentUrl(message);
+    if (!message?.text && !attachmentUrl) continue;
 
     await recordInbound({
       organizationId,
@@ -241,8 +321,9 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       externalContactId: sender,
       contactName: null, // Instagram DMs don't carry a display name in the webhook payload
       contactPhone: null,
-      body: message.text,
-      externalMessageId: message.mid ?? null,
+      body: message?.text ?? '',
+      mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
+      externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
   }
@@ -276,21 +357,23 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       console.log('[webhooks] processPageEntry — skipping event (no sender, or echo of our own page):', JSON.stringify(event));
       continue;
     }
-    const message = event.message as { mid?: string; text?: string; referral?: { source?: string; type?: string } } | undefined;
-    if (!message?.text) {
-      console.log('[webhooks] processPageEntry — skipping event with no message.text:', JSON.stringify(event));
+    const message = event.message as InstagramMessage | undefined;
+    const attachmentUrl = igImageAttachmentUrl(message);
+    if (!message?.text && !attachmentUrl) {
+      console.log('[webhooks] processPageEntry — skipping event with no text or image:', JSON.stringify(event));
       continue;
     }
 
-    console.log('[webhooks] processPageEntry — recording inbound from sender:', sender, '| text:', message.text);
+    console.log('[webhooks] processPageEntry — recording inbound from sender:', sender, '| text:', message?.text);
     await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
       contactName: null, // Instagram DMs don't carry a display name in the webhook payload
       contactPhone: null,
-      body: message.text,
-      externalMessageId: message.mid ?? null,
+      body: message?.text ?? '',
+      mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
+      externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
   }
