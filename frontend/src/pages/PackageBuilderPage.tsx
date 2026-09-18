@@ -1160,8 +1160,17 @@ export function PackageBuilderPage() {
     },
   });
 
-  const onSave = handleSubmit((v) => mutation.mutate(toPayload(v)), () => {
-    toast.error('Please fill the required fields on the Basics step');
+  const onSave = handleSubmit((v) => mutation.mutate(toPayload(v)), (errors) => {
+    // The only required fields live on the Basics step — name it its actual
+    // labels instead of a generic message, since the "Start from a template"
+    // seed leaves these as placeholder text (not real values), which is easy
+    // to mistake for already-filled and then get a confusing rejection.
+    const missing = [
+      errors.name && 'Package name',
+      errors.destination && 'Destination',
+      errors.priceAmount && 'Price',
+    ].filter(Boolean);
+    toast.error(missing.length > 0 ? `Fill in required fields on the Basics step: ${missing.join(', ')}` : 'Please fill the required fields on the Basics step');
     setStep(0);
   });
 
