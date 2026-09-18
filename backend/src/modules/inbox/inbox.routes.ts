@@ -28,6 +28,7 @@ router.post(
   validate({ params: conversationIdParam, body: sendMessageSchema }),
   asyncHandler(controller.sendMessage),
 );
+router.post('/conversations/:id/log-call', validate({ params: conversationIdParam }), asyncHandler(controller.logCall));
 
 router.get('/templates', asyncHandler(controller.listTemplates));
 router.post('/templates', validate({ body: createTemplateSchema }), asyncHandler(controller.createTemplate));

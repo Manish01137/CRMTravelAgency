@@ -7,11 +7,13 @@ import {
   CheckCheck,
   Clock,
   FileText,
+  Image as ImageIcon,
   Inbox as InboxIcon,
   Instagram,
   MessageCircle,
   MailOpen,
   Paperclip,
+  Phone,
   Search,
   Send,
   Sparkles,
@@ -30,23 +32,56 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { initials, formatSmartTime } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-function statusIcon(status: ChannelMessage['status']) {
+// WhatsApp's own green — used only for the WhatsApp thread (header, bubbles,
+// send button, wallpaper), so switching to the Instagram tab doesn't end up
+// wearing WhatsApp's skin. Instagram keeps this app's existing neutral look.
+const WA_HEADER = '#075E54';
+const WA_SEND = '#00A884';
+const WA_OUTBOUND_BUBBLE = '#D9FDD3';
+const WA_COMPOSER_BG = '#F0F2F5';
+
+/** A subtle tiled doodle, evoking (not copying) WhatsApp's chat wallpaper. */
+const WA_WALLPAPER_STYLE: React.CSSProperties = {
+  backgroundColor: '#E5DDD5',
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23000000' stroke-opacity='0.06' stroke-width='1.5'%3E%3Ccircle cx='20' cy='24' r='3'/%3E%3Cpath d='M88 92q10-18 20 0q-10 18-20 0'/%3E%3Cpath d='M34 78q8-14 16 0q-8 14-16 0'/%3E%3Ccircle cx='96' cy='28' r='2.5'/%3E%3Cpath d='M60 10v14M53 17h14'/%3E%3C/g%3E%3C/svg%3E\")",
+  backgroundSize: '120px 120px',
+};
+
+/** No separate "media kind" column — a document is just a mediaUrl ending in
+ *  .pdf, same convention the backend uses (see inbox.service.ts). */
+const isPdfUrl = (url: string) => /\.pdf(?:[?#]|$)/i.test(url);
+
+/** Recovers the human filename embedded in a document upload's storage key
+ *  (see backend storage.ts) — works for both a just-sent and a re-fetched
+ *  historical message, since it's derived purely from mediaUrl. */
+function documentNameFromUrl(url: string): string {
+  const last = url.split('/').pop() ?? 'document.pdf';
+  const withoutQuery = last.split(/[?#]/)[0];
+  return decodeURIComponent(withoutQuery.replace(/^\d+-[0-9a-f]+-/, '')) || 'document.pdf';
+}
+
+function statusIcon(status: ChannelMessage['status'], whatsapp: boolean) {
+  const dim = whatsapp ? 'text-black/40' : 'text-white/70';
+  const read = whatsapp ? 'text-sky-600' : 'text-sky-300';
+  const failed = whatsapp ? 'text-red-600' : 'text-red-300';
   switch (status) {
     case 'QUEUED':
-      return <Clock className="size-3.5 text-white/70" />;
+      return <Clock className={cn('size-3.5', dim)} />;
     case 'SENT':
-      return <Check className="size-3.5 text-white/70" />;
+      return <Check className={cn('size-3.5', dim)} />;
     case 'DELIVERED':
-      return <CheckCheck className="size-3.5 text-white/70" />;
+      return <CheckCheck className={cn('size-3.5', dim)} />;
     case 'READ':
-      return <CheckCheck className="size-3.5 text-sky-300" />;
+      return <CheckCheck className={cn('size-3.5', read)} />;
     case 'FAILED':
-      return <AlertCircle className="size-3.5 text-red-300" />;
+      return <AlertCircle className={cn('size-3.5', failed)} />;
   }
 }
 
@@ -111,7 +146,7 @@ export function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [templateName, setTemplateName] = useState<string | null>(null);
-  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<{ url: string; kind: 'image' | 'document'; name: string } | null>(null);
 
   const conversationsQuery = useQuery({
     queryKey: ['conversations', channel, filter, search],
@@ -137,7 +172,7 @@ export function InboxPage() {
     setSelectedId(null);
     setDraft('');
     setTemplateName(null);
-    setPendingImageUrl(null);
+    setPendingMedia(null);
   }, [channel]);
 
   const threadQuery = useQuery({
@@ -163,13 +198,13 @@ export function InboxPage() {
     mutationFn: () =>
       api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, {
         body: draft.trim() || undefined,
-        mediaUrl: pendingImageUrl || undefined,
+        mediaUrl: pendingMedia?.url || undefined,
         templateName: templateName || undefined,
       }),
     onSuccess: () => {
       setDraft('');
       setTemplateName(null);
-      setPendingImageUrl(null);
+      setPendingMedia(null);
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
     },
@@ -177,9 +212,21 @@ export function InboxPage() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => api.upload('/uploads', file),
-    onSuccess: (data) => setPendingImageUrl(data.url),
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not upload image'),
+    mutationFn: ({ file, kind }: { file: File; kind: 'image' | 'document' }) =>
+      api.upload(kind === 'document' ? '/uploads/document' : '/uploads', file),
+    onSuccess: (data, { file, kind }) => setPendingMedia({ url: data.url, kind, name: file.name }),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not upload the file'),
+  });
+
+  // "Call" — WhatsApp/Instagram's Business APIs have no calling capability at
+  // all (only the customer's own app can place a call), so this dials the
+  // agent's own phone via tel: and just logs that it happened as a note.
+  const logCallMutation = useMutation({
+    mutationFn: () => api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/log-call`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
+    },
   });
 
   // AI Agent Builder (Phase 4) — human-in-the-loop only: these fill the
@@ -196,11 +243,17 @@ export function InboxPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not summarize'),
   });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const handleImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // let picking the same file twice in a row still fire onChange
-    if (file) uploadMutation.mutate(file);
+    if (file) uploadMutation.mutate({ file, kind: 'image' });
+  };
+  const handleDocumentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) uploadMutation.mutate({ file, kind: 'document' });
   };
 
   const pickTemplate = (name: string) => {
@@ -315,22 +368,50 @@ export function InboxPage() {
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
-                <div>
-                  <p className="font-semibold text-foreground">{selected.contactName || selected.contactPhone || selected.externalContactId}</p>
-                  {selected.contactPhone && selected.contactName && <p className="text-xs text-muted-foreground">{selected.contactPhone}</p>}
+              <div
+                className={cn('flex items-center justify-between gap-2 px-4 py-2.5', channel === 'WHATSAPP' ? 'text-white' : 'border-b border-border')}
+                style={channel === 'WHATSAPP' ? { backgroundColor: WA_HEADER } : undefined}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar className={channel === 'WHATSAPP' ? 'border border-white/25' : undefined}>
+                    <AvatarFallback className={channel === 'WHATSAPP' ? 'bg-white/15 text-white' : undefined}>
+                      {initials(selected.contactName || selected.contactPhone || selected.externalContactId)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className={cn('truncate font-semibold', channel !== 'WHATSAPP' && 'text-foreground')}>
+                      {selected.contactName || selected.contactPhone || selected.externalContactId}
+                    </p>
+                    {selected.contactPhone && selected.contactName && (
+                      <p className={cn('truncate text-xs', channel === 'WHATSAPP' ? 'text-white/70' : 'text-muted-foreground')}>{selected.contactPhone}</p>
+                    )}
+                  </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={summarizeMutation.isPending || (threadQuery.data?.messages.length ?? 0) === 0}
-                  onClick={() => summarizeMutation.mutate()}
-                >
-                  {summarizeMutation.isPending ? <Spinner className="size-4" /> : <FileText className="size-4" />} Summarize
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {channel === 'WHATSAPP' && selected.contactPhone && (
+                    <a
+                      href={`tel:${selected.contactPhone}`}
+                      onClick={() => logCallMutation.mutate()}
+                      className="inline-flex size-9 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10"
+                      aria-label="Call"
+                      title={`Call ${selected.contactPhone}`}
+                    >
+                      <Phone className="size-4" />
+                    </a>
+                  )}
+                  <Button
+                    variant={channel === 'WHATSAPP' ? 'ghost' : 'outline'}
+                    size="sm"
+                    className={channel === 'WHATSAPP' ? 'text-white hover:bg-white/10 hover:text-white' : undefined}
+                    disabled={summarizeMutation.isPending || (threadQuery.data?.messages.length ?? 0) === 0}
+                    onClick={() => summarizeMutation.mutate()}
+                  >
+                    {summarizeMutation.isPending ? <Spinner className="size-4" /> : <FileText className="size-4" />} Summarize
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-5">
+              <div className="flex-1 overflow-y-auto p-5" style={channel === 'WHATSAPP' ? WA_WALLPAPER_STYLE : undefined}>
                 {threadQuery.isLoading ? (
                   <div className="space-y-3">
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -339,42 +420,69 @@ export function InboxPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {(threadQuery.data?.messages ?? []).map((m) => (
-                      <div key={m.id} className={cn('flex', m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start')}>
-                        <div
-                          className={cn(
-                            'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm',
-                            m.direction === 'OUTBOUND'
-                              ? 'rounded-br-sm bg-primary text-primary-foreground'
-                              : 'rounded-bl-sm bg-muted text-foreground',
-                          )}
-                        >
-                          {m.templateName && (
-                            <p className={cn('mb-1 text-[10px] font-semibold uppercase tracking-wide', m.direction === 'OUTBOUND' ? 'text-white/70' : 'text-muted-foreground')}>
-                              Template: {m.templateName}
-                            </p>
-                          )}
-                          {m.mediaUrl && (
-                            <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="-mx-1 -mt-1 mb-1 block">
-                              <img src={m.mediaUrl} alt="" className="max-h-64 w-full rounded-lg object-cover" />
-                            </a>
-                          )}
-                          {m.body && <p className="whitespace-pre-line">{m.body}</p>}
-                          <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', m.direction === 'OUTBOUND' ? 'justify-end text-white/70' : 'text-muted-foreground')}>
-                            {formatSmartTime(m.createdAt)}
-                            {m.direction === 'OUTBOUND' && statusIcon(m.status)}
+                    {(threadQuery.data?.messages ?? []).map((m) => {
+                      const wa = channel === 'WHATSAPP';
+                      const outboundTint = wa ? 'text-black/50' : 'text-white/70';
+                      return (
+                        <div key={m.id} className={cn('flex', m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start')}>
+                          <div
+                            className={cn(
+                              'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm',
+                              m.direction === 'OUTBOUND' ? 'rounded-br-sm' : 'rounded-bl-sm',
+                              m.direction === 'OUTBOUND'
+                                ? wa
+                                  ? 'text-[#111B21]'
+                                  : 'bg-primary text-primary-foreground'
+                                : wa
+                                  ? 'bg-white text-[#111B21]'
+                                  : 'bg-muted text-foreground',
+                            )}
+                            style={m.direction === 'OUTBOUND' && wa ? { backgroundColor: WA_OUTBOUND_BUBBLE } : undefined}
+                          >
+                            {m.templateName && (
+                              <p className={cn('mb-1 text-[10px] font-semibold uppercase tracking-wide', m.direction === 'OUTBOUND' ? outboundTint : 'text-muted-foreground')}>
+                                Template: {m.templateName}
+                              </p>
+                            )}
+                            {m.mediaUrl && isPdfUrl(m.mediaUrl) ? (
+                              <a
+                                href={m.mediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={cn(
+                                  '-mx-1 -mt-1 mb-1 flex items-center gap-2.5 rounded-lg p-2.5',
+                                  m.direction === 'OUTBOUND' ? 'bg-black/5' : 'bg-muted/60',
+                                )}
+                              >
+                                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-600">
+                                  <FileText className="size-5" />
+                                </span>
+                                <span className="min-w-0 truncate text-xs font-medium">{documentNameFromUrl(m.mediaUrl)}</span>
+                              </a>
+                            ) : (
+                              m.mediaUrl && (
+                                <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="-mx-1 -mt-1 mb-1 block">
+                                  <img src={m.mediaUrl} alt="" className="max-h-64 w-full rounded-lg object-cover" />
+                                </a>
+                              )
+                            )}
+                            {m.body && <p className="whitespace-pre-line">{m.body}</p>}
+                            <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', m.direction === 'OUTBOUND' ? cn('justify-end', outboundTint) : 'text-muted-foreground')}>
+                              {formatSmartTime(m.createdAt)}
+                              {m.direction === 'OUTBOUND' && statusIcon(m.status, wa)}
+                            </div>
+                            {m.status === 'FAILED' && m.errorMessage && (
+                              <p className={cn('mt-1 text-[11px]', wa ? 'text-red-600' : 'text-red-200')}>{m.errorMessage}</p>
+                            )}
                           </div>
-                          {m.status === 'FAILED' && m.errorMessage && (
-                            <p className="mt-1 text-[11px] text-red-200">{m.errorMessage}</p>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
-              <div className="border-t border-border p-3">
+              <div className="border-t border-border p-3" style={channel === 'WHATSAPP' ? { backgroundColor: WA_COMPOSER_BG } : undefined}>
                 {outsideWindow && (
                   <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     Outside the 24-hour window — send an approved template to restart the conversation.
@@ -403,57 +511,77 @@ export function InboxPage() {
                     )}
                   </div>
                 )}
-                {(pendingImageUrl || uploadMutation.isPending) && (
-                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
+                {(pendingMedia || uploadMutation.isPending) && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-card p-2">
                     {uploadMutation.isPending ? (
                       <div className="flex size-14 items-center justify-center rounded-md bg-muted">
                         <Spinner className="size-4" />
                       </div>
+                    ) : pendingMedia!.kind === 'image' ? (
+                      <img src={pendingMedia!.url} alt="" className="size-14 rounded-md object-cover" />
                     ) : (
-                      <img src={pendingImageUrl!} alt="" className="size-14 rounded-md object-cover" />
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-red-500/10 text-red-600">
+                        <FileText className="size-6" />
+                      </span>
                     )}
-                    <p className="flex-1 text-xs text-muted-foreground">
-                      {uploadMutation.isPending ? 'Uploading…' : 'Photo ready to send'}
+                    <p className="flex-1 truncate text-xs text-muted-foreground">
+                      {uploadMutation.isPending ? 'Uploading…' : pendingMedia!.kind === 'image' ? 'Photo ready to send' : pendingMedia!.name}
                     </p>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="size-7"
                       disabled={uploadMutation.isPending}
-                      onClick={() => setPendingImageUrl(null)}
-                      aria-label="Remove photo"
+                      onClick={() => setPendingMedia(null)}
+                      aria-label="Remove attachment"
                     >
                       <X className="size-4" />
                     </Button>
                   </div>
                 )}
                 <div className="flex items-end gap-2">
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelected} />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    disabled={uploadMutation.isPending || (outsideWindow && !templateName)}
-                    onClick={() => fileInputRef.current?.click()}
-                    aria-label="Attach a photo"
-                    title="Attach a photo"
-                  >
-                    <Paperclip className="size-4" />
-                  </Button>
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
+                  <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        disabled={uploadMutation.isPending || (outsideWindow && !templateName)}
+                        aria-label="Attach"
+                        title="Attach a photo or document"
+                      >
+                        <Paperclip className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" side="top">
+                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                        <ImageIcon className="text-blue-500" /> Photo
+                      </DropdownMenuItem>
+                      {channel === 'WHATSAPP' && (
+                        <DropdownMenuItem onSelect={() => documentInputRef.current?.click()}>
+                          <FileText className="text-red-500" /> Document (PDF)
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <Textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder={
                       outsideWindow
                         ? 'Template message…'
-                        : pendingImageUrl
+                        : pendingMedia?.kind === 'image'
                           ? channel === 'INSTAGRAM'
                             ? "Instagram photos can't have a caption"
                             : 'Add a caption…'
-                          : 'Type a message…'
+                          : pendingMedia?.kind === 'document'
+                            ? 'Add a caption…'
+                            : 'Type a message…'
                     }
                     rows={2}
                     className="resize-none"
-                    disabled={(outsideWindow && !templateName) || (!!pendingImageUrl && channel === 'INSTAGRAM')}
+                    disabled={(outsideWindow && !templateName) || (pendingMedia?.kind === 'image' && channel === 'INSTAGRAM')}
                   />
                   <Button
                     variant="outline"
@@ -467,7 +595,9 @@ export function InboxPage() {
                   </Button>
                   <Button
                     size="icon"
-                    disabled={(!draft.trim() && !pendingImageUrl) || sendMutation.isPending || (outsideWindow && !templateName)}
+                    className={channel === 'WHATSAPP' ? 'text-white hover:opacity-90' : undefined}
+                    style={channel === 'WHATSAPP' ? { backgroundColor: WA_SEND } : undefined}
+                    disabled={(!draft.trim() && !pendingMedia) || sendMutation.isPending || (outsideWindow && !templateName)}
                     onClick={() => sendMutation.mutate()}
                     aria-label="Send message"
                   >

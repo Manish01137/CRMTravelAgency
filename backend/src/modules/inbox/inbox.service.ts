@@ -3,6 +3,7 @@ import { decryptJson } from '../../lib/encryption';
 import {
   sendWhatsAppText,
   sendWhatsAppImage,
+  sendWhatsAppDocument,
   sendWhatsAppTemplate,
   sendInstagramText,
   sendInstagramImage,
@@ -13,6 +14,20 @@ import type { WhatsAppCredentials, InstagramCredentials } from '../channels/chan
 import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput } from './inbox.schemas';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** There's no separate "media kind" column on Message — a document attachment
+ *  is just a mediaUrl that happens to end in .pdf, same as everything else
+ *  here trusting the URL (see PackageBrochurePage's own dayPhoto/heroPhoto). */
+const isPdfUrl = (url: string) => /\.pdf(?:[?#]|$)/i.test(url);
+
+/** Recovers the human filename embedded by uploadBufferToStorage's document
+ *  upload (see storage.ts) — the URL's last path segment, minus the
+ *  "<timestamp>-<random>-" prefix every upload key gets. */
+function documentFilenameFromUrl(url: string): string {
+  const last = url.split('/').pop() ?? 'document.pdf';
+  const withoutQuery = last.split(/[?#]/)[0];
+  return withoutQuery.replace(/^\d+-[0-9a-f]+-/, '') || 'document.pdf';
+}
 
 /**
  * Inbox filter chips: "all" (default), "unread" (unreadCount > 0, already
@@ -103,6 +118,16 @@ export async function sendMessage(
           if (!template) throw BadRequest('That template was not found or is not yet approved');
           const sent = await sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, template.name, template.language);
           externalMessageId = sent.externalMessageId;
+        } else if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
+          const sent = await sendWhatsAppDocument(
+            creds.phoneNumberId,
+            creds.accessToken,
+            conversation.externalContactId,
+            input.mediaUrl,
+            documentFilenameFromUrl(input.mediaUrl),
+            input.body?.trim() || undefined,
+          );
+          externalMessageId = sent.externalMessageId;
         } else if (input.mediaUrl) {
           // WhatsApp supports a caption on the image itself — one message, not two.
           const sent = await sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.mediaUrl, input.body?.trim() || undefined);
@@ -113,7 +138,9 @@ export async function sendMessage(
         }
       } else {
         const creds = decryptJson<InstagramCredentials>(connection.credentials);
-        if (input.mediaUrl) {
+        if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
+          throw BadRequest('Instagram DMs only support photos, not documents');
+        } else if (input.mediaUrl) {
           // Instagram's attachment message has no caption field — any typed
           // text alongside a photo is dropped rather than silently sent as a
           // separate, unlabeled second message.
@@ -166,6 +193,27 @@ export async function sendMessage(
       });
       throw err;
     }
+  });
+}
+
+/**
+ * Logs a phone call as a touchpoint on the conversation — the WhatsApp/
+ * Instagram Business APIs have no calling capability at all (only the
+ * customer's own WhatsApp app can place a call), so the frontend's "Call"
+ * button just opens a tel: link to dial the agent's own phone. This records
+ * that it happened, as a plain local note — never sent through Meta.
+ */
+export async function logCall(organizationId: string, conversationId: string, userId: string) {
+  return withTenant(organizationId, async (tx) => {
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
+    if (!conversation) throw NotFound('Conversation not found');
+
+    const preview = '📞 Called';
+    const message = await tx.message.create({
+      data: { organizationId, conversationId, direction: 'OUTBOUND', body: preview, status: 'SENT', sentById: userId },
+    });
+    await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: preview } });
+    return message;
   });
 }
 

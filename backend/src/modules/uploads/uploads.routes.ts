@@ -92,4 +92,41 @@ router.post(
   }),
 );
 
+// --- Document uploads (WhatsApp "Document" attachment — PDFs only) ----------
+const DOCUMENT_ALLOWED = new Map<string, string>([['application/pdf', 'pdf']]);
+const DOCUMENT_MAX_BYTES = 16 * 1024 * 1024; // 16 MB — WhatsApp's own document cap is 100 MB, but this keeps upload times reasonable
+
+const uploadDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: DOCUMENT_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (DOCUMENT_ALLOWED.has(file.mimetype)) cb(null, true);
+    else cb(new Error('UNSUPPORTED_TYPE'));
+  },
+});
+
+router.post(
+  '/document',
+  requireAuth,
+  (req: Request, res: Response, next) => {
+    uploadDocument.single('file')(req, res, (err: unknown) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return next(BadRequest('Document is too large (max 16 MB)'));
+      }
+      if (err instanceof Error && err.message === 'UNSUPPORTED_TYPE') {
+        return next(BadRequest('Only PDF documents are allowed'));
+      }
+      return next(BadRequest('Could not read the uploaded file'));
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw BadRequest('No file was uploaded (field name must be "file")');
+
+    const ext = DOCUMENT_ALLOWED.get(req.file.mimetype) ?? 'pdf';
+    const url = await uploadBufferToStorage(req.file.buffer, req.file.mimetype, ext, `${req.auth!.organizationId}/documents`, req.file.originalname);
+    res.status(201).json({ url });
+  }),
+);
+
 export default router;

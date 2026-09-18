@@ -23,6 +23,11 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   res.status(201).json(message);
 }
 
+export async function logCall(req: Request, res: Response): Promise<void> {
+  const message = await service.logCall(req.auth!.organizationId, req.params.id, req.auth!.userId);
+  res.status(201).json(message);
+}
+
 export async function listTemplates(req: Request, res: Response): Promise<void> {
   res.json(await service.listTemplates(req.auth!.organizationId));
 }

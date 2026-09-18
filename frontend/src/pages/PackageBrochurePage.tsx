@@ -1,7 +1,10 @@
-import type { ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { toast } from 'sonner';
+import { ArrowLeft, Download, Loader2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { PackageItineraryDay, TravelPackage } from '@/types';
@@ -141,9 +144,18 @@ function Page({ children, className, label, flow }: { children: ReactNode; class
   );
 }
 
+/** Turns "Nagpur Getaway ✈ 2026" into a safe download filename. */
+function toFileName(name: string): string {
+  const safe = name.replace(/[^\w\- ]+/g, '').trim();
+  return `${safe || 'package'}.pdf`;
+}
+
 export function PackageBrochurePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const pagesRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
 
   const pkgQuery = useQuery({
     queryKey: ['public-package', id],
@@ -153,6 +165,53 @@ export function PackageBrochurePage() {
 
   const pkg = pkgQuery.data?.package;
   const org = pkgQuery.data?.organization;
+
+  /**
+   * Renders every fixed-size page as a real PDF file the browser saves to disk
+   * — NOT window.print(), which only opens the OS print dialog and depends on
+   * the user manually choosing "Save as PDF" as the destination. That dialog
+   * is also unsupported inside most in-app browsers (e.g. a link opened from
+   * inside WhatsApp/Instagram itself), where clicking it used to do nothing
+   * at all. Captures each .pbx-page as a canvas (at 2x scale for crisp text)
+   * and stacks them into one multi-page PDF sized to match each page's own
+   * rendered dimensions (terms pages auto-paginate to a variable height).
+   */
+  async function downloadPdf() {
+    const container = pagesRef.current;
+    if (!container || !pkg) return;
+    const pages = Array.from(container.querySelectorAll<HTMLElement>('.pbx-page'));
+    if (pages.length === 0) return;
+
+    setExporting(true);
+    setProgress({ done: 0, total: pages.length });
+    try {
+      let doc: jsPDF | null = null;
+      for (let i = 0; i < pages.length; i += 1) {
+        const page = pages[i];
+        const width = page.offsetWidth;
+        const height = page.offsetHeight;
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        if (!doc) {
+          doc = new jsPDF({ unit: 'px', format: [width, height], hotfixes: ['px_scaling'] });
+        } else {
+          doc.addPage([width, height]);
+        }
+        doc.addImage(imgData, 'JPEG', 0, 0, width, height);
+        setProgress({ done: i + 1, total: pages.length });
+      }
+      doc!.save(toFileName(pkg.bookingTitle || pkg.name));
+    } catch (err) {
+      console.error('Brochure PDF export failed:', err);
+      toast.error('Could not generate the PDF — please try again');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   if (pkgQuery.isLoading) {
     return (
@@ -298,14 +357,23 @@ export function PackageBrochurePage() {
 
       {/* Toolbar (hidden in print) */}
       <div className="pbx-toolbar">
-        <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white" onClick={() => navigate(-1)}>
+        <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white" disabled={exporting} onClick={() => navigate(-1)}>
           <ArrowLeft /> Back
         </Button>
-        <Button onClick={() => window.print()}>
-          <Printer /> Download PDF
+        <Button onClick={downloadPdf} disabled={exporting}>
+          {exporting ? (
+            <>
+              <Loader2 className="animate-spin" /> Preparing… {progress.done}/{progress.total}
+            </>
+          ) : (
+            <>
+              <Download /> Download PDF
+            </>
+          )}
         </Button>
       </div>
 
+      <div ref={pagesRef}>
       {/* ===================== 1 · COVER ===================== */}
       <Page label="01 · cover">
         <BrandRow orgName={orgName} logoUrl={logoUrl} />
@@ -533,6 +601,7 @@ export function PackageBrochurePage() {
           )}
         </Page>
       )}
+      </div>
     </div>
   );
 }

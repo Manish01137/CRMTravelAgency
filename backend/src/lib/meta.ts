@@ -261,6 +261,30 @@ export async function sendWhatsAppImage(
   return { externalMessageId: data.messages[0].id };
 }
 
+/** Sends a WhatsApp document message (PDF) from a publicly reachable URL —
+ *  same "Meta fetches it directly" pattern as sendWhatsAppImage. `filename` is
+ *  what the customer sees as the attachment's name in their WhatsApp app. */
+export async function sendWhatsAppDocument(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  documentUrl: string,
+  filename: string,
+  caption?: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'document',
+      document: { link: documentUrl, filename, ...(caption ? { caption } : {}) },
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
 export interface WhatsAppListRow {
   /** Sent back verbatim as interactive.list_reply.id when the customer taps this row — keep it short and parseable. */
   id: string;
