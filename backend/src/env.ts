@@ -92,3 +92,17 @@ if (!parsed.success) {
 export const env = parsed.data;
 export const isProd = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';
+
+// CORS_ORIGIN doubles as the public app origin for links generated into
+// emails/WhatsApp messages (invite links, shared package links — see
+// users.controller.ts, bot-flow.engine.ts). Same-origin requests through the
+// production nginx proxy work fine even when this is wrong, so a stale/unset
+// value here stays invisible until someone clicks a generated link — catch it
+// at boot instead.
+if (isProd && /localhost|127\.0\.0\.1/.test(env.CORS_ORIGIN)) {
+  // eslint-disable-next-line no-console
+  console.error(
+    `✗ CORS_ORIGIN is "${env.CORS_ORIGIN}" in production — invite links and shared package links would point at localhost. Set CORS_ORIGIN to the real public origin (e.g. https://joinetra.com).`,
+  );
+  process.exit(1);
+}

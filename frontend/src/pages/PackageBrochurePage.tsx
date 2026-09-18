@@ -1,53 +1,47 @@
 import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ArrowLeft,
-  BedDouble,
-  Instagram,
-  Mail,
-  MapPin,
-  MessageCircle,
-  Moon,
-  Phone,
-  Printer,
-  Sparkles,
-  Sun,
-  UtensilsCrossed,
-} from 'lucide-react';
+import { ArrowLeft, Printer } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { HostReview, PackageItineraryDay, TravelPackage } from '@/types';
+import type { PackageItineraryDay, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatCurrency, initials } from '@/lib/format';
-import { Banner, BulletList, BODY_FONT, DISPLAY_FONT, HAIRLINE, INK, MUTED, THEME_VARS } from '@/lib/signatureTheme';
+import { formatCurrency } from '@/lib/format';
+import { BODY_FONT, DISPLAY_FONT, HAIRLINE, INK, MUTED, THEME_VARS } from '@/lib/signatureTheme';
 
 /**
- * JOINETRA — the PDF download of a package, a *paginated* version of the same
- * public package page (/p/:id): same shared Signature design system (colors,
- * fonts, Banner/BulletList, brand mark, pill badges, pricing table) via
- * '@/lib/signatureTheme', same content and section order, just laid out as
- * fixed 1280×720 "spread" pages (one per section, one per itinerary day) that
- * print cleanly instead of one continuous scroll. The two pages previously
- * drifted into looking like unrelated designs because each had its own copy
- * of the styling — they now render from the same source of truth.
+ * JOINETRA — the PDF download of a package: fixed 800×1130 "book" pages with
+ * a heavy yellow border and hex-pattern watermark, one page per section, one
+ * page per itinerary day, terms auto-paginated 8-per-page — a direct port of
+ * the agency-supplied Signature brochure reference (same page sizes, same
+ * banner/bullet/photo-slot/footer-contact treatment), rendering real package
+ * data through the same 3-variant Signature color system as the public page
+ * (imported from '@/lib/signatureTheme') rather than the reference's static
+ * single palette.
  *
- * Presentation-only: renders existing package / itinerary / review data.
- * Adds no required data fields — every section is omitted gracefully when its
- * source data is empty, never shown blank or with a placeholder image.
+ * Presentation-only: renders existing package / org data. Every section is
+ * omitted gracefully when its source data is empty — never shown blank or
+ * with a "click to add" placeholder, since this is a read-only customer-
+ * facing document, not the builder.
  */
+
+const SCRIPT_FONT = "'Caveat', cursive";
 
 interface BrochureOrg {
   name: string;
   logoUrl: string | null;
   instagramUrl: string | null;
   whatsappNumber: string | null;
+  /** Same bank fields already printed on invoices — reused for the PDF's
+   *  bank-transfer payment box. All optional; the box is omitted without them. */
+  bankName: string | null;
+  bankAccountNumber: string | null;
+  ifscCode: string | null;
 }
 interface PublicBrochure {
   package: TravelPackage;
   organization: BrochureOrg | null;
-  reviews: HostReview[];
 }
 
 // --- Small text/data helpers --------------------------------------------------
@@ -55,22 +49,27 @@ const lines = (s: string | null | undefined) =>
   (s ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
 
 /** The day's narrative — description, else activity blocks (newer builder flow). */
-const dayNarrative = (d: PackageItineraryDay): string[] => {
+const dayBullets = (d: PackageItineraryDay): string[] => {
   if (d.description && d.description.trim()) return lines(d.description);
   const blocks = d.activityBlocks ?? [];
   return blocks.map((b) => [b.name, b.description].filter(Boolean).join(' — ')).filter(Boolean);
 };
 
-/** Up to 4 photos for a day — that day's own images only (never reused from
- *  other days or the general gallery, so each day's story stays honest to
- *  what was actually uploaded for it). */
-const dayImages = (d: PackageItineraryDay): string[] => {
+const dayPhoto = (d: PackageItineraryDay): string | null => {
   const own = (d.images ?? []).filter(Boolean);
-  if (own.length > 0) return own.slice(0, 4);
-  return (d.activityBlocks ?? []).map((b) => b.imageUrl).filter((u): u is string => !!u).slice(0, 4);
+  if (own.length > 0) return own[0];
+  return d.activityBlocks?.find((b) => b.imageUrl)?.imageUrl ?? null;
 };
 
-/** "@handle" from an Instagram profile URL; falls back to the raw URL's path. */
+/** A short, single-word decorative accent under the destination headline
+ *  (e.g. "beauty", "heritage") — only when a category tag is genuinely a
+ *  single short word; multi-word tags never get force-fit into the script line. */
+const scriptAccent = (categories: string[]): string | null => {
+  const first = categories.find((c) => c.trim() && !c.includes(' ') && c.length <= 14);
+  return first?.toLowerCase() ?? null;
+};
+
+/** "@handle" from an Instagram profile URL; falls back to the raw URL. */
 const instagramHandle = (url: string): string => {
   try {
     const path = new URL(url).pathname.replace(/\/+$/, '').replace(/^\/+/, '');
@@ -82,60 +81,62 @@ const instagramHandle = (url: string): string => {
 
 const digitsOnly = (s: string) => s.replace(/\D/g, '');
 
+const chunk = <T,>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
 // --- Reusable presentational pieces ------------------------------------------
 
-/** The public page's circular brand mark, reused here (logo or initials). */
-function BrandMark({ orgName, logoUrl, corner }: { orgName: string; logoUrl: string | null; corner?: boolean }) {
+function BrandRow({ orgName, logoUrl }: { orgName: string; logoUrl: string | null }) {
   return (
-    <div className={cn('pbx-badge', corner && 'pbx-badge--corner')}>
-      <span className={cn('pbx-badge__circle', corner && 'pbx-badge__circle--sm')}>
+    <div className="pbx-brand-row">
+      <span className="pbx-brand-mark">
         {logoUrl ? (
-          <img src={logoUrl} alt={orgName} className="pbx-badge__logo" />
+          <img src={logoUrl} alt={orgName} />
         ) : (
-          <span className="pbx-badge__initials">{initials(orgName)}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="1.8">
+            <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
+            <circle cx="12" cy="10" r="2.4" />
+          </svg>
         )}
       </span>
-      <span className="pbx-badge__name">{orgName}</span>
+      <span className="pbx-brand-name">{orgName}</span>
     </div>
   );
 }
 
-function ChipList({ items }: { items: string[] }) {
+function Banner({ children, yellow }: { children: ReactNode; yellow?: boolean }) {
   return (
-    <div className="flex flex-wrap justify-center gap-2">
-      {items.map((h, i) => (
-        <span key={i} className="pbx-chip">
-          <Sparkles className="size-3.5" style={{ color: 'var(--orange)' }} /> {h}
-        </span>
+    <div className="pbx-banner-wrap">
+      <span className={cn('pbx-banner', yellow && 'pbx-banner--yellow')}>{children}</span>
+    </div>
+  );
+}
+
+function Bullets({ items, yellow }: { items: string[]; yellow?: boolean }) {
+  return (
+    <ul className={cn('pbx-bullets', yellow && 'pbx-bullets--yellow')}>
+      {items.map((l, i) => (
+        <li key={i}>{l}</li>
       ))}
-    </div>
+    </ul>
   );
 }
 
-function ReviewCard({ review }: { review: HostReview }) {
-  const stars = Math.max(0, Math.min(5, review.rating ?? 5));
-  return (
-    <div className="pbx-review-card">
-      <div className="pbx-review-card__head">
-        {review.photoUrl ? (
-          <img src={review.photoUrl} alt="" className="pbx-review-avatar-img" />
-        ) : (
-          <div className="pbx-review-avatar">{review.reviewerName.slice(0, 1).toUpperCase()}</div>
-        )}
-        <div className="pbx-review-name">{review.reviewerName}</div>
-      </div>
-      <div className="pbx-review-stars">{'★'.repeat(stars)}{'☆'.repeat(5 - stars)}</div>
-      <div className="pbx-review-text">{review.quote}</div>
-    </div>
-  );
+function Photo({ url, className }: { url: string | null; className: string }) {
+  if (!url) return null;
+  return <div className={cn('pbx-photo', className)} style={{ backgroundImage: `url('${url}')` }} />;
 }
 
-/** One fixed 1280×720 page — the atomic unit of the brochure. */
-function Page({ children, className, label }: { children: ReactNode; className?: string; label: string }) {
+/** One fixed 800×1130 page — the atomic unit of the brochure. */
+function Page({ children, className, label, flow }: { children: ReactNode; className?: string; label: string; flow?: boolean }) {
   return (
-    <section className={cn('pbx-page', className)}>
+    <section className={cn('pbx-page', flow && 'pbx-page--flow', className)}>
       <span className="pbx-page-label print:hidden">{label}</span>
-      {children}
+      <div className="pbx-hex-wash" />
+      <div className="pbx-page-inner">{children}</div>
     </section>
   );
 }
@@ -152,7 +153,6 @@ export function PackageBrochurePage() {
 
   const pkg = pkgQuery.data?.package;
   const org = pkgQuery.data?.organization;
-  const reviews = pkgQuery.data?.reviews ?? [];
 
   if (pkgQuery.isLoading) {
     return (
@@ -180,101 +180,117 @@ export function PackageBrochurePage() {
   const logoUrl = org?.logoUrl ?? null;
   const instagramUrl = org?.instagramUrl ?? null;
   const whatsappNumber = org?.whatsappNumber ?? null;
-  const title = pkg.bookingTitle || pkg.name;
-  const price = formatCurrency(pkg.priceAmount, pkg.priceCurrency);
   const phone = pkg.contactNumber?.trim() || null;
+  const accentWord = scriptAccent(pkg.categories);
 
   const heroPhoto = pkg.bannerImageUrl ?? pkg.galleryImages[0] ?? null;
+  const pickupPoints = lines(pkg.pickupPoints);
   const inclusions = lines(pkg.inclusions);
   const exclusions = lines(pkg.exclusions);
   const highlights = pkg.highlights.filter(Boolean);
   const thingsToCarry = lines(pkg.thingsToCarry);
-  const terms = lines(pkg.termsConditions);
-  const payInfo = lines(pkg.paymentTerms);
+  const bookingSteps = lines(pkg.paymentTerms);
+  const termsPages = chunk([...lines(pkg.cancellationPolicy), ...lines(pkg.termsConditions)], 8);
 
-  const hasOverviewPage = highlights.length > 0 || !!pkg.description || pkg.itinerary.length > 0;
+  const standardTiers = pkg.pricingOptions.filter((p) => (p.season ?? 'STANDARD') === 'STANDARD');
+  const peakTiers = pkg.pricingOptions.filter((p) => p.season === 'PEAK');
+  const priceTiers =
+    standardTiers.length > 0 || peakTiers.length > 0
+      ? pkg.pricingOptions
+      : pkg.priceAmount > 0
+        ? [{ label: 'Package Price', price: pkg.priceAmount }]
+        : [];
+
+  const hasBankDetails = !!(org?.bankName || org?.bankAccountNumber || org?.ifscCode);
   const hasContact = !!(phone || pkg.contactEmail || instagramUrl || whatsappNumber);
 
   return (
     <div className="pbx-screen" style={vars as React.CSSProperties}>
       <style>{`
-        .pbx-screen { min-height:100dvh; background:#777; padding:36px 0 80px; }
-        .pbx-toolbar { max-width:1280px; margin:0 auto 24px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; }
+        .pbx-screen { min-height:100dvh; background:#3A3F47; padding:36px 0 80px; }
+        .pbx-toolbar { max-width:800px; margin:0 auto 24px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; }
         @media print { .pbx-toolbar { display:none; } }
 
-        .pbx-page { position:relative; width:1280px; height:720px; margin:0 auto 36px; overflow:hidden; background:#fff; box-shadow:0 18px 46px rgba(0,0,0,.3); font-family:${BODY_FONT}; color:${INK}; }
-        .pbx-page-label { position:absolute; top:-24px; left:0; font-family:${BODY_FONT}; font-size:12px; letter-spacing:.08em; color:#eee; opacity:.65; }
-        .pbx-col { max-width:820px; margin:0 auto; padding:56px 40px; height:100%; box-sizing:border-box; overflow:hidden; }
+        .pbx-page { position:relative; width:800px; min-height:1130px; margin:0 auto 34px; background:#fff; border:14px solid var(--yellow); border-radius:6px; overflow:hidden; box-shadow:0 18px 44px rgba(0,0,0,.28); font-family:${BODY_FONT}; color:${INK}; }
+        .pbx-page--flow { height:auto; }
+        .pbx-page-label { position:absolute; top:-24px; left:0; font-family:${BODY_FONT}; font-size:12px; letter-spacing:.08em; color:#eee; opacity:.7; }
+        .pbx-page-inner { position:relative; z-index:2; padding:34px 40px 40px; min-height:1102px; box-sizing:border-box; }
+        .pbx-hex-wash { position:absolute; inset:0 0 auto 0; height:380px; z-index:1; pointer-events:none; opacity:.6;
+          background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='110' viewBox='0 0 64 110'><path d='M32 0 L64 18.3 L64 54.9 L32 73.2 L0 54.9 L0 18.3 Z' fill='none' stroke='%23BFD8EF' stroke-width='1.4'/></svg>");
+          background-size:64px 110px; }
 
-        .pbx-badge { display:flex; align-items:center; gap:10px; }
-        .pbx-badge__circle { width:80px; height:80px; border-radius:9999px; border:2px solid var(--blue); background:var(--blue-pale); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
-        .pbx-badge__circle--sm { width:44px; height:44px; }
-        .pbx-badge__logo { width:100%; height:100%; object-fit:cover; }
-        .pbx-badge__initials { font-family:${DISPLAY_FONT}; font-weight:700; color:var(--blue); font-size:26px; }
-        .pbx-badge__circle--sm .pbx-badge__initials { font-size:15px; }
-        .pbx-badge__name { font-family:${DISPLAY_FONT}; font-weight:700; font-size:14px; color:var(--blue-dark); }
-        .pbx-badge--corner { position:absolute; top:24px; left:28px; z-index:5; }
-        .pbx-badge--corner .pbx-badge__name { font-size:12px; }
-        .pbx-cover .pbx-badge { flex-direction:column; text-align:center; }
+        .pbx-brand-row { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:6px; }
+        .pbx-brand-mark { width:66px; height:66px; border-radius:50%; background:var(--blue-pale); border:2px solid var(--blue); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
+        .pbx-brand-mark img { width:100%; height:100%; object-fit:cover; }
+        .pbx-brand-mark svg { width:34px; height:34px; }
+        .pbx-brand-name { font-family:${DISPLAY_FONT}; font-weight:700; font-size:13px; color:var(--blue-dark); text-align:center; line-height:1.3; }
 
-        .pbx-pill-dest { display:inline-flex; align-items:center; gap:5px; border-radius:8px; padding:5px 12px; font-size:12.5px; font-weight:600; background:var(--blue-pale); color:var(--blue-dark); }
-        .pbx-title { font-family:${DISPLAY_FONT}; font-weight:800; text-transform:uppercase; font-size:52px; line-height:1; color:var(--blue-dark); text-align:center; margin:14px 0 0; }
-        .pbx-pill-row { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:16px; }
-        .pbx-pill { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; padding:7px 18px; font-size:13px; font-weight:700; }
+        .pbx-banner-wrap { text-align:center; margin:14px 0 22px; }
+        .pbx-banner { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:22px; letter-spacing:.02em; padding:11px 26px; border-radius:14px; }
+        .pbx-banner--yellow { background:var(--yellow); color:${INK}; }
+
+        .pbx-bullets { list-style:none; margin:0; padding:0; }
+        .pbx-bullets li { position:relative; padding-left:24px; margin-bottom:10px; font-size:15px; line-height:1.5; color:${INK}; }
+        .pbx-bullets li::before { content:''; position:absolute; left:2px; top:8px; width:8px; height:8px; border-radius:50%; background:var(--blue); }
+        .pbx-bullets--yellow li::before { background:var(--yellow); border:2px solid var(--orange); width:6px; height:6px; }
+
+        .pbx-photo { width:100%; border-radius:16px; background-size:cover; background-position:center; background-color:#EEF2F6; }
+
+        .pbx-callout { border:1.5px solid var(--orange); background:var(--yellow-pale); border-radius:12px; padding:12px 16px; font-size:13.5px; line-height:1.5; margin-top:10px; }
+        .pbx-callout b { color:var(--orange); }
+
+        .pbx-footer-contact { position:absolute; left:24px; right:24px; bottom:20px; z-index:3; }
+        .pbx-fc-top { background:#fff; border-radius:999px; padding:11px 20px; display:flex; justify-content:center; gap:26px; font-size:13.5px; font-weight:600; color:${INK}; box-shadow:0 6px 18px rgba(0,0,0,.12); flex-wrap:wrap; }
+        .pbx-fc-bottom { margin-top:8px; background:var(--blue); color:#fff; border-radius:999px; padding:11px 20px; text-align:center; font-weight:700; font-size:15px; letter-spacing:.02em; }
+        .pbx-fc-item { display:flex; align-items:center; gap:7px; }
+
+        .pbx-cover-title { text-align:center; margin:2px 0 14px; }
+        .pbx-cover-title .main { font-family:${DISPLAY_FONT}; font-weight:800; font-size:56px; line-height:1; color:var(--blue-dark); text-transform:uppercase; letter-spacing:.01em; }
+        .pbx-cover-title .accent { font-family:${SCRIPT_FONT}; font-weight:700; font-size:38px; color:var(--orange); margin-top:-6px; display:block; }
+        .pbx-pill-row { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
+        .pbx-pill { display:flex; align-items:center; gap:8px; border-radius:999px; padding:9px 18px; font-weight:700; font-size:14px; }
         .pbx-pill--yellow { background:var(--yellow); color:${INK}; }
         .pbx-pill--blue { background:var(--blue); color:#fff; }
+        .pbx-cover-photo { height:520px; margin-top:6px; }
 
-        .pbx-cover-photo { width:100%; height:200px; object-fit:cover; border-radius:18px; margin-top:20px; }
-        .pbx-price-row { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1.5px solid ${HAIRLINE}; border-radius:16px; padding:16px; margin-top:20px; }
-        .pbx-price-amt { font-family:${DISPLAY_FONT}; font-weight:800; font-size:26px; color:var(--blue-dark); }
-        .pbx-price-per { font-size:12px; color:${MUTED}; }
-        .pbx-price-pill { background:var(--yellow); color:${INK}; font-family:${DISPLAY_FONT}; font-weight:700; font-size:15px; padding:9px 20px; border-radius:9999px; }
+        .pbx-timeline { display:flex; flex-direction:column; align-items:center; padding:10px 0 26px; }
+        .pbx-tl-icon { font-size:26px; }
+        .pbx-tl-line { width:2px; flex:1; background:repeating-linear-gradient(to bottom, var(--blue) 0 6px, transparent 6px 12px); min-height:210px; position:relative; margin:6px 0; }
+        .pbx-tl-rows { position:absolute; left:50%; transform:translateX(-50%); top:0; width:560px; }
+        .pbx-tl-row { display:flex; align-items:center; gap:16px; padding:14px 0; }
+        .pbx-tl-dot { width:12px; height:12px; border-radius:50%; background:#fff; border:3px solid var(--blue); flex-shrink:0; }
+        .pbx-tl-day { font-family:${DISPLAY_FONT}; font-weight:700; color:${INK}; font-size:15px; width:70px; flex-shrink:0; }
+        .pbx-tl-label { font-weight:600; font-size:15px; color:${INK}; }
+        .pbx-pickup-box { background:var(--yellow); border-radius:16px; padding:16px 24px; text-align:center; margin:18px 40px 0; }
+        .pbx-pickup-box .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:19px; margin-bottom:8px; }
+        .pbx-pickup-box .item { color:var(--blue-dark); font-family:${DISPLAY_FONT}; font-weight:700; font-size:17px; }
 
-        .pbx-chip { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; padding:6px 12px; font-size:13px; font-weight:500; background:var(--blue-pale); color:var(--blue-dark); }
+        .pbx-day-badge { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:20px; padding:8px 26px; border-radius:12px; }
+        .pbx-day-title { font-family:${DISPLAY_FONT}; font-weight:800; font-size:27px; margin:16px 0 16px; text-transform:uppercase; color:${INK}; }
+        .pbx-day-photo { height:400px; margin-top:16px; }
 
-        .pbx-day-row { display:flex; align-items:center; gap:12px; border-radius:10px; padding:9px 12px; background:var(--blue-pale); margin-bottom:6px; }
-        .pbx-day-row__num { display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:9999px; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:12px; flex-shrink:0; }
-        .pbx-day-row__title { font-size:13.5px; font-weight:600; color:var(--blue-dark); }
+        table.pbx-price-table { width:100%; border-collapse:collapse; margin:8px 0 16px; }
+        table.pbx-price-table th { background:var(--blue-pale); color:var(--blue-dark); font-family:${DISPLAY_FONT}; font-size:14px; text-align:left; padding:12px 16px; }
+        table.pbx-price-table td { padding:12px 16px; border-top:1px solid ${HAIRLINE}; font-weight:600; font-size:14.5px; }
+        .pbx-steps { display:flex; flex-direction:column; gap:8px; margin-bottom:18px; }
+        .pbx-steps .step { font-size:14px; line-height:1.55; }
+        .pbx-steps b { color:var(--blue-dark); }
+        .pbx-pay-box { border:1.5px solid ${HAIRLINE}; border-radius:16px; padding:18px; }
+        .pbx-pay-box .head { text-align:center; font-family:${DISPLAY_FONT}; font-weight:700; font-size:13px; color:${MUTED}; text-transform:uppercase; margin-bottom:14px; }
+        .pbx-bank-lines { font-size:13.5px; line-height:2; }
+        .pbx-bank-lines b { display:inline-block; width:90px; color:${MUTED}; font-weight:600; }
 
-        .pbx-day-page { height:100%; display:flex; flex-direction:column; }
-        .pbx-day-head { text-align:center; padding:48px 0 0; }
-        .pbx-day-pill { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:14px; padding:7px 22px; border-radius:12px; }
-        .pbx-day-title { margin:12px 0 0; font-family:${DISPLAY_FONT}; font-weight:800; text-transform:uppercase; font-size:24px; color:${INK}; }
-        .pbx-day-body { flex:1; display:flex; gap:36px; padding:28px 56px 40px; align-items:center; overflow:hidden; }
-        .pbx-day-body--reverse { flex-direction:row-reverse; }
-        .pbx-day-body__text { flex:1.1; max-height:100%; overflow:hidden; }
-        .pbx-day-photos { flex:1; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-        .pbx-day-photos img { width:100%; height:150px; object-fit:cover; border-radius:14px; }
-        .pbx-day-meta { display:flex; flex-wrap:wrap; gap:14px; margin-top:16px; font-size:12px; font-weight:500; color:${MUTED}; }
-        .pbx-day-meta span { display:flex; align-items:center; gap:6px; }
-
-        .pbx-two-col { display:grid; grid-template-columns:1fr 1fr; gap:0 48px; }
-
-        .pbx-table { width:100%; border-collapse:collapse; border:1.5px solid ${HAIRLINE}; border-radius:14px; overflow:hidden; font-size:14px; }
-        .pbx-table th { background:var(--blue-pale); color:var(--blue-dark); font-family:${DISPLAY_FONT}; font-weight:700; text-align:left; padding:10px 16px; }
-        .pbx-table td { padding:10px 16px; border-top:1px solid ${HAIRLINE}; font-weight:500; }
-        .pbx-table td:last-child { font-weight:600; }
-
-        .pbx-gallery { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
-        .pbx-gallery img { width:100%; height:190px; object-fit:cover; border-radius:16px; }
-
-        .pbx-reviews-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; }
-        .pbx-review-card { background:var(--blue-pale); border-radius:14px; padding:15px 16px; }
-        .pbx-review-card__head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
-        .pbx-review-avatar, .pbx-review-avatar-img { width:30px; height:30px; border-radius:50%; flex-shrink:0; object-fit:cover; }
-        .pbx-review-avatar { background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
-        .pbx-review-name { font-weight:600; font-size:13px; color:var(--blue-dark); }
-        .pbx-review-stars { color:var(--yellow); font-size:12px; margin:2px 0 6px; text-shadow:0 0 1px rgba(0,0,0,.35); }
-        .pbx-review-text { font-size:12px; line-height:1.55; color:${INK}; }
-
-        .pbx-contact-row { display:flex; align-items:center; gap:12px; border:1.5px solid var(--yellow); border-radius:14px; padding:13px 18px; font-weight:600; font-size:14.5px; color:${INK}; text-decoration:none; margin-bottom:10px; }
-        .pbx-contact-icon { color:var(--blue); flex-shrink:0; }
-
-        .pbx-footer { text-align:center; font-size:12px; color:${MUTED}; padding-top:18px; }
+        .pbx-contact-row { border:1.5px solid var(--yellow); border-radius:14px; padding:14px 20px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:16px; margin-bottom:14px; color:${INK}; text-decoration:none; }
+        .pbx-contact-row .ic { font-size:20px; }
+        .pbx-ig-block { text-align:center; margin-top:30px; }
+        .pbx-ig-block .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:17px; margin-bottom:2px; }
+        .pbx-ig-block .sub { font-size:11px; color:${MUTED}; letter-spacing:.08em; margin-bottom:16px; }
+        .pbx-ig-circle { width:74px; height:74px; border-radius:50%; margin:0 auto 10px; background:linear-gradient(135deg,#F58529,#DD2A7B,#8134AF,#515BD4); display:flex; align-items:center; justify-content:center; }
+        .pbx-ig-circle svg { width:34px; height:34px; }
 
         @media print {
           .pbx-screen { background:none; padding:0; }
-          @page { size: 13.333in 7.5in; margin:0; }
+          @page { size: A4; margin:0; }
           .pbx-page { box-shadow:none; margin:0; break-after:page; }
           .pbx-page:last-child { break-after:auto; }
         }
@@ -291,251 +307,230 @@ export function PackageBrochurePage() {
       </div>
 
       {/* ===================== 1 · COVER ===================== */}
-      <Page label="01 · cover" className="pbx-cover">
-        <div className="pbx-col flex flex-col items-center justify-center">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} />
-          <span className="pbx-pill-dest mt-5">
-            <MapPin className="size-3.5" /> {pkg.destination}
-          </span>
-          <h1 className="pbx-title">{title}</h1>
-          <div className="pbx-pill-row">
-            <span className="pbx-pill pbx-pill--yellow">
-              <Moon className="size-3.5" /> {pkg.nights} NIGHTS
-            </span>
-            <span className="pbx-pill pbx-pill--blue">
-              <Sun className="size-3.5" /> {pkg.days} DAYS
-            </span>
+      <Page label="01 · cover">
+        <BrandRow orgName={orgName} logoUrl={logoUrl} />
+        <div className="pbx-cover-title">
+          <span className="main">{pkg.destination}</span>
+          {accentWord && <span className="accent">{accentWord}</span>}
+        </div>
+        <div className="pbx-pill-row">
+          <span className="pbx-pill pbx-pill--yellow">🌙 {pkg.nights} NIGHTS</span>
+          <span className="pbx-pill pbx-pill--blue">☀️ {pkg.days} DAYS</span>
+        </div>
+        <Photo url={heroPhoto} className="pbx-cover-photo" />
+        <div className="pbx-footer-contact">
+          <div className="pbx-fc-top">
+            {instagramUrl && (
+              <span className="pbx-fc-item">
+                📷 <b>{instagramHandle(instagramUrl)}</b>
+              </span>
+            )}
+            {pkg.contactEmail && (
+              <span className="pbx-fc-item">
+                ✉️ <b>{pkg.contactEmail}</b>
+              </span>
+            )}
           </div>
-          {heroPhoto && <img className="pbx-cover-photo" src={heroPhoto} alt="" />}
-          <div className="pbx-price-row w-full">
-            <div>
-              <div className="pbx-price-amt">{price}</div>
-              <div className="pbx-price-per">per person</div>
-            </div>
-            <span className="pbx-price-pill">Starting price</span>
-          </div>
+          {(phone || whatsappNumber) && <div className="pbx-fc-bottom">📞 {phone ?? `+${whatsappNumber}`}</div>}
         </div>
       </Page>
 
-      {/* ===================== 2 · OVERVIEW: highlights, description, brief itinerary ===================== */}
-      {hasOverviewPage && (
-        <Page label="02 · overview">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col">
-            {highlights.length > 0 && <ChipList items={highlights} />}
-            {pkg.description && (
-              <p className="mt-5 text-[14px] leading-relaxed" style={{ color: INK }}>
-                {pkg.description}
-              </p>
-            )}
-            {pkg.itinerary.length > 0 && (
-              <>
-                <Banner>BRIEF ITINERARY</Banner>
-                {pkg.itinerary.map((d) => (
-                  <div key={d.day} className="pbx-day-row">
-                    <span className="pbx-day-row__num">{d.day}</span>
-                    <span className="pbx-day-row__title">{d.title}</span>
+      {/* ===================== 2 · BRIEF ITINERARY MAP ===================== */}
+      {pkg.itinerary.length > 0 && (
+        <Page label="02 · itinerary map">
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <Banner>BRIEF ITINERARY</Banner>
+          <div className="pbx-timeline">
+            <span className="pbx-tl-icon">🚌</span>
+            <div className="pbx-tl-line">
+              <div className="pbx-tl-rows">
+                {pkg.itinerary.map((it) => (
+                  <div key={it.day} className="pbx-tl-row">
+                    <span className="pbx-tl-dot" />
+                    <span className="pbx-tl-day">DAY {it.day}</span>
+                    <span className="pbx-tl-label">{it.title}</span>
                   </div>
                 ))}
-              </>
-            )}
+              </div>
+            </div>
+            <span className="pbx-tl-icon">🚌</span>
           </div>
+          {pickupPoints.length > 0 && (
+            <div className="pbx-pickup-box">
+              <div className="title">📍 PICKUP POINTS</div>
+              {pickupPoints.map((p, i) => (
+                <div key={i} className="item">
+                  {p}
+                </div>
+              ))}
+            </div>
+          )}
         </Page>
       )}
 
-      {/* ===================== 3 · DAY DETAIL (one page per day) ===================== */}
-      {pkg.itinerary.map((d, i) => {
-        const photos = dayImages(d);
-        const narrative = dayNarrative(d);
-        const reverse = i % 2 === 1;
-        return (
-          <Page key={`day-${d.day}`} label={`day ${d.day} detail`}>
-            <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-            <div className="pbx-day-page">
-              <div className="pbx-day-head">
-                <span className="pbx-day-pill">DAY {d.day}</span>
-                <h2 className="pbx-day-title">{d.title}</h2>
-              </div>
-              <div className={cn('pbx-day-body', reverse && photos.length > 0 && 'pbx-day-body--reverse')}>
-                <div className="pbx-day-body__text">
-                  {narrative.length > 0 ? (
-                    <BulletList items={narrative} />
-                  ) : (
-                    <p className="text-sm opacity-60">Details to be shared closer to departure.</p>
-                  )}
-                  <div className="pbx-day-meta">
-                    {d.stay && (
-                      <span>
-                        <BedDouble className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.stay}
-                      </span>
-                    )}
-                    {(d.activities?.length ?? 0) > 0 && (
-                      <span>
-                        <Sparkles className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.activities!.join(' · ')}
-                      </span>
-                    )}
-                    {d.meals && (
-                      <span>
-                        <UtensilsCrossed className="size-3.5" style={{ color: 'var(--blue)' }} /> {d.meals}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {photos.length > 0 && (
-                  <div className="pbx-day-photos">
-                    {photos.map((src, k) => (
-                      <img key={k} src={src} alt="" />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </Page>
-        );
-      })}
+      {/* ===================== 3 · DAY PAGES ===================== */}
+      {pkg.itinerary.map((d) => (
+        <Page key={d.day} label={`day ${d.day}`}>
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <div style={{ textAlign: 'center' }}>
+            <span className="pbx-day-badge">DAY {d.day}</span>
+          </div>
+          <div className="pbx-day-title" style={{ textAlign: 'center' }}>
+            {d.title}
+          </div>
+          <Bullets items={dayBullets(d)} />
+          <Photo url={dayPhoto(d)} className="pbx-day-photo" />
+        </Page>
+      ))}
 
       {/* ===================== 4 · INCLUSIONS / EXCLUSIONS ===================== */}
       {(inclusions.length > 0 || exclusions.length > 0) && (
         <Page label="inclusions & exclusions">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col">
-            <div className="pbx-two-col">
-              {inclusions.length > 0 && (
-                <div>
-                  <Banner>INCLUSIONS</Banner>
-                  <BulletList items={inclusions} />
-                </div>
-              )}
-              {exclusions.length > 0 && (
-                <div>
-                  <Banner yellow>EXCLUSIONS</Banner>
-                  <BulletList items={exclusions} dotColor="var(--orange)" />
-                </div>
-              )}
-            </div>
-          </div>
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          {inclusions.length > 0 && (
+            <>
+              <Banner>INCLUSIONS</Banner>
+              <Bullets items={inclusions} />
+            </>
+          )}
+          {exclusions.length > 0 && (
+            <>
+              <Banner yellow>EXCLUSIONS</Banner>
+              <Bullets items={exclusions} yellow />
+            </>
+          )}
         </Page>
       )}
 
-      {/* ===================== 5 · PRICING ===================== */}
-      {pkg.pricingOptions.length > 0 && (
-        <Page label="pricing">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col">
-            <Banner>PRICING</Banner>
-            <table className="pbx-table">
+      {/* ===================== 5 · PRICING & BOOKING PROCESS ===================== */}
+      {(priceTiers.length > 0 || bookingSteps.length > 0 || hasBankDetails) && (
+        <Page label="pricing & booking">
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <Banner>PRICING &amp; BOOKING PROCESS</Banner>
+          {priceTiers.length > 0 && (
+            <table className="pbx-price-table">
               <thead>
                 <tr>
                   <th>Option</th>
-                  <th>Price</th>
+                  <th>Pricing</th>
                 </tr>
               </thead>
               <tbody>
-                {pkg.pricingOptions.map((p, i) => (
+                {priceTiers.map((t, i) => (
                   <tr key={i}>
                     <td>
-                      {p.label} {p.season === 'PEAK' && <span style={{ color: 'var(--orange)', fontSize: 12 }}>(Peak season)</span>}
+                      {t.label} {t.season === 'PEAK' && <span style={{ color: 'var(--orange)', fontSize: 12 }}>(Peak season)</span>}
                     </td>
-                    <td>{formatCurrency(p.price, pkg.priceCurrency)}</td>
+                    <td>{formatCurrency(t.price, pkg.priceCurrency)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {payInfo.length > 0 && (
-              <div className="mt-5 text-[13px] leading-relaxed" style={{ color: MUTED }}>
-                {payInfo.map((p, i) => (
-                  <p key={i}>{p}</p>
-                ))}
+          )}
+          {bookingSteps.length > 0 && (
+            <div className="pbx-steps">
+              {bookingSteps.map((s, i) => (
+                <div key={i} className="step">
+                  <b>Step {i + 1}:</b> {s}
+                </div>
+              ))}
+            </div>
+          )}
+          {hasBankDetails && (
+            <div className="pbx-pay-box">
+              <div className="head">Payment Method</div>
+              <div className="pbx-bank-lines">
+                {org?.bankName && (
+                  <div>
+                    <b>Name</b>
+                    <span>{org.bankName}</span>
+                  </div>
+                )}
+                {org?.bankAccountNumber && (
+                  <div>
+                    <b>A/C No</b>
+                    <span>{org.bankAccountNumber}</span>
+                  </div>
+                )}
+                {org?.ifscCode && (
+                  <div>
+                    <b>IFSC</b>
+                    <span>{org.ifscCode}</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </Page>
       )}
 
-      {/* ===================== 6 · GALLERY ===================== */}
-      {pkg.galleryImages.length > 0 && (
-        <Page label="gallery">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col" style={{ maxWidth: 1120, paddingTop: 90 }}>
-            <div className="pbx-gallery">
-              {pkg.galleryImages.slice(0, 9).map((src, i) => (
-                <img key={i} src={src} alt="" />
-              ))}
-            </div>
-          </div>
+      {/* ===================== 6 · WHY CHOOSE US ===================== */}
+      {highlights.length > 0 && (
+        <Page label="why choose us">
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <Banner>WHY CHOOSE US</Banner>
+          <Bullets items={highlights} />
+          <Photo url={pkg.galleryImages[0] ?? heroPhoto} className="pbx-day-photo" />
         </Page>
       )}
 
-      {/* ===================== 7 · THINGS TO CARRY / TERMS ===================== */}
-      {(thingsToCarry.length > 0 || terms.length > 0) && (
-        <Page label="things to carry & terms">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col">
-            <div className="pbx-two-col">
-              {thingsToCarry.length > 0 && (
-                <div>
-                  <Banner>THINGS TO CARRY</Banner>
-                  <BulletList items={thingsToCarry} />
-                </div>
-              )}
-              {terms.length > 0 && (
-                <div>
-                  <Banner yellow>TERMS &amp; CONDITIONS</Banner>
-                  <BulletList items={terms} dotColor="var(--orange)" />
-                </div>
-              )}
-            </div>
-          </div>
+      {/* ===================== 7 · THINGS TO CARRY ===================== */}
+      {thingsToCarry.length > 0 && (
+        <Page label="things to carry">
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <Banner>ADVISABLE THINGS TO CARRY</Banner>
+          <Bullets items={thingsToCarry} />
+          <Photo url={pkg.galleryImages[1] ?? pkg.galleryImages[0] ?? null} className="pbx-day-photo" />
         </Page>
       )}
 
-      {/* ===================== 8 · CUSTOMER REVIEWS ===================== */}
-      {reviews.length > 0 && (
-        <Page label="customer reviews">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col" style={{ maxWidth: 1120, paddingTop: 90 }}>
-            <Banner>CUSTOMER REVIEWS</Banner>
-            <div className="pbx-reviews-grid">
-              {reviews.slice(0, 6).map((r) => (
-                <ReviewCard key={r.id} review={r} />
-              ))}
-            </div>
-          </div>
+      {/* ===================== 8 · TERMS & CONDITIONS (auto-paginated) ===================== */}
+      {termsPages.map((group, i) => (
+        <Page key={`terms-${i}`} label={`terms & conditions ${i + 1}`} flow>
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <Banner>TERMS &amp; CONDITIONS</Banner>
+          <Bullets items={group} />
         </Page>
-      )}
+      ))}
 
       {/* ===================== 9 · CONTACT ===================== */}
       {hasContact && (
         <Page label="contact us">
-          <BrandMark orgName={orgName} logoUrl={logoUrl} corner />
-          <div className="pbx-col flex flex-col items-center justify-center">
-            <Banner>CONTACT US!</Banner>
-            <div className="w-full max-w-sm">
-              {phone && (
-                <a className="pbx-contact-row" href={`tel:${phone}`}>
-                  <Phone className="pbx-contact-icon size-4" /> {phone}
-                </a>
-              )}
-              {pkg.contactEmail && (
-                <a className="pbx-contact-row" href={`mailto:${pkg.contactEmail}`}>
-                  <Mail className="pbx-contact-icon size-4" /> {pkg.contactEmail}
-                </a>
-              )}
-              {instagramUrl && (
-                <a className="pbx-contact-row" href={instagramUrl} target="_blank" rel="noreferrer">
-                  <Instagram className="pbx-contact-icon size-4" /> {instagramHandle(instagramUrl)}
-                </a>
-              )}
-              {whatsappNumber && (
-                <a className="pbx-contact-row" href={`https://wa.me/${digitsOnly(whatsappNumber)}`} target="_blank" rel="noreferrer">
-                  <MessageCircle className="pbx-contact-icon size-4" /> +{whatsappNumber}
-                </a>
-              )}
-            </div>
-            <p className="pbx-footer">
-              Powered by <span style={{ fontWeight: 600, color: INK }}>{orgName}</span> ✈
-            </p>
+          <BrandRow orgName={orgName} logoUrl={logoUrl} />
+          <div className="pbx-banner-wrap" style={{ marginTop: 30 }}>
+            <span className="pbx-banner">CONTACT US!</span>
           </div>
+          <div style={{ maxWidth: 420, margin: '26px auto 0' }}>
+            {phone && (
+              <a className="pbx-contact-row" href={`tel:${phone}`}>
+                <span className="ic">📞</span> {phone}
+              </a>
+            )}
+            {pkg.contactEmail && (
+              <a className="pbx-contact-row" href={`mailto:${pkg.contactEmail}`}>
+                <span className="ic">✉️</span> {pkg.contactEmail}
+              </a>
+            )}
+            {whatsappNumber && (
+              <a className="pbx-contact-row" href={`https://wa.me/${digitsOnly(whatsappNumber)}`} target="_blank" rel="noreferrer">
+                <span className="ic">💬</span> +{whatsappNumber}
+              </a>
+            )}
+          </div>
+          {instagramUrl && (
+            <div className="pbx-ig-block">
+              <div className="title">Check our Instagram</div>
+              <div className="sub">TAP ON THE LOGO TO SEE</div>
+              <a href={instagramUrl} target="_blank" rel="noreferrer" className="pbx-ig-circle">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8">
+                  <rect x="3" y="3" width="18" height="18" rx="5" />
+                  <circle cx="12" cy="12" r="4" />
+                  <circle cx="17.5" cy="6.5" r="1" />
+                </svg>
+              </a>
+              <div style={{ fontWeight: 700 }}>{instagramHandle(instagramUrl)}</div>
+            </div>
+          )}
         </Page>
       )}
     </div>

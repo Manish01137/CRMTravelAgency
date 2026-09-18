@@ -152,6 +152,13 @@ router.get(
         brandSecondaryColor: true,
         hostLinks: true,
         contactPhone: true,
+        // Same bank details already printed on invoices (Organization's tax-invoice
+        // fields) — reused here so the PDF brochure's payment section can show a
+        // real bank transfer option instead of a fabricated one. All optional:
+        // the payment box simply doesn't render when these are unset.
+        bankName: true,
+        bankAccountNumber: true,
+        ifscCode: true,
       },
     });
 
