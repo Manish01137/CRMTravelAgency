@@ -2,8 +2,9 @@ import { systemPrisma, withTenant } from '../../lib/prisma';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
+import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { env } from '../../env';
-import type { WhatsAppCredentials } from '../channels/channels.service';
+import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
 /**
  * Meta sends WhatsApp + Instagram events to ONE shared webhook URL, so we
@@ -102,6 +103,41 @@ async function downloadAndRehostImage(organizationId: string, sourceUrl: string)
     return await uploadBufferToStorage(buffer, contentType, ext, `${organizationId}/instagram-media`);
   } catch (err) {
     console.error('downloadAndRehostImage failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Looks up a DM sender's display name via Instagram's User Profile API —
+ * but only when we don't already have one on file, to respect Instagram's
+ * 200-calls/hour-per-account rate limit (re-fetching an unchanged name on
+ * every message from the same sender would burn through it fast for no
+ * benefit). Never throws: a failed lookup (rate limit, network issue,
+ * sender blocked the app, etc.) must never stop the actual message from
+ * being recorded — falls back to null, same as if this lookup didn't exist.
+ * Shared by processInstagramEntry and processPageEntry — both funnel real
+ * Instagram DMs into the same INSTAGRAM channel/Conversation shape.
+ */
+async function resolveInstagramContactName(organizationId: string, senderId: string): Promise<string | null> {
+  const existing = await withTenant(organizationId, (tx) =>
+    tx.conversation.findUnique({
+      where: { organizationId_channel_externalContactId: { organizationId, channel: 'INSTAGRAM', externalContactId: senderId } },
+      select: { contactName: true },
+    }),
+  );
+  // Already have a name — recordInbound's upsert leaves contactName alone when passed null, so no fetch needed.
+  if (existing?.contactName) return null;
+
+  try {
+    const connection = await systemPrisma.channelConnection.findUnique({
+      where: { organizationId_channel: { organizationId, channel: 'INSTAGRAM' } },
+    });
+    if (!connection?.credentials) return null;
+    const { accessToken } = decryptJson<InstagramCredentials>(connection.credentials);
+    const profile = await fetchInstagramSenderProfile(senderId, accessToken);
+    return profile.name ?? (profile.username ? `@${profile.username}` : null);
+  } catch (err) {
+    console.error('resolveInstagramContactName failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -319,7 +355,10 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
-      contactName: null, // Instagram DMs don't carry a display name in the webhook payload
+      // Instagram DMs don't carry a display name in the webhook payload
+      // itself — looked up separately via the User Profile API (Meta's
+      // "implicit consent" rule), at most once per sender.
+      contactName: await resolveInstagramContactName(organizationId, sender),
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
@@ -369,7 +408,8 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
-      contactName: null, // Instagram DMs don't carry a display name in the webhook payload
+      // See resolveInstagramContactName's comment in processInstagramEntry above.
+      contactName: await resolveInstagramContactName(organizationId, sender),
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,

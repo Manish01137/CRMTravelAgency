@@ -697,3 +697,22 @@ export async function fetchInstagramLoginUsername(igUserId: string, accessToken:
   });
   return data.username;
 }
+
+/**
+ * Instagram User Profile API — fetches a DM sender's name/username using
+ * their Instagram-scoped ID from a messaging webhook's sender.id. Only
+ * callable for senders who have messaged this account (Meta's "implicit
+ * consent" rule) or interacted with an icebreaker/persistent menu — always
+ * true here since this is only called from inbound webhook processing. No
+ * new permissions needed beyond instagram_business_basic /
+ * instagram_business_manage_messages, already granted.
+ */
+export async function fetchInstagramSenderProfile(
+  senderId: string,
+  accessToken: string,
+): Promise<{ name: string | null; username: string | null }> {
+  const data = await instagramGraphFetch<{ name?: string; username?: string }>(`/${senderId}?fields=name,username`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return { name: data.name ?? null, username: data.username ?? null };
+}
