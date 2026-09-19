@@ -36,6 +36,28 @@ async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+/**
+ * Instagram Login (Business Login for Instagram) hits a DIFFERENT host than
+ * every other Graph API call in this file — see the "Instagram Login" section
+ * near the bottom for why. Deliberately unversioned (no /v21.0/ segment):
+ * that's exactly what was confirmed working via direct Graph API Explorer
+ * testing, and Meta's own long-lived-token-exchange endpoint
+ * (graph.instagram.com/access_token) is documented unversioned too — adding
+ * a version segment here is untested and not worth the risk of reintroducing
+ * the very failure this fetch helper exists to avoid.
+ */
+const INSTAGRAM_GRAPH_BASE = 'https://graph.instagram.com';
+
+async function instagramGraphFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${INSTAGRAM_GRAPH_BASE}${path}`, init);
+  const data = (await res.json().catch(() => null)) as (T & { error?: { message?: string } }) | null;
+  if (!res.ok) {
+    const message = data?.error?.message ?? `Instagram Graph API request failed (${res.status})`;
+    throw new AppError(502, 'META_API_ERROR', message);
+  }
+  return data as T;
+}
+
 /** One HMAC-SHA256 attempt: expected signature for `secret` vs. the provided (already `sha256=`-stripped) hex string. */
 function signatureMatches(rawBody: Buffer, providedHex: string, secret: string): boolean {
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
@@ -560,13 +582,22 @@ export async function subscribePageWebhook(pageId: string, pageAccessToken: stri
   });
 }
 
+/**
+ * Sends via the Instagram Login access token against graph.instagram.com —
+ * NOT graphFetch/graph.facebook.com. A classic Facebook Login Page token
+ * fails this exact call with "(#3) Application does not have the capability
+ * to make this API call", confirmed 100% reproducibly in Graph API Explorer
+ * even with every relevant permission granted; an Instagram Login token
+ * against this host succeeds immediately. See the "Instagram Login" section
+ * below for the OAuth flow that produces this token.
+ */
 export async function sendInstagramText(
   igUserId: string,
   accessToken: string,
   recipientId: string,
   text: string,
 ): Promise<{ externalMessageId: string }> {
-  const data = await graphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+  const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }),
@@ -574,14 +605,14 @@ export async function sendInstagramText(
   return { externalMessageId: data.message_id };
 }
 
-/** Sends an Instagram DM image from a publicly reachable URL, same pattern as sendWhatsAppImage. */
+/** Sends an Instagram DM image from a publicly reachable URL, same pattern as sendWhatsAppImage — see sendInstagramText's comment on why this goes through instagramGraphFetch. */
 export async function sendInstagramImage(
   igUserId: string,
   accessToken: string,
   recipientId: string,
   imageUrl: string,
 ): Promise<{ externalMessageId: string }> {
-  const data = await graphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+  const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -590,4 +621,79 @@ export async function sendInstagramImage(
     }),
   });
   return { externalMessageId: data.message_id };
+}
+
+// --- Instagram Login (Business Login for Instagram — the NEWER product,
+// required for SENDING DMs; classic Facebook Login above can still RECEIVE
+// via its Page webhook subscription, but cannot send). Confirmed via direct
+// Graph API Explorer testing: a Facebook Login Page access token gets error
+// "(#3) Application does not have the capability to make this API call" on
+// POST /{igUserId}/messages against graph.facebook.com, 100% reproducibly,
+// even with every relevant permission granted (instagram_manage_messages,
+// business_management, pages_messaging, etc.) on the correct app. The exact
+// same call against graph.instagram.com using an Instagram Login access
+// token (the "IGAG..." prefixed kind) succeeds immediately. Uses its OWN
+// dedicated Meta app (Joinetraa-IG — META_INSTAGRAM_APP_ID/SECRET) under the
+// "Instagram API with Instagram Login" product; deliberately does NOT fall
+// back to the shared META_APP_ID the way isInstagramConfigured() above does,
+// since the whole point is a different app/product, not just a different
+// credential pair. -----------------------------------------------------------
+
+export function isInstagramLoginConfigured(): boolean {
+  return !!(env.META_INSTAGRAM_APP_ID && env.META_INSTAGRAM_APP_SECRET);
+}
+
+function requireInstagramLoginConfigured(): { appId: string; appSecret: string } {
+  if (!env.META_INSTAGRAM_APP_ID || !env.META_INSTAGRAM_APP_SECRET) {
+    throw new AppError(503, 'META_NOT_CONFIGURED', 'Instagram is not configured on the server');
+  }
+  return { appId: env.META_INSTAGRAM_APP_ID, appSecret: env.META_INSTAGRAM_APP_SECRET };
+}
+
+/**
+ * Step 1 — exchanges the Instagram Login `code` for a short-lived Instagram
+ * Login user access token. Hits api.instagram.com (a THIRD host, distinct
+ * from both graph.facebook.com and graph.instagram.com) — this is Meta's
+ * documented token endpoint for this OAuth flow, using multipart/form-data
+ * (matching Meta's own curl example's `-F` flags) rather than JSON. Its
+ * response's `user_id` IS the Instagram professional account id — no
+ * separate lookup step needed, unlike the Facebook Login flow above.
+ */
+export async function exchangeInstagramCode(code: string, redirectUri: string): Promise<{ accessToken: string; igUserId: string }> {
+  const { appId, appSecret } = requireInstagramLoginConfigured();
+  const form = new FormData();
+  form.append('client_id', appId);
+  form.append('client_secret', appSecret);
+  form.append('grant_type', 'authorization_code');
+  form.append('redirect_uri', redirectUri);
+  form.append('code', code);
+
+  const res = await fetch('https://api.instagram.com/oauth/access_token', { method: 'POST', body: form });
+  const data = (await res.json().catch(() => null)) as
+    | { access_token?: string; user_id?: string | number; error_message?: string }
+    | null;
+  if (!res.ok || !data?.access_token || data.user_id == null) {
+    throw new AppError(502, 'META_API_ERROR', data?.error_message ?? 'Could not exchange the Instagram authorization code');
+  }
+  return { accessToken: data.access_token, igUserId: String(data.user_id) };
+}
+
+/** Step 2 — short-lived Instagram Login token → long-lived (~60 day) token. */
+export async function exchangeInstagramLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string }> {
+  const { appSecret } = requireInstagramLoginConfigured();
+  const params = new URLSearchParams({
+    grant_type: 'ig_exchange_token',
+    client_secret: appSecret,
+    access_token: shortLivedToken,
+  });
+  const data = await instagramGraphFetch<{ access_token: string }>(`/access_token?${params.toString()}`);
+  return { accessToken: data.access_token };
+}
+
+/** Fetches the @username for display once we know which Instagram account is being connected — Instagram Login token variant of fetchInstagramUsername above. */
+export async function fetchInstagramLoginUsername(igUserId: string, accessToken: string): Promise<string> {
+  const data = await instagramGraphFetch<{ username: string }>(`/${igUserId}?fields=username`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return data.username;
 }

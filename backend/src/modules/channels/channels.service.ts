@@ -2,7 +2,6 @@ import { withTenant } from '../../lib/prisma';
 import { encryptJson, decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
 import {
-  isInstagramConfigured,
   isWhatsAppConfigured,
   exchangeWhatsAppCode,
   discoverWhatsAppWabaAndPhoneNumber,
@@ -17,6 +16,10 @@ import {
   getWhatsAppBusinessProfile as fetchWhatsAppBusinessProfile,
   updateWhatsAppBusinessProfile as pushWhatsAppBusinessProfile,
   uploadWhatsAppProfilePhotoHandle,
+  exchangeInstagramCode,
+  exchangeInstagramLongLivedToken,
+  fetchInstagramLoginUsername,
+  isInstagramLoginConfigured,
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
@@ -106,10 +109,11 @@ export async function getPlatformConfig() {
 
   return {
     whatsappEnabled: isWhatsAppConfigured() && !!env.META_WHATSAPP_CONFIG_ID,
-    instagramEnabled: isInstagramConfigured(),
+    instagramEnabled: isInstagramLoginConfigured(),
     emailEnabled: true,
     metaAppId: env.META_APP_ID ?? null,
     whatsappAppId,
+    instagramAppId: env.META_INSTAGRAM_APP_ID ?? null,
     metaGraphVersion: env.META_GRAPH_VERSION,
     whatsappConfigId: env.META_WHATSAPP_CONFIG_ID ?? null,
   };
@@ -241,13 +245,22 @@ async function saveInstagramConnection(organizationId: string, option: Instagram
 }
 
 /**
+ * SUPERSEDED — kept for reference/rollback only, nothing calls this anymore.
  * Facebook Login flow: exchange the code for a user token, list the Facebook
  * Pages this user manages, and find which one(s) have an Instagram
  * professional account linked. Zero matches is a clear setup error; exactly
  * one connects immediately; more than one is handed back to the frontend as
  * a picker (see InstagramCallbackPage.tsx) rather than guessing.
+ *
+ * The Page access token this produces can RECEIVE Instagram DMs (its webhook
+ * subscription still works) but cannot SEND them — confirmed via direct
+ * Graph API Explorer testing, POST /{igUserId}/messages against
+ * graph.facebook.com fails with "(#3) Application does not have the
+ * capability to make this API call", 100% reproducibly, regardless of
+ * granted permissions. Sending requires Instagram Login instead — see
+ * connectInstagram below and the "Instagram Login" section in lib/meta.ts.
  */
-export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
+export async function connectInstagramLegacy(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
   try {
     const { accessToken: shortLived } = await exchangeFacebookUserCode(input.code, input.redirectUri);
     const { accessToken: userToken } = await exchangeLongLivedUserToken(shortLived);
@@ -288,7 +301,68 @@ export async function connectInstagram(organizationId: string, input: ConnectIns
   }
 }
 
-/** Step 2 of the ambiguous case — the org picked one Page from connectInstagram's `options`. */
+/** Persists an Instagram Login connection — the sending-capable counterpart to saveInstagramConnection above. No secondaryExternalId (no Facebook Page involved in this flow at all). */
+async function saveInstagramLoginConnection(
+  organizationId: string,
+  data: { accessToken: string; igUserId: string; username: string },
+): Promise<ChannelStatus> {
+  const credentials: InstagramCredentials = {
+    accessToken: data.accessToken,
+    igUserId: data.igUserId,
+  };
+  const row = await withTenant(organizationId, (tx) =>
+    tx.channelConnection.upsert({
+      where: { organizationId_channel: { organizationId, channel: 'INSTAGRAM' } },
+      create: {
+        organizationId,
+        channel: 'INSTAGRAM',
+        status: 'CONNECTED',
+        displayName: `@${data.username}`,
+        externalId: data.igUserId,
+        secondaryExternalId: null,
+        credentials: encryptJson(credentials),
+        connectedAt: new Date(),
+        lastError: null,
+      },
+      update: {
+        status: 'CONNECTED',
+        displayName: `@${data.username}`,
+        externalId: data.igUserId,
+        secondaryExternalId: null,
+        credentials: encryptJson(credentials),
+        connectedAt: new Date(),
+        lastError: null,
+      },
+    }),
+  );
+  return toStatus(row);
+}
+
+/**
+ * Instagram Login (Business Login for Instagram) flow — the one actually
+ * used now. A single redirect-based exchange (no Facebook Pages, no
+ * ambiguous-picker case): the code exchange's `user_id` IS the Instagram
+ * professional account id already, so there's no separate "find the linked
+ * IG account" step the way the legacy Facebook Login flow needed. See the
+ * "Instagram Login" section in lib/meta.ts for why this is required for
+ * sending at all.
+ */
+export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
+  try {
+    const { accessToken: shortLived, igUserId } = await exchangeInstagramCode(input.code, input.redirectUri);
+    const { accessToken: longLived } = await exchangeInstagramLongLivedToken(shortLived);
+    const username = await fetchInstagramLoginUsername(igUserId, longLived);
+    const channel = await saveInstagramLoginConnection(organizationId, { accessToken: longLived, igUserId, username });
+    return { status: 'connected', channel };
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof AppError ? err.message : 'Could not connect Instagram — please try again';
+    await markFailed(organizationId, 'INSTAGRAM', message);
+    throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
+  }
+}
+
+/** Step 2 of the ambiguous case — the org picked one Page from connectInstagramLegacy's `options`. Dead in practice now (nothing produces a 'needs_selection' result via the new flow), kept for the same reference/rollback reason as connectInstagramLegacy. */
 export async function selectInstagramPage(organizationId: string, input: SelectInstagramPageInput): Promise<ChannelStatus> {
   try {
     return await saveInstagramConnection(organizationId, input);

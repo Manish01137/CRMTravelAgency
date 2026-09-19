@@ -292,15 +292,15 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
   });
 }
 
-/** Builds the Facebook Login OAuth URL for Instagram (redirect flow — no popup/JS SDK). */
-export function buildInstagramAuthUrl(appId: string, graphVersion: string, redirectUri: string): string {
+/** Builds the Instagram Login (Business Login for Instagram) OAuth URL. Redirect flow — no popup/JS SDK, same pattern as before but a different host and scope set than classic Facebook Login. */
+export function buildInstagramAuthUrl(appId: string, redirectUri: string): string {
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,business_management,pages_messaging',
+    scope: 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments',
   });
-  return `https://www.facebook.com/${graphVersion}/dialog/oauth?${params.toString()}`;
+  return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
 
 export function instagramRedirectUri(): string {

@@ -684,6 +684,7 @@ export interface ChannelsPlatformConfig {
   emailEnabled: boolean;
   metaAppId: string | null;
   whatsappAppId: string | null;
+  instagramAppId: string | null;
   metaGraphVersion: string | null;
   whatsappConfigId: string | null;
 }

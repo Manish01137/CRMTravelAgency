@@ -436,11 +436,11 @@ export function ChannelsSettingsPage() {
 
   const handleConnectInstagram = () => {
     const cfg = configQuery.data;
-    if (!cfg?.metaAppId || !cfg.metaGraphVersion) {
+    if (!cfg?.instagramAppId) {
       toast.error('Instagram is not configured on this server yet');
       return;
     }
-    window.location.href = buildInstagramAuthUrl(cfg.metaAppId, cfg.metaGraphVersion, instagramRedirectUri());
+    window.location.href = buildInstagramAuthUrl(cfg.instagramAppId, instagramRedirectUri());
   };
 
   const loading = configQuery.isLoading || channelsQuery.isLoading;
