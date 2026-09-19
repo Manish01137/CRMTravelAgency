@@ -44,6 +44,7 @@ import { LinktreeCategoriesPage } from '@/pages/LinktreeCategoriesPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
+import { InvoiceSettingsPage } from '@/pages/InvoiceSettingsPage';
 import { ChannelsSettingsPage } from '@/pages/ChannelsSettingsPage';
 import { InstagramCallbackPage } from '@/pages/InstagramCallbackPage';
 import { InboxPage } from '@/pages/InboxPage';
@@ -185,6 +186,7 @@ function AppRoutes() {
           <Route path="/website" element={<HostSiteAdminPage />} />
           <Route path="/team" element={<UsersPage />} />
           <Route path="/settings/organization" element={<OrgSettingsPage />} />
+          <Route path="/settings/invoice" element={<InvoiceSettingsPage />} />
           <Route path="/settings/channels" element={<ChannelsSettingsPage />} />
           <Route path="/settings/channels/instagram/callback" element={<InstagramCallbackPage />} />
           <Route path="/bot-flows" element={<BotFlowsPage />} />

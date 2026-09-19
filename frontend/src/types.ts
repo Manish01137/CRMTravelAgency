@@ -688,6 +688,40 @@ export interface ChannelsPlatformConfig {
   whatsappConfigId: string | null;
 }
 
+// Meta's fixed "industry" list for a WhatsApp Business Profile.
+export const WHATSAPP_VERTICALS = [
+  'UNDEFINED',
+  'OTHER',
+  'AUTO',
+  'BEAUTY',
+  'APPAREL',
+  'EDU',
+  'ENTERTAIN',
+  'EVENT_PLAN',
+  'FINANCE',
+  'GROCERY',
+  'GOVT',
+  'HOTEL',
+  'HEALTH',
+  'NONPROFIT',
+  'PROF_SERVICES',
+  'RETAIL',
+  'TRAVEL',
+  'RESTAURANT',
+  'NOT_A_BIZ',
+] as const;
+export type WhatsAppVertical = (typeof WHATSAPP_VERTICALS)[number];
+
+export interface WhatsAppBusinessProfile {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  profilePictureUrl?: string | null;
+  websites?: string[];
+  vertical?: string;
+}
+
 /** One Facebook Page + its linked Instagram account — shown in the picker when more than one matches. */
 export interface InstagramPageOption {
   pageId: string;

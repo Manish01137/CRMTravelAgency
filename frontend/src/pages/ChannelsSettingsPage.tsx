@@ -1,19 +1,44 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Instagram, Mail, MessageCircle, Plug, Unplug } from 'lucide-react';
+import { AlertTriangle, Camera, Instagram, Mail, MessageCircle, Plug, Plus, Trash2, Unplug, UserRound } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import type { ChannelsPlatformConfig, ChannelStatus, ChannelType } from '@/types';
+import type { ChannelsPlatformConfig, ChannelStatus, ChannelType, WhatsAppBusinessProfile } from '@/types';
+import { WHATSAPP_VERTICALS } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/ui/field';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { launchWhatsAppEmbeddedSignup, buildInstagramAuthUrl, instagramRedirectUri } from '@/lib/metaSignup';
+
+const VERTICAL_LABELS: Record<string, string> = {
+  UNDEFINED: 'Not set',
+  OTHER: 'Other',
+  AUTO: 'Automotive',
+  BEAUTY: 'Beauty, spa & salon',
+  APPAREL: 'Clothing & apparel',
+  EDU: 'Education',
+  ENTERTAIN: 'Entertainment',
+  EVENT_PLAN: 'Event planning',
+  FINANCE: 'Finance & banking',
+  GROCERY: 'Grocery',
+  GOVT: 'Government',
+  HOTEL: 'Hotel & lodging',
+  HEALTH: 'Medical & health',
+  NONPROFIT: 'Non-profit',
+  PROF_SERVICES: 'Professional services',
+  RETAIL: 'Shopping & retail',
+  TRAVEL: 'Travel & transportation',
+  RESTAURANT: 'Restaurant',
+  NOT_A_BIZ: 'Not a business',
+};
 
 function statusBadge(status: ChannelStatus['status']) {
   if (status === 'CONNECTED') return <Badge variant="success">Connected</Badge>;
@@ -172,6 +197,190 @@ function EmailChannelCard({ status }: { status: ChannelStatus }) {
   );
 }
 
+interface BusinessProfileFormValues {
+  about: string;
+  description: string;
+  address: string;
+  email: string;
+  vertical: string;
+  websites: { value: string }[];
+}
+
+const toFormValues = (p: WhatsAppBusinessProfile | undefined): BusinessProfileFormValues => ({
+  about: p?.about ?? '',
+  description: p?.description ?? '',
+  address: p?.address ?? '',
+  email: p?.email ?? '',
+  vertical: p?.vertical ?? 'TRAVEL',
+  websites: (p?.websites ?? []).map((value) => ({ value })),
+});
+
+/**
+ * The "About" info a customer sees when they tap your business's name in
+ * WhatsApp — photo, status line, description, address, email, websites.
+ * Only shown once WhatsApp is connected (there's no phone number to attach
+ * a profile to otherwise).
+ */
+function WhatsAppBusinessProfileCard() {
+  const queryClient = useQueryClient();
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const profileQuery = useQuery({
+    queryKey: ['whatsapp-business-profile'],
+    queryFn: () => api.get<WhatsAppBusinessProfile>('/channels/whatsapp/business-profile'),
+  });
+
+  // RHF's `values` option resets the form whenever this reference changes —
+  // memoized so typing (which doesn't touch profileQuery.data) never fights it.
+  const formValues = useMemo(() => toFormValues(profileQuery.data), [profileQuery.data]);
+  const { register, handleSubmit, control, watch } = useForm<BusinessProfileFormValues>({ values: formValues });
+  const { fields, append, remove } = useFieldArray({ control, name: 'websites' });
+  const aboutLength = watch('about')?.length ?? 0;
+
+  const saveMutation = useMutation({
+    mutationFn: (v: BusinessProfileFormValues) =>
+      api.patch<WhatsAppBusinessProfile>('/channels/whatsapp/business-profile', {
+        about: v.about.trim(),
+        description: v.description.trim(),
+        address: v.address.trim(),
+        email: v.email.trim(),
+        vertical: v.vertical,
+        websites: v.websites.map((w) => w.value.trim()).filter(Boolean),
+      }),
+    onSuccess: (updated) => {
+      // Updates profileQuery.data → the memoized `values` above re-syncs the form automatically.
+      queryClient.setQueryData(['whatsapp-business-profile'], updated);
+      toast.success('WhatsApp Business Profile updated');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update the profile'),
+  });
+
+  const photoMutation = useMutation({
+    mutationFn: (file: File) => api.upload<WhatsAppBusinessProfile>('/channels/whatsapp/business-profile/photo', file),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['whatsapp-business-profile'], updated);
+      toast.success('Profile photo updated');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not upload the photo'),
+  });
+
+  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.type !== 'image/jpeg') {
+      toast.error('WhatsApp only accepts a JPEG photo for the Business Profile');
+      return;
+    }
+    photoMutation.mutate(file);
+  };
+
+  return (
+    <Card className="sm:col-span-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserRound className="size-5 text-emerald-600" /> WhatsApp Business Profile
+        </CardTitle>
+        <CardDescription>
+          What a customer sees when they tap your business's name inside WhatsApp — photo, status line, description,
+          address and contact details.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {profileQuery.isLoading ? (
+          <Skeleton className="h-56 rounded-lg" />
+        ) : (
+          <form onSubmit={handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4" noValidate>
+            <div className="flex items-center gap-4">
+              <input ref={photoInputRef} type="file" accept="image/jpeg" className="hidden" onChange={handlePhotoSelected} />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoMutation.isPending}
+                className="group relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-input bg-surface transition-colors hover:border-primary"
+                aria-label="Upload profile photo"
+              >
+                {photoMutation.isPending ? (
+                  <Spinner className="size-5" />
+                ) : profileQuery.data?.profilePictureUrl ? (
+                  <>
+                    <img src={profileQuery.data.profilePictureUrl} alt="" className="size-full object-cover" />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Camera className="size-5 text-white" />
+                    </span>
+                  </>
+                ) : (
+                  <Camera className="size-6 text-muted-foreground/60" />
+                )}
+              </button>
+              <div className="text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Profile photo</p>
+                <p>JPEG only, up to 5 MB — shown as your business's DP inside WhatsApp.</p>
+              </div>
+            </div>
+
+            <Field label="About" htmlFor="waAbout" hint={`Short status line under your name (${aboutLength}/139).`}>
+              <Input id="waAbout" maxLength={139} placeholder="Making your trips unforgettable ✈" {...register('about')} />
+            </Field>
+            <Field label="Description" htmlFor="waDescription" hint="Shown on your Business Profile's info screen.">
+              <Textarea id="waDescription" rows={3} maxLength={512} placeholder="Full-service travel agency for domestic & international holidays." {...register('description')} />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Address" htmlFor="waAddress">
+                <Textarea id="waAddress" rows={2} maxLength={256} placeholder="123 MG Road, Bengaluru, India" {...register('address')} />
+              </Field>
+              <div className="space-y-4">
+                <Field label="Email" htmlFor="waEmail">
+                  <Input id="waEmail" type="email" placeholder="hello@youragency.com" {...register('email')} />
+                </Field>
+                <Field label="Business category" htmlFor="waVertical">
+                  <select
+                    id="waVertical"
+                    className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
+                    {...register('vertical')}
+                  >
+                    {WHATSAPP_VERTICALS.map((v) => (
+                      <option key={v} value={v}>
+                        {VERTICAL_LABELS[v] ?? v}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">Websites</p>
+              <div className="space-y-2">
+                {fields.map((field, idx) => (
+                  <div key={field.id} className="flex gap-2">
+                    <Input placeholder="https://youragency.com" {...register(`websites.${idx}.value`)} />
+                    <Button type="button" variant="ghost" size="icon" aria-label="Remove website" onClick={() => remove(idx)}>
+                      <Trash2 className="text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              {fields.length < 2 && (
+                <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => append({ value: '' })}>
+                  <Plus /> Add website
+                </Button>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending && <Spinner />}
+                Save Business Profile
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ChannelsSettingsPage() {
   const queryClient = useQueryClient();
   const [connectingChannel, setConnectingChannel] = useState<ChannelType | null>(null);
@@ -273,6 +482,7 @@ export function ChannelsSettingsPage() {
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'INSTAGRAM'}
           />
           <EmailChannelCard status={email ?? { channel: 'EMAIL', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
+          {whatsapp?.status === 'CONNECTED' && <WhatsAppBusinessProfileCard />}
         </div>
       )}
     </div>

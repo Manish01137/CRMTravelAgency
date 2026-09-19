@@ -1,5 +1,5 @@
 import { withTenant } from '../../lib/prisma';
-import { encryptJson } from '../../lib/encryption';
+import { encryptJson, decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
 import {
   isInstagramConfigured,
@@ -14,7 +14,11 @@ import {
   fetchPageInstagramAccount,
   fetchInstagramUsername,
   subscribePageWebhook,
+  getWhatsAppBusinessProfile as fetchWhatsAppBusinessProfile,
+  updateWhatsAppBusinessProfile as pushWhatsAppBusinessProfile,
+  uploadWhatsAppProfilePhotoHandle,
 } from '../../lib/meta';
+import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
 import type {
   ConnectEmailInput,
@@ -336,6 +340,44 @@ export async function disconnectChannel(
       data: { status: 'NOT_CONNECTED', credentials: null, externalId: null, displayName: null, lastError: null, connectedAt: null },
     });
   });
+}
+
+/** Shared by the three Business Profile functions below — throws a clear error instead of a Meta 4xx if WhatsApp isn't connected yet. */
+async function getConnectedWhatsAppCredentials(organizationId: string): Promise<WhatsAppCredentials> {
+  return withTenant(organizationId, async (tx) => {
+    const connection = await tx.channelConnection.findUnique({
+      where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
+    });
+    if (!connection || connection.status !== 'CONNECTED' || !connection.credentials) {
+      throw new AppError(400, 'WHATSAPP_NOT_CONNECTED', 'Connect WhatsApp before managing its Business Profile');
+    }
+    return decryptJson<WhatsAppCredentials>(connection.credentials);
+  });
+}
+
+export async function getWhatsAppBusinessProfile(organizationId: string): Promise<WhatsAppBusinessProfile> {
+  const creds = await getConnectedWhatsAppCredentials(organizationId);
+  return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
+}
+
+export async function updateWhatsAppBusinessProfile(
+  organizationId: string,
+  input: UpdateWhatsAppBusinessProfileInput,
+): Promise<WhatsAppBusinessProfile> {
+  const creds = await getConnectedWhatsAppCredentials(organizationId);
+  await pushWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken, input);
+  return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
+}
+
+export async function uploadWhatsAppProfilePhoto(
+  organizationId: string,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<WhatsAppBusinessProfile> {
+  const creds = await getConnectedWhatsAppCredentials(organizationId);
+  const handle = await uploadWhatsAppProfilePhotoHandle(buffer, mimeType, creds.accessToken);
+  await pushWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken, { profilePictureHandle: handle });
+  return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
 }
 
 function toStatus(row: {

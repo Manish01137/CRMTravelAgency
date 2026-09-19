@@ -366,6 +366,117 @@ export async function createWhatsAppTemplate(
   return { externalTemplateId: data.id };
 }
 
+// --- WhatsApp Business Profile (Settings → Channels) ------------------------
+// The "About" info a customer sees when they tap your business's name in
+// WhatsApp — photo, status line, description, address, email, websites.
+
+export interface WhatsAppBusinessProfile {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  profilePictureUrl?: string | null;
+  websites?: string[];
+  vertical?: string;
+}
+
+const BUSINESS_PROFILE_FIELDS = 'about,address,description,email,profile_picture_url,websites,vertical';
+
+export async function getWhatsAppBusinessProfile(phoneNumberId: string, accessToken: string): Promise<WhatsAppBusinessProfile> {
+  const data = await graphFetch<{
+    data: Array<{
+      about?: string;
+      address?: string;
+      description?: string;
+      email?: string;
+      profile_picture_url?: string;
+      websites?: string[];
+      vertical?: string;
+    }>;
+  }>(`/${phoneNumberId}/whatsapp_business_profile?fields=${BUSINESS_PROFILE_FIELDS}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const p = data.data[0] ?? {};
+  return {
+    about: p.about,
+    address: p.address,
+    description: p.description,
+    email: p.email,
+    profilePictureUrl: p.profile_picture_url ?? null,
+    websites: p.websites,
+    vertical: p.vertical,
+  };
+}
+
+export interface UpdateWhatsAppBusinessProfileInput {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  websites?: string[];
+  vertical?: string;
+  /** From uploadWhatsAppProfilePhotoHandle() below — NOT a plain /media id. */
+  profilePictureHandle?: string;
+}
+
+export async function updateWhatsAppBusinessProfile(
+  phoneNumberId: string,
+  accessToken: string,
+  input: UpdateWhatsAppBusinessProfileInput,
+): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/whatsapp_business_profile`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      ...(input.about !== undefined ? { about: input.about } : {}),
+      ...(input.address !== undefined ? { address: input.address } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.email !== undefined ? { email: input.email } : {}),
+      ...(input.websites !== undefined ? { websites: input.websites } : {}),
+      ...(input.vertical !== undefined ? { vertical: input.vertical } : {}),
+      ...(input.profilePictureHandle ? { profile_picture_handle: input.profilePictureHandle } : {}),
+    }),
+  });
+}
+
+/**
+ * Uploads a photo via Meta's Resumable Upload API and returns the resulting
+ * file handle (`h`) — the ONLY thing Meta accepts as `profile_picture_handle`
+ * above. This is a separate, three-step flow from the simple `/media`
+ * endpoint used for message attachments (sendWhatsAppImage etc. use a public
+ * `link` instead and never touch either upload path):
+ *   1) start an upload session against the App ID (not the phone number)
+ *   2) POST the raw bytes to that session with a `file_offset` header
+ *   3) the response's `h` is the handle
+ */
+export async function uploadWhatsAppProfilePhotoHandle(buffer: Buffer, mimeType: string, accessToken: string): Promise<string> {
+  const appId = env.META_WHATSAPP_APP_ID ?? env.META_APP_ID;
+  if (!appId) {
+    throw new AppError(503, 'META_NOT_CONFIGURED', 'WhatsApp app is not configured on the server');
+  }
+
+  const startRes = await fetch(
+    `${GRAPH_BASE()}/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(mimeType)}&access_token=${encodeURIComponent(accessToken)}`,
+    { method: 'POST' },
+  );
+  const startData = (await startRes.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+  if (!startRes.ok || !startData?.id) {
+    throw new AppError(502, 'META_API_ERROR', startData?.error?.message ?? 'Could not start the photo upload');
+  }
+
+  const putRes = await fetch(`${GRAPH_BASE()}/${startData.id}`, {
+    method: 'POST',
+    headers: { Authorization: `OAuth ${accessToken}`, file_offset: '0' },
+    body: buffer,
+  });
+  const putData = (await putRes.json().catch(() => null)) as { h?: string; error?: { message?: string } } | null;
+  if (!putRes.ok || !putData?.h) {
+    throw new AppError(502, 'META_API_ERROR', putData?.error?.message ?? 'Could not upload the photo');
+  }
+  return putData.h;
+}
+
 // --- Instagram (Facebook Login flow — classic Instagram Graph API, reached
 // through a connected Facebook Page). Shares the same Meta App ID/Secret as
 // WhatsApp above; no separate Instagram app or credentials are used. --------

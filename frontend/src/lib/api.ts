@@ -47,8 +47,8 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
   return data as T;
 }
 
-/** Multipart file upload (returns the stored public URL). */
-async function uploadFile(path: string, file: File): Promise<{ url: string }> {
+/** Multipart file upload. Defaults to the `{ url }` shape most upload endpoints return; pass a type param for one that returns something else (e.g. the WhatsApp Business Profile photo endpoint). */
+async function uploadFile<T = { url: string }>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append('file', file);
   const res = await fetch(`/api${path}`, { method: 'POST', body: form, credentials: 'include' });
@@ -58,7 +58,7 @@ async function uploadFile(path: string, file: File): Promise<{ url: string }> {
     const err = (data as { error?: { code?: string; message?: string } })?.error;
     throw new ApiError(res.status, err?.code ?? 'ERROR', err?.message ?? 'Upload failed');
   }
-  return data as { url: string };
+  return data as T;
 }
 
 export const api = {
@@ -67,5 +67,5 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
-  upload: (path: string, file: File) => uploadFile(path, file),
+  upload: <T = { url: string }>(path: string, file: File) => uploadFile<T>(path, file),
 };

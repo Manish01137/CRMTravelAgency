@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Hotel as HotelIcon,
   Route as RouteIcon,
+  Receipt,
   ReceiptText,
   Wallet,
   MapPinned,
@@ -59,6 +60,7 @@ export const NAV_ITEMS: NavItem[] = [
 export const SETTINGS_ITEMS: NavItem[] = [
   { to: '/settings/profile', label: 'My profile', icon: UserRound },
   { to: '/settings/organization', label: 'Organization', icon: Building2, adminOnly: true },
+  { to: '/settings/invoice', label: 'Invoice', icon: Receipt, adminOnly: true },
   { to: '/settings/channels', label: 'Channels', icon: Plug, adminOnly: true },
   { to: '/settings/ai-agent', label: 'AI Agent', icon: Bot, adminOnly: true },
   { to: '/settings/automation', label: 'Automation', icon: Zap, adminOnly: true },
