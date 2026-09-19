@@ -691,9 +691,20 @@ export async function exchangeInstagramLongLivedToken(shortLivedToken: string): 
 }
 
 /** Fetches the @username for display once we know which Instagram account is being connected — Instagram Login token variant of fetchInstagramUsername above. */
-export async function fetchInstagramLoginUsername(igUserId: string, accessToken: string): Promise<string> {
-  const data = await instagramGraphFetch<{ username: string }>(`/${igUserId}?fields=username`, {
+/**
+ * Fetches the REAL Instagram-scoped user id + username via /me. Per Meta's
+ * own docs: the `user_id` field returned HERE is "the value of the id field
+ * received in webhook notifications for this account" — i.e. it matches
+ * the classic IG Business Account id (confirmed: 17841441957356155 for
+ * @joinetra_). This is NOT the same as the `user_id` returned by
+ * exchangeInstagramCode's initial token exchange, which is a different,
+ * useless app-scoped id (confirmed via direct testing 2026-09-19: that one
+ * came back as 29790711690553110 and caused every downstream call — and
+ * would have caused every webhook-routing match — to fail).
+ */
+export async function fetchInstagramLoginProfile(accessToken: string): Promise<{ igUserId: string; username: string }> {
+  const data = await instagramGraphFetch<{ user_id: string; username: string }>(`/me?fields=user_id,username`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  return data.username;
+  return { igUserId: data.user_id, username: data.username };
 }

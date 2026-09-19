@@ -18,7 +18,7 @@ import {
   uploadWhatsAppProfilePhotoHandle,
   exchangeInstagramCode,
   exchangeInstagramLongLivedToken,
-  fetchInstagramLoginUsername,
+  fetchInstagramLoginProfile,
   isInstagramLoginConfigured,
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
@@ -349,9 +349,12 @@ async function saveInstagramLoginConnection(
  */
 export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
   try {
-    const { accessToken: shortLived, igUserId } = await exchangeInstagramCode(input.code, input.redirectUri);
+    const { accessToken: shortLived } = await exchangeInstagramCode(input.code, input.redirectUri);
     const { accessToken: longLived } = await exchangeInstagramLongLivedToken(shortLived);
-    const username = await fetchInstagramLoginUsername(igUserId, longLived);
+    // NOTE: igUserId comes from THIS call (/me?fields=user_id,username), not
+    // from exchangeInstagramCode above — that one's user_id is a different,
+    // unusable app-scoped id. See the comment above fetchInstagramLoginProfile.
+    const { igUserId, username } = await fetchInstagramLoginProfile(longLived);
     const channel = await saveInstagramLoginConnection(organizationId, { accessToken: longLived, igUserId, username });
     return { status: 'connected', channel };
   } catch (err) {
