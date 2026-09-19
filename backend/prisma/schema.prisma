@@ -829,6 +829,10 @@ model Conversation {
   channel            ConversationChannel
   externalContactId  String              @map("external_contact_id") // WhatsApp wa_id (phone) or Instagram IGSID
   contactName        String?             @map("contact_name")
+  // Instagram only — re-hosted on our own storage, never Meta's profile_pic
+  // URL directly (that one expires after a few days). See webhooks.service.ts's
+  // resolveInstagramContactInfo.
+  contactAvatarUrl   String?             @map("contact_avatar_url")
   contactPhone       String?             @map("contact_phone") // WhatsApp only
   leadId             String?             @map("lead_id") @db.Uuid
   lastMessageAt      DateTime?           @map("last_message_at")

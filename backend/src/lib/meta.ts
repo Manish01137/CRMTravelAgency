@@ -710,20 +710,26 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<{
 }
 
 /**
- * Instagram User Profile API — fetches a DM sender's name/username using
- * their Instagram-scoped ID from a messaging webhook's sender.id. Only
- * callable for senders who have messaged this account (Meta's "implicit
- * consent" rule) or interacted with an icebreaker/persistent menu — always
- * true here since this is only called from inbound webhook processing. No
- * new permissions needed beyond instagram_business_basic /
- * instagram_business_manage_messages, already granted.
+ * Instagram User Profile API — fetches a DM sender's name/username/profile
+ * picture using their Instagram-scoped ID from a messaging webhook's
+ * sender.id. Only callable for senders who have messaged this account
+ * (Meta's "implicit consent" rule) or interacted with an icebreaker/
+ * persistent menu — always true here since this is only called from inbound
+ * webhook processing. No new permissions needed beyond
+ * instagram_business_basic / instagram_business_manage_messages, already
+ * granted.
+ *
+ * `profilePicUrl` EXPIRES after a few days per Meta's docs — callers must
+ * download and re-host it immediately (see webhooks.service.ts's
+ * downloadAndRehostImage), never store this URL directly.
  */
 export async function fetchInstagramSenderProfile(
   senderId: string,
   accessToken: string,
-): Promise<{ name: string | null; username: string | null }> {
-  const data = await instagramGraphFetch<{ name?: string; username?: string }>(`/${senderId}?fields=name,username`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  return { name: data.name ?? null, username: data.username ?? null };
+): Promise<{ name: string | null; username: string | null; profilePicUrl: string | null }> {
+  const data = await instagramGraphFetch<{ name?: string; username?: string; profile_pic?: string }>(
+    `/${senderId}?fields=name,username,profile_pic`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  return { name: data.name ?? null, username: data.username ?? null, profilePicUrl: data.profile_pic ?? null };
 }

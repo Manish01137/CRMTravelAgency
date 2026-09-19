@@ -27,7 +27,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
@@ -101,6 +101,7 @@ function ConversationRow({
     <div className={cn('group relative border-b border-border', active && 'bg-primary/5')}>
       <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 py-3 pr-9 text-left transition-colors hover:bg-muted/60">
         <Avatar>
+          {c.contactAvatarUrl && <AvatarImage src={c.contactAvatarUrl} alt="" />}
           <AvatarFallback>{initials(label)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
@@ -374,6 +375,7 @@ export function InboxPage() {
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar className={channel === 'WHATSAPP' ? 'border border-white/25' : undefined}>
+                    {selected.contactAvatarUrl && <AvatarImage src={selected.contactAvatarUrl} alt="" />}
                     <AvatarFallback className={channel === 'WHATSAPP' ? 'bg-white/15 text-white' : undefined}>
                       {initials(selected.contactName || selected.contactPhone || selected.externalContactId)}
                     </AvatarFallback>

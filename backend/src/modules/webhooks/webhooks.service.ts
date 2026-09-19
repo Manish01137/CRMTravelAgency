@@ -108,37 +108,52 @@ async function downloadAndRehostImage(organizationId: string, sourceUrl: string)
 }
 
 /**
- * Looks up a DM sender's display name via Instagram's User Profile API —
- * but only when we don't already have one on file, to respect Instagram's
- * 200-calls/hour-per-account rate limit (re-fetching an unchanged name on
- * every message from the same sender would burn through it fast for no
- * benefit). Never throws: a failed lookup (rate limit, network issue,
- * sender blocked the app, etc.) must never stop the actual message from
- * being recorded — falls back to null, same as if this lookup didn't exist.
- * Shared by processInstagramEntry and processPageEntry — both funnel real
- * Instagram DMs into the same INSTAGRAM channel/Conversation shape.
+ * Looks up a DM sender's display name AND profile picture via Instagram's
+ * User Profile API — but only when we don't already have a name on file, to
+ * respect Instagram's 200-calls/hour-per-account rate limit (re-fetching
+ * unchanged info on every message from the same sender would burn through
+ * it fast for no benefit). Never throws: a failed lookup (rate limit,
+ * network issue, sender blocked the app, etc.) must never stop the actual
+ * message from being recorded — falls back to both fields null, same as if
+ * this lookup didn't exist. Shared by processInstagramEntry and
+ * processPageEntry — both funnel real Instagram DMs into the same INSTAGRAM
+ * channel/Conversation shape.
+ *
+ * The profile picture URL Meta returns expires after a few days (documented
+ * on the User Profile API), so it's downloaded and re-hosted on our own
+ * storage immediately via downloadAndRehostImage — same treatment as an
+ * inbound DM image attachment. That function already never throws (it has
+ * its own internal try/catch, returning null on any failure), so a broken
+ * picture download can't lose the name computed alongside it here — no
+ * separate try/catch needed around it.
  */
-async function resolveInstagramContactName(organizationId: string, senderId: string): Promise<string | null> {
+async function resolveInstagramContactInfo(
+  organizationId: string,
+  senderId: string,
+): Promise<{ contactName: string | null; contactAvatarUrl: string | null }> {
+  const none = { contactName: null, contactAvatarUrl: null };
   const existing = await withTenant(organizationId, (tx) =>
     tx.conversation.findUnique({
       where: { organizationId_channel_externalContactId: { organizationId, channel: 'INSTAGRAM', externalContactId: senderId } },
       select: { contactName: true },
     }),
   );
-  // Already have a name — recordInbound's upsert leaves contactName alone when passed null, so no fetch needed.
-  if (existing?.contactName) return null;
+  // Already have a name — recordInbound's upsert leaves contactName/contactAvatarUrl alone when passed null, so no fetch needed.
+  if (existing?.contactName) return none;
 
   try {
     const connection = await systemPrisma.channelConnection.findUnique({
       where: { organizationId_channel: { organizationId, channel: 'INSTAGRAM' } },
     });
-    if (!connection?.credentials) return null;
+    if (!connection?.credentials) return none;
     const { accessToken } = decryptJson<InstagramCredentials>(connection.credentials);
     const profile = await fetchInstagramSenderProfile(senderId, accessToken);
-    return profile.name ?? (profile.username ? `@${profile.username}` : null);
+    const contactName = profile.name ?? (profile.username ? `@${profile.username}` : null);
+    const contactAvatarUrl = profile.profilePicUrl ? await downloadAndRehostImage(organizationId, profile.profilePicUrl) : null;
+    return { contactName, contactAvatarUrl };
   } catch (err) {
-    console.error('resolveInstagramContactName failed:', err instanceof Error ? err.message : err);
-    return null;
+    console.error('resolveInstagramContactInfo failed:', err instanceof Error ? err.message : err);
+    return none;
   }
 }
 
@@ -148,6 +163,8 @@ async function recordInbound(params: {
   channel: 'WHATSAPP' | 'INSTAGRAM';
   externalContactId: string;
   contactName: string | null;
+  /** Instagram only — see resolveInstagramContactInfo. Always undefined/null for WhatsApp. */
+  contactAvatarUrl?: string | null;
   contactPhone: string | null;
   body: string;
   mediaUrl?: string | null;
@@ -155,7 +172,7 @@ async function recordInbound(params: {
   externalMessageId: string | null;
   leadSource: InboundLeadSource;
 }): Promise<void> {
-  const { organizationId, channel, externalContactId, contactName, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource } = params;
+  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource } = params;
 
   await withTenant(organizationId, async (tx) => {
     const existing = await tx.conversation.findUnique({
@@ -196,8 +213,11 @@ async function recordInbound(params: {
     // failed statement to recover from.
     const conversation = await tx.conversation.upsert({
       where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
-      create: { organizationId, channel, externalContactId, contactName, contactPhone, leadId },
-      update: contactName ? { contactName } : {},
+      create: { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, leadId },
+      update: {
+        ...(contactName ? { contactName } : {}),
+        ...(contactAvatarUrl ? { contactAvatarUrl } : {}),
+      },
     });
 
     await tx.message.create({
@@ -351,14 +371,16 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
     const attachmentUrl = igImageAttachmentUrl(message);
     if (!message?.text && !attachmentUrl) continue;
 
+    // Instagram DMs don't carry a display name/picture in the webhook
+    // payload itself — looked up separately via the User Profile API
+    // (Meta's "implicit consent" rule), at most once per sender.
+    const { contactName, contactAvatarUrl } = await resolveInstagramContactInfo(organizationId, sender);
     await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
-      // Instagram DMs don't carry a display name in the webhook payload
-      // itself — looked up separately via the User Profile API (Meta's
-      // "implicit consent" rule), at most once per sender.
-      contactName: await resolveInstagramContactName(organizationId, sender),
+      contactName,
+      contactAvatarUrl,
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
@@ -404,12 +426,14 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
     }
 
     console.log('[webhooks] processPageEntry — recording inbound from sender:', sender, '| text:', message?.text);
+    // See resolveInstagramContactInfo's comment in processInstagramEntry above.
+    const { contactName, contactAvatarUrl } = await resolveInstagramContactInfo(organizationId, sender);
     await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
-      // See resolveInstagramContactName's comment in processInstagramEntry above.
-      contactName: await resolveInstagramContactName(organizationId, sender),
+      contactName,
+      contactAvatarUrl,
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,

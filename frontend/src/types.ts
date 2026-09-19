@@ -744,6 +744,8 @@ export interface Conversation {
   channel: ConversationChannel;
   externalContactId: string;
   contactName: string | null;
+  /** Instagram only — re-hosted on our own storage; null for WhatsApp and for Instagram contacts without one. */
+  contactAvatarUrl: string | null;
   contactPhone: string | null;
   leadId: string | null;
   lastMessageAt: string | null;
