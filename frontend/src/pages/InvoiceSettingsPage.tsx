@@ -95,7 +95,7 @@ export function InvoiceSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Invoice" description="Bank, tax and signature details printed on every Tax Invoice." />
+      <PageHeader title="Invoice Detail" description="Bank, tax and signature details printed on every Tax Invoice." />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

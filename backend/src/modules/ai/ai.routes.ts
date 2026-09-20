@@ -154,4 +154,61 @@ Rules:
   }),
 );
 
+const itineraryDaySchema = z.object({
+  destination: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().max(120).optional()),
+  dayNumber: z.coerce.number().int().min(1).max(366),
+  dayTitle: z.string().trim().min(1, 'Add a day title first').max(200),
+  packageContext: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().max(150).optional()),
+});
+
+/** Single-day itinerary description — the per-day "Generate with AI" button in the package builder's Itinerary step. */
+router.post(
+  '/itinerary-day',
+  requireAuth,
+  aiLimiter,
+  validate({ body: itineraryDaySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const genAI = getClient();
+    if (!genAI) {
+      throw new AppError(
+        503,
+        'AI_NOT_CONFIGURED',
+        'AI generation is not configured yet. Add a Gemini API key to enable it.',
+      );
+    }
+
+    const input = req.body as z.infer<typeof itineraryDaySchema>;
+    const context = [
+      input.packageContext && `Package: ${input.packageContext}`,
+      input.destination && `Destination: ${input.destination}`,
+      `Day ${input.dayNumber} title: ${input.dayTitle}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL, generationConfig: { temperature: 0.8 } });
+
+    const promptText = `You are an expert travel-package copywriter for a travel agency CRM.
+Write a short, vivid plan for ONE day of a trip itinerary.
+
+${context}
+
+Return ONLY the day's description text — 2-4 sentences, plain text, no markdown, no surrounding quotes, no preamble like "Here is...".`;
+
+    let raw: string;
+    try {
+      const result = await model.generateContent(promptText);
+      raw = result.response.text();
+    } catch (err) {
+      throw new AppError(502, 'AI_FAILED', 'The AI service could not complete the request. Try again.');
+    }
+
+    // Models occasionally wrap the answer in quotes or a stray markdown fence despite instructions.
+    const description = raw.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+    if (!description) throw BadRequest('AI returned an empty response. Please try again.');
+
+    res.json({ description });
+  }),
+);
+
 export default router;

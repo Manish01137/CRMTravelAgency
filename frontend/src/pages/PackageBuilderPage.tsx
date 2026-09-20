@@ -536,12 +536,17 @@ function ActivityCombobox({
 }
 
 function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control, setValue, getValues } = form;
+  const { register, control, setValue, getValues, watch } = form;
   const { fields, append, remove } = useFieldArray({ control, name: 'itinerary' });
   const hotelsQuery = useQuery({ queryKey: ['hotels'], queryFn: () => api.get<Hotel[]>('/hotels') });
   const hotels = (hotelsQuery.data ?? []).filter((h) => h.isActive);
   const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
+
+  // A sightseeing pick that would overwrite an already-written description —
+  // held here until the agent confirms, so existing manual content is never
+  // silently lost. Null = no pending confirmation.
+  const [pendingReplace, setPendingReplace] = useState<{ i: number; activity: SightseeingActivity } | null>(null);
 
   /**
    * Pull a library activity into a day as an INDEPENDENT COPY. Its name,
@@ -555,7 +560,35 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       [...cur, { name: a.name, description: a.notes ?? '', imageUrl: a.imageUrl ?? '' }],
       { shouldDirty: true },
     );
+
+    // Also offer the pick's notes as the day's plain description — but never
+    // silently overwrite something already written by hand.
+    if (!a.notes) return;
+    const existingDescription = getValues(`itinerary.${i}.description`)?.trim();
+    if (!existingDescription) {
+      setValue(`itinerary.${i}.description`, a.notes, { shouldDirty: true });
+    } else {
+      setPendingReplace({ i, activity: a });
+    }
   };
+
+  const aiDayMutation = useMutation({
+    mutationFn: (v: { i: number; dayTitle: string; destination?: string; packageContext?: string }) =>
+      api.post<{ description: string }>('/ai/itinerary-day', {
+        dayNumber: v.i + 1,
+        dayTitle: v.dayTitle,
+        destination: v.destination || undefined,
+        packageContext: v.packageContext || undefined,
+      }),
+    onSuccess: (res, { i }) => setValue(`itinerary.${i}.description`, res.description, { shouldDirty: true }),
+    onError: (err) => {
+      if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
+        toast.error("AI isn't set up yet — add a Gemini API key on the server to enable it.");
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
+      }
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -622,7 +655,48 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               />
 
               <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
+              <div className="flex items-center justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+                  disabled={!(watch(`itinerary.${i}.title`) ?? '').trim() || (aiDayMutation.isPending && aiDayMutation.variables?.i === i)}
+                  title={!(watch(`itinerary.${i}.title`) ?? '').trim() ? 'Add a day title first' : undefined}
+                  onClick={() => {
+                    const dayTitle = getValues(`itinerary.${i}.title`)?.trim();
+                    if (!dayTitle) return;
+                    const v = getValues();
+                    aiDayMutation.mutate({ i, dayTitle, destination: v.destination, packageContext: v.name });
+                  }}
+                >
+                  {aiDayMutation.isPending && aiDayMutation.variables?.i === i ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <Sparkles className="size-3.5" />
+                  )}
+                  Generate with AI
+                </Button>
+              </div>
               <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
+              {pendingReplace?.i === i && (
+                <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                  <span className="min-w-0 flex-1">Replace description with "{pendingReplace.activity.name}"'s notes?</span>
+                  <button
+                    type="button"
+                    className="font-semibold underline"
+                    onClick={() => {
+                      setValue(`itinerary.${i}.description`, pendingReplace.activity.notes ?? '', { shouldDirty: true });
+                      setPendingReplace(null);
+                    }}
+                  >
+                    Replace
+                  </button>
+                  <button type="button" className="text-amber-700" onClick={() => setPendingReplace(null)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
               <div className="grid gap-2 sm:grid-cols-2">
                 <Controller
                   control={control}
