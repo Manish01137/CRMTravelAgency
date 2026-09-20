@@ -293,7 +293,7 @@ export function InboxPage() {
 
       <div className="grid h-[calc(100dvh-230px)] min-h-[520px] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-card sm:grid-cols-[300px_1fr]">
         {/* Conversation list */}
-        <div className="flex flex-col border-b border-border sm:border-b-0 sm:border-r">
+        <div className="flex min-h-0 flex-col border-b border-border sm:border-b-0 sm:border-r">
           <div className="border-b border-border p-3">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -327,7 +327,7 @@ export function InboxPage() {
               ))}
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading ? (
               <div className="space-y-2 p-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -413,7 +413,7 @@ export function InboxPage() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-5" style={channel === 'WHATSAPP' ? WA_WALLPAPER_STYLE : undefined}>
+              <div className="min-h-0 flex-1 overflow-y-auto p-5" style={channel === 'WHATSAPP' ? WA_WALLPAPER_STYLE : undefined}>
                 {threadQuery.isLoading ? (
                   <div className="space-y-3">
                     {Array.from({ length: 5 }).map((_, i) => (
