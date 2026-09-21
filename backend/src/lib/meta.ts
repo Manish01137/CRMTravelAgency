@@ -678,6 +678,61 @@ export async function exchangeInstagramCode(code: string, redirectUri: string): 
   return { accessToken: data.access_token, igUserId: String(data.user_id) };
 }
 
+/**
+ * TEMP DEBUG — isolating exchangeInstagramLongLivedToken's 100% reproducible
+ * 400 "Unsupported request - method type: get" on GET /access_token. Three
+ * independent checks, each try/caught separately so a diagnostic failure can
+ * never block the real connect flow that calls this. Remove this whole
+ * function (and its one call site in channels.service.ts's connectInstagram)
+ * once the /access_token issue is understood/fixed.
+ *
+ * 1) Calls a DIFFERENT graph.instagram.com endpoint (versioned /me) with the
+ *    SAME short-lived token, to test whether the token itself is usable at
+ *    all — this deliberately does NOT go through instagramGraphFetch, which
+ *    hits the UNVERSIONED host (see its comment above) — the whole point
+ *    here is to test the versioned form specifically. Distinguishes "the
+ *    /access_token endpoint itself is uniquely broken" from "the short-lived
+ *    token is bad" as two separately-diagnosable failure modes.
+ * 2) Logs the app secret's own byte length (never its value) — rules out
+ *    truncation/env-loading issues a length check would catch.
+ * 3) Attempts the exact same token exchange as a POST with a url-encoded
+ *    body instead of GET+query-string, without touching
+ *    exchangeInstagramLongLivedToken below — Meta has a track record (see
+ *    the in2code-de/instagram#41 report on the sibling refresh_access_token
+ *    endpoint) of silently flipping a documented-GET endpoint in this family
+ *    to require POST.
+ */
+export async function diagnoseInstagramTokenExchange(shortLivedToken: string): Promise<void> {
+  const { appSecret } = requireInstagramLoginConfigured();
+  console.log('[IG DIAG] client_secret length:', appSecret.length);
+
+  try {
+    const url = `https://graph.instagram.com/${env.META_GRAPH_VERSION}/me?fields=user_id,username&access_token=${encodeURIComponent(shortLivedToken)}`;
+    const res = await fetch(url);
+    const body = await res.text();
+    console.log('[IG DIAG] (1) versioned GET /me with short-lived token — status:', res.status, '| body:', body);
+  } catch (err) {
+    console.log('[IG DIAG] (1) versioned GET /me with short-lived token — THREW:', err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    const form = new URLSearchParams({
+      grant_type: 'ig_exchange_token',
+      client_secret: appSecret,
+      access_token: shortLivedToken,
+    });
+    const res = await fetch(`${INSTAGRAM_GRAPH_BASE}/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const body = await res.text();
+    console.log('[IG DIAG] (3) POST /access_token with url-encoded body — status:', res.status, '| body:', body);
+  } catch (err) {
+    console.log('[IG DIAG] (3) POST /access_token with url-encoded body — THREW:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 /** Step 2 — short-lived Instagram Login token → long-lived (~60 day) token. */
 export async function exchangeInstagramLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string }> {
   const { appSecret } = requireInstagramLoginConfigured();

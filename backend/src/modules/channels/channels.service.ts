@@ -19,6 +19,7 @@ import {
   exchangeInstagramCode,
   exchangeInstagramLongLivedToken,
   fetchInstagramLoginProfile,
+  diagnoseInstagramTokenExchange,
   isInstagramLoginConfigured,
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
@@ -350,6 +351,11 @@ async function saveInstagramLoginConnection(
 export async function connectInstagram(organizationId: string, input: ConnectInstagramInput): Promise<ConnectInstagramResult> {
   try {
     const { accessToken: shortLived } = await exchangeInstagramCode(input.code, input.redirectUri);
+
+    // TEMP DEBUG — see diagnoseInstagramTokenExchange's doc comment in
+    // lib/meta.ts. Remove this line once the /access_token 400 is resolved.
+    await diagnoseInstagramTokenExchange(shortLived);
+
     const { accessToken: longLived } = await exchangeInstagramLongLivedToken(shortLived);
     // NOTE: igUserId comes from THIS call (/me?fields=user_id,username), not
     // from exchangeInstagramCode above — that one's user_id is a different,
