@@ -14,7 +14,20 @@ export function ActivityCombobox({
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
-  if (activities.length === 0) return null;
+
+  if (activities.length === 0) {
+    return (
+      <a
+        href="/sightseeing"
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+      >
+        <MapPin className="size-3.5 shrink-0" /> No sightseeing activities yet — add some on the Sightseeing page
+      </a>
+    );
+  }
+
   const needle = q.trim().toLowerCase();
   const filtered = activities
     .filter((a) => !needle || a.name.toLowerCase().includes(needle))

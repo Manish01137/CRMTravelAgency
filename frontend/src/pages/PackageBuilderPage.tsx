@@ -541,8 +541,35 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               {i + 1}
             </span>
             <div className="min-w-0 flex-1 space-y-2">
-              {/* Select Activity — searches the library; each pick is copied in below */}
-              <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
+              <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
+
+              {/* Two ways to fill this day's content, side by side: pick from the Sightseeing library, or let AI draft it. */}
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-11 shrink-0 px-3 text-xs"
+                  disabled={!(watch(`itinerary.${i}.title`) ?? '').trim() || (aiDayMutation.isPending && aiDayMutation.variables?.i === i)}
+                  title={!(watch(`itinerary.${i}.title`) ?? '').trim() ? 'Add a day title first' : undefined}
+                  onClick={() => {
+                    const dayTitle = getValues(`itinerary.${i}.title`)?.trim();
+                    if (!dayTitle) return;
+                    const v = getValues();
+                    aiDayMutation.mutate({ i, dayTitle, destination: v.destination, packageContext: v.name });
+                  }}
+                >
+                  {aiDayMutation.isPending && aiDayMutation.variables?.i === i ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <Sparkles className="size-3.5" />
+                  )}
+                  Generate with AI
+                </Button>
+              </div>
 
               {/* Stacked list of selected activities — each an independent, editable copy */}
               <Controller
@@ -590,30 +617,6 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                 }}
               />
 
-              <Input placeholder={`Day ${i + 1} title — e.g. Arrival & beach sunset`} {...register(`itinerary.${i}.title`)} />
-              <div className="flex items-center justify-end">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
-                  disabled={!(watch(`itinerary.${i}.title`) ?? '').trim() || (aiDayMutation.isPending && aiDayMutation.variables?.i === i)}
-                  title={!(watch(`itinerary.${i}.title`) ?? '').trim() ? 'Add a day title first' : undefined}
-                  onClick={() => {
-                    const dayTitle = getValues(`itinerary.${i}.title`)?.trim();
-                    if (!dayTitle) return;
-                    const v = getValues();
-                    aiDayMutation.mutate({ i, dayTitle, destination: v.destination, packageContext: v.name });
-                  }}
-                >
-                  {aiDayMutation.isPending && aiDayMutation.variables?.i === i ? (
-                    <Spinner className="size-3.5" />
-                  ) : (
-                    <Sparkles className="size-3.5" />
-                  )}
-                  Generate with AI
-                </Button>
-              </div>
               <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
               {pendingReplace?.i === i && (
                 <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
