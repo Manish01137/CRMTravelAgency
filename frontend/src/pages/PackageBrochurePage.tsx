@@ -184,30 +184,47 @@ export function PackageBrochurePage() {
 
     setExporting(true);
     setProgress({ done: 0, total: pages.length });
+    const skipped: string[] = [];
     try {
       let doc: jsPDF | null = null;
       for (let i = 0; i < pages.length; i += 1) {
         const page = pages[i];
+        const label = page.querySelector('.pbx-page-label')?.textContent || `page ${i + 1}`;
         const width = page.offsetWidth;
         const height = page.offsetHeight;
-        const canvas = await html2canvas(page, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-        });
-        const imgData = canvas.toDataURL('image/jpeg', 0.92);
-        if (!doc) {
-          doc = new jsPDF({ unit: 'px', format: [width, height], hotfixes: ['px_scaling'] });
-        } else {
-          doc.addPage([width, height]);
+        try {
+          const canvas = await html2canvas(page, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+          });
+          const imgData = canvas.toDataURL('image/jpeg', 0.92);
+          if (!doc) {
+            doc = new jsPDF({ unit: 'px', format: [width, height], hotfixes: ['px_scaling'] });
+          } else {
+            doc.addPage([width, height]);
+          }
+          doc.addImage(imgData, 'JPEG', 0, 0, width, height);
+        } catch (pageErr) {
+          // One broken page (e.g. an image that fails to render to canvas)
+          // must never sink the whole export — skip it and keep going, so a
+          // problem on one page still leaves a downloadable PDF for the rest.
+          console.error(`Brochure PDF export — page "${label}" failed, skipping:`, pageErr);
+          skipped.push(label);
         }
-        doc.addImage(imgData, 'JPEG', 0, 0, width, height);
         setProgress({ done: i + 1, total: pages.length });
       }
-      doc!.save(toFileName(pkg.bookingTitle || pkg.name));
+      if (!doc) throw new Error('Every page failed to render');
+      doc.save(toFileName(pkg.bookingTitle || pkg.name));
+      if (skipped.length > 0) {
+        toast.warning(`Downloaded, but ${skipped.length} page(s) failed to render and were skipped: ${skipped.join(', ')}`);
+      }
     } catch (err) {
+      // Surfaced directly (not just console) so a failure is diagnosable
+      // from the toast alone, without needing to open devtools.
       console.error('Brochure PDF export failed:', err);
-      toast.error('Could not generate the PDF — please try again');
+      const detail = err instanceof Error ? err.message : String(err);
+      toast.error(`Could not generate the PDF — ${detail}`);
     } finally {
       setExporting(false);
     }

@@ -17,7 +17,6 @@ import {
   Package as PackageIcon,
   Plus,
   Save,
-  Search as SearchIcon,
   Sparkles,
   Star,
   Trash2,
@@ -51,6 +50,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ImageUpload } from '@/components/ui/image-upload';
+import { ActivityCombobox } from '@/components/ActivityCombobox';
 import { formatCurrency } from '@/lib/format';
 import { PACKAGE_TEMPLATES, type PackageTemplate } from '@/lib/packageTemplates';
 
@@ -470,70 +470,6 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 }
 
 const NO_HOTEL = 'none';
-
-/** Searchable "Select Activity" combobox that pulls an activity from the library. */
-function ActivityCombobox({
-  activities,
-  onPick,
-}: {
-  activities: SightseeingActivity[];
-  onPick: (a: SightseeingActivity) => void;
-}) {
-  const [q, setQ] = useState('');
-  const [open, setOpen] = useState(false);
-  if (activities.length === 0) return null;
-  const needle = q.trim().toLowerCase();
-  const filtered = activities
-    .filter((a) => !needle || a.name.toLowerCase().includes(needle))
-    .slice(0, 8);
-
-  return (
-    <div className="relative">
-      <div className="relative">
-        <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Select activity — search your library…"
-          className="pl-9"
-        />
-      </div>
-      {open && filtered.length > 0 && (
-        <div className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-pop">
-          {filtered.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onMouseDown={() => {
-                onPick(a);
-                setQ('');
-                setOpen(false);
-              }}
-              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-muted"
-            >
-              {a.imageUrl ? (
-                <img src={a.imageUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
-              ) : (
-                <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
-                  <MapPin className="size-3.5" />
-                </span>
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">{a.name}</span>
-                {a.notes && <span className="block truncate text-xs text-muted-foreground">{a.notes}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   const { register, control, setValue, getValues, watch } = form;

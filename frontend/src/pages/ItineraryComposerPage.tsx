@@ -16,13 +16,14 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Booking } from '@/types';
+import type { Booking, SightseeingActivity } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActivityCombobox } from '@/components/ActivityCombobox';
 import { bookingRef } from '@/lib/crmMeta';
 import { toDateInputValue } from '@/lib/format';
 
@@ -75,9 +76,27 @@ export function ItineraryComposerPage() {
     queryFn: () => api.get<Booking>(`/bookings/${id}`),
     enabled: !!id,
   });
+  const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
+  const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
 
   const form = useForm<ComposerValues>({ defaultValues: toValues({ itineraryItems: [] } as unknown as Booking) });
-  const { register, control, handleSubmit, reset, watch } = form;
+  const { register, control, handleSubmit, reset, watch, setValue, getValues } = form;
+
+  // A sightseeing pick that would overwrite an already-written description —
+  // held here until confirmed, so existing manual content is never silently
+  // lost. Null = no pending confirmation. Same pattern as the Package
+  // Builder's Itinerary step.
+  const [pendingReplace, setPendingReplace] = useState<{ i: number; activity: SightseeingActivity } | null>(null);
+
+  const addActivity = (i: number, a: SightseeingActivity) => {
+    if (!a.notes) return;
+    const existingDescription = getValues(`days.${i}.description`)?.trim();
+    if (!existingDescription) {
+      setValue(`days.${i}.description`, a.notes, { shouldDirty: true });
+    } else {
+      setPendingReplace({ i, activity: a });
+    }
+  };
   const { fields, append, remove } = useFieldArray({ control, name: 'days' });
 
   const [hydrated, setHydrated] = useState(false);
@@ -304,9 +323,28 @@ export function ItineraryComposerPage() {
                           <Input {...register(`days.${i}.country`)} placeholder="India" />
                         </Field>
                       </div>
-                      <Field label="Notes / description">
-                        <Textarea rows={4} {...register(`days.${i}.description`)} placeholder="After breakfast, proceed to…" />
+                      <Field label="Notes / description" hint="Pick from your Sightseeing library to fill this in, or write it freely.">
+                        <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
+                        <Textarea rows={4} className="mt-2" {...register(`days.${i}.description`)} placeholder="After breakfast, proceed to…" />
                       </Field>
+                      {pendingReplace?.i === i && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+                          <span className="min-w-0 flex-1">Replace description with "{pendingReplace.activity.name}"'s notes?</span>
+                          <button
+                            type="button"
+                            className="font-semibold underline"
+                            onClick={() => {
+                              setValue(`days.${i}.description`, pendingReplace.activity.notes ?? '', { shouldDirty: true });
+                              setPendingReplace(null);
+                            }}
+                          >
+                            Replace
+                          </button>
+                          <button type="button" className="text-amber-700" onClick={() => setPendingReplace(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -1,6 +1,6 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { toast } from 'sonner';
-import { ImagePlus, Link2, Loader2, Trash2, UploadCloud } from 'lucide-react';
+import { AlertTriangle, ImagePlus, Link2, Loader2, Trash2, UploadCloud } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -20,7 +20,15 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [showUrl, setShowUrl] = useState(false);
+  // Tracks the specific value that failed to load (not just a bare boolean) —
+  // so pasting a DIFFERENT URL after a broken one clears the error automatically
+  // instead of staying stuck. A pasted URL that fails to render as an <img>
+  // (very common: a webpage link instead of a direct image file) used to get
+  // silently wiped via onChange(null) — losing what was typed with zero
+  // explanation. Now it's kept, with a visible "couldn't load" state instead.
+  const [erroredValue, setErroredValue] = useState<string | null>(null);
   const hasImage = !!value && /^https?:\/\//.test(value);
+  const imgFailed = hasImage && erroredValue === value;
 
   const doUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -85,8 +93,13 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
         >
           {uploading ? (
             <Loader2 className="size-5 animate-spin text-primary" />
-          ) : hasImage ? (
-            <img src={value!} alt="" className="size-full object-cover" onError={() => onChange(null)} />
+          ) : hasImage && !imgFailed ? (
+            <img src={value!} alt="" className="size-full object-cover" onError={() => setErroredValue(value!)} />
+          ) : hasImage && imgFailed ? (
+            <span className="flex flex-col items-center gap-1 text-destructive" title="Couldn't load this image link">
+              <AlertTriangle className="size-4" />
+              <span className="text-[9px] font-medium">Broken link</span>
+            </span>
           ) : (
             <>
               <ImagePlus className="size-5 text-muted-foreground/60" />
@@ -111,8 +124,10 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
         >
           {uploading ? (
             <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          ) : hasImage ? (
-            <img src={value!} alt="" className="size-full object-cover" onError={() => onChange(null)} />
+          ) : hasImage && !imgFailed ? (
+            <img src={value!} alt="" className="size-full object-cover" onError={() => setErroredValue(value!)} />
+          ) : hasImage && imgFailed ? (
+            <AlertTriangle className="size-4 text-destructive" />
           ) : (
             <ImagePlus className="size-4 text-muted-foreground/60" />
           )}
@@ -129,9 +144,9 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
   return (
     <div className={className}>
       {hiddenInput}
-      {hasImage ? (
+      {hasImage && !imgFailed ? (
         <div className="group relative overflow-hidden rounded-xl border border-border">
-          <img src={value!} alt="" className="h-40 w-full object-cover" onError={() => onChange(null)} />
+          <img src={value!} alt="" className="h-40 w-full object-cover" onError={() => setErroredValue(value!)} />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
             <button
               type="button"
@@ -149,6 +164,17 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
               Remove
             </button>
           </div>
+        </div>
+      ) : hasImage && imgFailed ? (
+        <div className="flex h-40 w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-destructive/40 bg-destructive/5 p-4 text-center">
+          <AlertTriangle className="size-6 text-destructive" />
+          <p className="text-xs font-semibold text-destructive">Couldn't load this image</p>
+          <p className="text-[11px] text-muted-foreground">
+            Make sure the link points directly to an image file (.jpg, .png…) — not a webpage.
+          </p>
+          <button type="button" onClick={() => onChange(null)} className="text-xs font-semibold text-destructive underline">
+            Remove link
+          </button>
         </div>
       ) : (
         <button
