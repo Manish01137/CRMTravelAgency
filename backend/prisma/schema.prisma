@@ -263,6 +263,9 @@ model Organization {
   aiAgentSettings    AiAgentSettings?
   automationSettings AutomationSettings?
   followUpAttempts   FollowUpAttempt[]
+  smartBotSettings   SmartBotSettings?
+  adPackageMappings  AdPackageMapping[]
+  botInteractionLogs BotInteractionLog[]
 
   @@map("organizations")
 }
@@ -402,6 +405,16 @@ model Lead {
   // the agent's attention by then).
   isRepeatCustomer Boolean @default(false) @map("is_repeat_customer")
   repeatBookingId  String? @map("repeat_booking_id") @db.Uuid
+  // Smart Bot (webhook-inline WhatsApp bot, separate from Bot Flow) — the
+  // one-time greeting on a brand-new lead's first message, and Click-to-
+  // WhatsApp ad attribution captured from that same first message's
+  // `referral` object. sourcePackageId is deliberately its own field, not a
+  // reuse of packageId above — that one means "an agent noted interest";
+  // this one means "auto-attributed from an ad click," a different
+  // provenance worth keeping distinguishable.
+  hasGreeted      Boolean @default(false) @map("has_greeted")
+  sourceAdId      String? @map("source_ad_id")
+  sourcePackageId String? @map("source_package_id") @db.Uuid
   createdAt      DateTime   @default(now()) @map("created_at")
   updatedAt      DateTime   @updatedAt @map("updated_at")
 
@@ -409,6 +422,7 @@ model Lead {
   assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
   repeatBooking Booking?    @relation("RepeatCustomerLead", fields: [repeatBookingId], references: [id], onDelete: SetNull)
   package      Package?     @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  sourcePackage Package?    @relation("LeadSourcePackage", fields: [sourcePackageId], references: [id], onDelete: SetNull)
   bookings     Booking[]
   tasks        Task[]
   activities   LeadActivity[]
@@ -418,12 +432,14 @@ model Lead {
   communicationLogs CommunicationLog[]
   // Phase 4 (Automation) — same additive-back-relation pattern as Phase 3 above.
   followUpAttempts  FollowUpAttempt[]
+  botInteractions   BotInteractionLog[]
 
   @@index([organizationId])
   @@index([organizationId, status])
   @@index([organizationId, createdAt])
   @@index([assignedToId])
   @@index([repeatBookingId])
+  @@index([sourcePackageId])
   @@map("leads")
 }
 
@@ -564,6 +580,10 @@ model Package {
   bookings     Booking[]
   batches      Batch[]
   leads        Lead[]
+  // Ad-attributed leads (Smart Bot) — see Lead.sourcePackageId's comment.
+  // Named explicitly since it's a second, distinct relation to Lead.
+  adAttributedLeads Lead[] @relation("LeadSourcePackage")
+  adPackageMappings AdPackageMapping[]
   linktreeCategoryLinks PackageLinktreeCategory[]
 
   @@unique([organizationId, slug])
@@ -1143,6 +1163,69 @@ model FollowUpAttempt {
   @@index([organizationId])
   @@index([leadId, createdAt])
   @@map("follow_up_attempts")
+}
+
+// ===========================================================================
+// Smart Bot — webhook-inline WhatsApp bot (POC, feature-flagged per org).
+// Deliberately separate from Bot Flow (BotFlow/BotFlowAssignment/
+// BotFlowSession above): this lives directly in webhooks.service.ts rather
+// than the poller-driven visual-flow engine. smart-bot.service.ts guards
+// against an org having BOTH enabled — see its top comment.
+// ===========================================================================
+
+/// Per-organization on/off switch, same pattern as AutomationSettings above.
+/// A dedicated table (not a bare boolean on Organization) so it's easy to grow
+/// its own config later without another migration.
+model SmartBotSettings {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @unique @map("organization_id") @db.Uuid
+  enabled        Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("smart_bot_settings")
+}
+
+/// Maps a Click-to-WhatsApp ad's id (Meta's `referral.source_id` on the
+/// inbound message) to the package it should greet with — e.g. a "Manali" ad
+/// click gets greeted with the Manali package. Looked up once, on a brand-new
+/// lead's first message only.
+model AdPackageMapping {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  adId           String   @map("ad_id")
+  packageId      String   @map("package_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, adId])
+  @@index([organizationId])
+  @@map("ad_package_mappings")
+}
+
+/// One row per Smart Bot turn (inbound message in, or the bot's reply out) —
+/// a debugging trail distinct from the regular Message table, since it also
+/// records which tool (if any) Gemini matched.
+model BotInteractionLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  leadId         String   @map("lead_id") @db.Uuid
+  direction      String   // "inbound" | "outbound"
+  rawMessage     String   @map("raw_message")
+  matchedTool    String?  @map("matched_tool")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([leadId, createdAt])
+  @@map("bot_interaction_logs")
 }
 
 // ===========================================================================

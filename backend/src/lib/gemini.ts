@@ -205,4 +205,46 @@ Reply naturally as the agent (plain text, no markdown), then decide whether this
   });
 }
 
+// --- Smart Bot: tool routing (function calling) ------------------------------
+
+export interface BotToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+/**
+ * Smart Bot's ONLY use of Gemini: given a free-text WhatsApp message and a
+ * fixed set of tool declarations, picks AT MOST one tool and extracts its
+ * arguments. Deliberately returns just {name, args} — never reply text.
+ * Gemini's job stops at routing + extraction; the caller (smart-bot.service.ts)
+ * executes the matched tool deterministically against real CRM data and sends
+ * whatever THAT produces. Returns null when nothing matches confidently —
+ * the caller falls back to a "would you like to speak with an agent?" message.
+ */
+export async function classifyBotIntent(
+  apiKey: string,
+  model: string,
+  message: string,
+  packageNames: string[],
+  toolDeclarations: FunctionDeclaration[],
+): Promise<BotToolCall | null> {
+  return fail(async () => {
+    const genModel = client(apiKey).getGenerativeModel({
+      model,
+      tools: [{ functionDeclarations: toolDeclarations }],
+    });
+    const context = packageNames.length
+      ? `\n\nThis agency's active packages (for matching a mentioned destination): ${packageNames.join(', ')}`
+      : '';
+    const result = await genModel.generateContent(
+      `A traveller sent this WhatsApp message to a travel agency: "${message}"${context}\n\n` +
+        `If it clearly matches one of the available tools, call it with the best-extracted arguments. ` +
+        `If nothing fits confidently, do not call any function.`,
+    );
+    const call = result.response.functionCalls()?.[0];
+    if (!call) return null;
+    return { name: call.name, args: (call.args ?? {}) as Record<string, unknown> };
+  });
+}
+
 export const DEFAULT_GEMINI_MODEL = env.GEMINI_MODEL;

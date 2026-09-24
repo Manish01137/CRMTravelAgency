@@ -212,13 +212,13 @@ async function decide(
 
 // --- Sending (external call — outside any transaction) ----------------------
 
-interface SendResult {
+export interface SendResult {
   ok: boolean;
   externalMessageId?: string;
   errorMessage?: string;
 }
 
-async function attemptSend(
+export async function attemptSend(
   organizationId: string,
   channel: 'WHATSAPP' | 'INSTAGRAM',
   externalContactId: string,
@@ -266,7 +266,7 @@ async function attemptSendList(
   }
 }
 
-async function recordOutbound(organizationId: string, conversationId: string, body: string, result: SendResult | null): Promise<void> {
+export async function recordOutbound(organizationId: string, conversationId: string, body: string, result: SendResult | null): Promise<void> {
   await withTenant(organizationId, async (tx) => {
     await tx.message.create({
       data: {
@@ -293,7 +293,7 @@ function formatMoney(amount: number, currency: string): string {
 }
 
 /** SEND_PACKAGE's content — same shareable-summary shape the Inbox's "Send" package button uses, built server-side. */
-async function buildPackageContent(organizationId: string, packageId: string | undefined): Promise<string | null> {
+export async function buildPackageContent(organizationId: string, packageId: string | undefined): Promise<string | null> {
   if (!packageId) return null;
   const pkg = await withTenant(organizationId, (tx) => tx.package.findUnique({ where: { id: packageId } }));
   if (!pkg || pkg.organizationId !== organizationId) return null;

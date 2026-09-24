@@ -3,6 +3,7 @@ import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { fetchInstagramSenderProfile } from '../../lib/meta';
+import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -171,13 +172,14 @@ async function recordInbound(params: {
   interactiveSelectionId?: string | null;
   externalMessageId: string | null;
   leadSource: InboundLeadSource;
-}): Promise<void> {
+}): Promise<{ conversationId: string; leadId: string | null; isNewConversation: boolean }> {
   const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource } = params;
 
-  await withTenant(organizationId, async (tx) => {
+  return withTenant(organizationId, async (tx) => {
     const existing = await tx.conversation.findUnique({
       where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
     });
+    const isNewConversation = !existing;
 
     let leadId: string | undefined;
     if (!existing) {
@@ -242,6 +244,8 @@ async function recordInbound(params: {
         unreadCount: { increment: 1 },
       },
     });
+
+    return { conversationId: conversation.id, leadId: conversation.leadId, isNewConversation };
   });
 }
 
@@ -312,13 +316,14 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         text = `[${type} message]`;
       }
       // "Click to WhatsApp" ad conversations carry a `referral` object on the
-      // first message (source_type: "ad") — Meta's own signal that this
-      // contact came from a paid ad rather than an organic WhatsApp message,
-      // so the auto-created Lead can be tagged accordingly instead of always
-      // landing as generic 'WHATSAPP'.
-      const referral = msg.referral as { source_type?: string } | undefined;
+      // first message (source_type: "ad", source_id: the ad's own id) — Meta's
+      // own signal that this contact came from a paid ad rather than an
+      // organic WhatsApp message, so the auto-created Lead can be tagged
+      // accordingly instead of always landing as generic 'WHATSAPP'. source_id
+      // also feeds Smart Bot's ad → package attribution below.
+      const referral = msg.referral as { source_type?: string; source_id?: string } | undefined;
       const leadSource: InboundLeadSource = referral?.source_type === 'ad' ? 'META_ADS' : 'WHATSAPP';
-      await recordInbound({
+      const inbound = await recordInbound({
         organizationId,
         channel: 'WHATSAPP',
         externalContactId: from,
@@ -330,6 +335,20 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         externalMessageId: (msg.id as string) ?? null,
         leadSource,
       });
+
+      // Smart Bot (POC, feature-flagged per org) — see smart-bot.service.ts's
+      // own guard against double-running alongside Bot Flow. Best-effort: a
+      // failure here must never affect the inbound message that was already
+      // recorded above.
+      try {
+        await runSmartBotForWhatsApp(
+          organizationId,
+          { conversationId: inbound.conversationId, leadId: inbound.leadId, isNewConversation: inbound.isNewConversation },
+          { phone: from, text, adId: referral?.source_id ?? null },
+        );
+      } catch (err) {
+        console.error('[smart-bot] runSmartBotForWhatsApp failed:', err instanceof Error ? err.message : err);
+      }
     }
 
     for (const st of statuses) {
