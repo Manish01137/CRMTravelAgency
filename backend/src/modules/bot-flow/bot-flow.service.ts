@@ -1,7 +1,15 @@
+import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { BadRequest, NotFound } from '../../lib/errors';
 import { BOT_FLOW_TEMPLATES, instantiateTemplate } from './bot-flow.templates';
 import type { AssignFlowInput, CreateFlowInput, CreateFromTemplateInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
+
+/** Prisma's Json? columns need the Prisma.JsonNull sentinel for an explicit JSON null — a plain `null` is a type error. */
+function jsonOrNull(v: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (v === null) return Prisma.JsonNull;
+  if (v === undefined) return undefined;
+  return v as Prisma.InputJsonValue;
+}
 
 /** Static metadata only — the actual step definitions live in bot-flow.templates.ts. */
 export function listTemplates() {
@@ -76,7 +84,7 @@ export async function createStep(organizationId: string, flowId: string, input: 
         order: input.order,
         question: input.question,
         leadField: input.leadField,
-        options: input.options,
+        options: jsonOrNull(input.options),
         nextStepId: input.nextStepId,
         config: input.config,
         canvasX: input.canvasX,
@@ -97,7 +105,7 @@ export async function updateStep(organizationId: string, flowId: string, stepId:
         order: input.order,
         question: input.question,
         leadField: input.leadField,
-        options: input.options,
+        options: jsonOrNull(input.options),
         nextStepId: input.nextStepId,
         config: input.config,
         canvasX: input.canvasX,

@@ -46,11 +46,18 @@ export const upsertStepSchema = z
     order: z.coerce.number().int().min(0).max(1000).default(0),
     question: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
     leadField: z.preprocess(emptyToUndefined, z.enum(LEAD_FIELDS).optional()),
-    options: z.array(confirmOptionSchema).max(10).optional(),
+    // .nullish() (not just .optional()) on these three: the frontend's step
+    // editor sends the WHOLE step back on every save (see updateStepMutation
+    // in BotFlowBuilderPage.tsx), and options/canvasX/canvasY all come back
+    // as an explicit `null` from Prisma for a step that's never set them
+    // (e.g. any non-CONFIRM step's `options`) — .optional() alone rejects
+    // that null outright, which is exactly what "Validation failed" on
+    // every save of a CONFIRM-free flow turned out to be.
+    options: z.array(confirmOptionSchema).max(10).nullish(),
     nextStepId: z.string().uuid().nullable().optional(),
     config: stepConfigSchema.default({}),
-    canvasX: z.coerce.number().int().optional(),
-    canvasY: z.coerce.number().int().optional(),
+    canvasX: z.coerce.number().int().nullish(),
+    canvasY: z.coerce.number().int().nullish(),
   })
   .superRefine((v, ctx) => {
     if (v.type === 'COLLECT' && !v.leadField) {

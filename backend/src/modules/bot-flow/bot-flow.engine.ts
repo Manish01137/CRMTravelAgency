@@ -305,6 +305,33 @@ export async function buildPackageContent(organizationId: string, packageId: str
 }
 
 /**
+ * SEND_PACKAGE with multiple candidate packageIds configured: picks the one
+ * whose destination matches the lead's own Lead.destination (already
+ * collected earlier in the flow, typically by a COLLECT step) instead of
+ * always sending a single hardcoded package. Falls back to the first
+ * candidate when there's only one, no lead, no destination collected yet, or
+ * none of the candidates match — SEND_PACKAGE always sends SOMETHING once
+ * configured, same as before this existed.
+ */
+async function pickPackageForLead(organizationId: string, packageIds: string[], leadId: string | null): Promise<string | undefined> {
+  if (packageIds.length <= 1) return packageIds[0];
+  if (!leadId) return packageIds[0];
+
+  const lead = await withTenant(organizationId, (tx) => tx.lead.findUnique({ where: { id: leadId }, select: { destination: true } }));
+  const wanted = lead?.destination?.trim().toLowerCase();
+  if (!wanted) return packageIds[0];
+
+  const candidates = await withTenant(organizationId, (tx) =>
+    tx.package.findMany({ where: { id: { in: packageIds }, organizationId }, select: { id: true, destination: true } }),
+  );
+  const match = candidates.find((p) => {
+    const d = p.destination?.trim().toLowerCase();
+    return !!d && (d === wanted || d.includes(wanted) || wanted.includes(d));
+  });
+  return match?.id ?? packageIds[0];
+}
+
+/**
  * CAROUSEL's content — a WhatsApp Interactive List of up to 10 packages.
  * Each row's `id` is the packageId itself, so the customer's tap comes back
  * as Message.interactiveSelectionId and `decide()` above can match it
@@ -438,8 +465,10 @@ export async function advanceBotFlow(
     }
 
     if (cursor.type === 'SEND_PACKAGE') {
-      const config = (cursor.config ?? {}) as { packageId?: string };
-      const text = await buildPackageContent(organizationId, config.packageId);
+      const config = (cursor.config ?? {}) as { packageId?: string; packageIds?: string[] };
+      const candidateIds = config.packageIds?.length ? config.packageIds : config.packageId ? [config.packageId] : [];
+      const chosenId = await pickPackageForLead(organizationId, candidateIds, state.conversation.leadId);
+      const text = await buildPackageContent(organizationId, chosenId);
       if (text) {
         const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, text);
         await recordOutbound(organizationId, conversationId, text, result);

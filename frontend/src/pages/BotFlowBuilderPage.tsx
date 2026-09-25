@@ -164,7 +164,6 @@ function StepEditor({
   const [leadField, setLeadField] = useState<BotFlowLeadField | ''>('');
   const [options, setOptions] = useState<BotFlowConfirmOption[]>([]);
   const [nextStepId, setNextStepId] = useState<string | null>(null);
-  const [packageId, setPackageId] = useState('');
   const [packageIds, setPackageIds] = useState<string[]>([]);
   const [instructions, setInstructions] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -182,8 +181,9 @@ function StepEditor({
     setLeadField(step.leadField ?? '');
     setOptions(step.options ?? [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }]);
     setNextStepId(step.nextStepId);
-    setPackageId(step.config.packageId ?? '');
-    setPackageIds(step.config.packageIds ?? []);
+    // packageIds is the source of truth going forward; an older step saved
+    // with only the single packageId still hydrates correctly here.
+    setPackageIds(step.config.packageIds ?? (step.config.packageId ? [step.config.packageId] : []));
     setInstructions(step.config.instructions ?? '');
   }, [step]);
 
@@ -194,9 +194,7 @@ function StepEditor({
   const handleSave = () => {
     if (step.type === 'CONFIRM') {
       onSave({ question, options });
-    } else if (step.type === 'SEND_PACKAGE') {
-      onSave({ question: question || undefined, nextStepId, config: { packageId: packageId || undefined } });
-    } else if (step.type === 'CAROUSEL') {
+    } else if (step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL') {
       onSave({ question: question || undefined, nextStepId, config: { packageIds } });
     } else if (step.type === 'AI_OPEN') {
       onSave({ question, nextStepId, config: { instructions } });
@@ -211,13 +209,11 @@ function StepEditor({
   const canSave =
     step.type === 'HANDOFF' // the only type with no required text
       ? true
-      : step.type === 'SEND_PACKAGE'
-        ? !!packageId
-        : step.type === 'CAROUSEL'
-          ? packageIds.length > 0
-          : step.type === 'AI_OPEN'
-            ? !!question.trim() && !!instructions.trim()
-            : !!question.trim();
+      : step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL'
+        ? packageIds.length > 0
+        : step.type === 'AI_OPEN'
+          ? !!question.trim() && !!instructions.trim()
+          : !!question.trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,30 +228,24 @@ function StepEditor({
             {step.type === 'CLOSING' && 'End the flow with a final message.'}
             {step.type === 'MESSAGE' && 'Send a message with no reply needed — the flow continues on to the next step right away.'}
             {step.type === 'HANDOFF' && 'End the bot\'s turn and flag this lead for a human — same as a "Needs Review" keyword match.'}
-            {step.type === 'SEND_PACKAGE' && 'Share one of your packages, then continue on to the next step right away.'}
+            {step.type === 'SEND_PACKAGE' &&
+              "Select every package that could apply — the bot sends whichever one matches the traveller's destination, then continues on to the next step right away."}
             {step.type === 'CAROUSEL' && 'Send up to 10 packages as a tappable WhatsApp list — the flow waits for the traveller to pick one, then continues.'}
             {step.type === 'AI_OPEN' && "Let the AI Agent converse freely here, guided by your instructions, until it decides to move the flow on."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto py-2">
-          {step.type === 'SEND_PACKAGE' ? (
-            <Field label="Package to send" htmlFor="stepPackage" required hint="Sent as the traveller's name/destination/price, plus a link.">
-              <Select value={packageId} onValueChange={setPackageId}>
-                <SelectTrigger id="stepPackage"><SelectValue placeholder={packagesQuery.isLoading ? 'Loading packages…' : 'Choose a package'} /></SelectTrigger>
-                <SelectContent>
-                  {packages.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name} — {p.destination}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          ) : step.type === 'CAROUSEL' ? (
+          {step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL' ? (
             <Field
-              label="Packages to show"
+              label={step.type === 'SEND_PACKAGE' ? 'Packages to choose from' : 'Packages to show'}
               htmlFor="stepPackages"
               required
-              hint={`Up to 10, shown in this order as a tappable list. ${packageIds.length}/10 selected.`}
+              hint={
+                step.type === 'SEND_PACKAGE'
+                  ? `The bot auto-picks whichever matches the traveller's destination, or the first one if none match. ${packageIds.length}/10 selected.`
+                  : `Up to 10, shown in this order as a tappable list. ${packageIds.length}/10 selected.`
+              }
             >
               <div id="stepPackages" className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1.5">
                 {packagesQuery.isLoading ? (
