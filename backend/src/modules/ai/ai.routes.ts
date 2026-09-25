@@ -8,12 +8,22 @@ import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { AppError, BadRequest } from '../../lib/errors';
+import { loadAgentContext } from '../ai-agent/ai-agent.service';
 
 /**
- * AI package generation (Google Gemini). Gated behind GEMINI_API_KEY — when the
- * key is absent the endpoint returns a clear 503 so the UI can show a
+ * AI package generation (Google Gemini). Prefers the organization's own key
+ * (Settings → AI Agent, same key that powers Bot Flow/Smart Bot) and falls
+ * back to the global GEMINI_API_KEY env var for orgs that never set one. When
+ * neither is available the endpoint returns a clear 503 so the UI can show a
  * "not configured yet" state instead of failing mysteriously.
  */
+
+async function resolveClient(organizationId: string): Promise<{ genAI: GoogleGenerativeAI; model: string } | null> {
+  const agent = await loadAgentContext(organizationId);
+  if (agent) return { genAI: new GoogleGenerativeAI(agent.apiKey), model: env.GEMINI_MODEL };
+  if (env.GEMINI_API_KEY) return { genAI: new GoogleGenerativeAI(env.GEMINI_API_KEY), model: env.GEMINI_MODEL };
+  return null;
+}
 
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -66,22 +76,15 @@ const aiResultSchema = z.object({
     .default([]),
 });
 
-let client: GoogleGenerativeAI | null = null;
-function getClient(): GoogleGenerativeAI | null {
-  if (client) return client;
-  if (!env.GEMINI_API_KEY) return null;
-  client = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-  return client;
-}
-
 const router = Router();
 
 /** Lets the UI show/hide the AI button without a failed request. */
 router.get(
   '/status',
   requireAuth,
-  asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ enabled: !!env.GEMINI_API_KEY, provider: 'gemini', model: env.GEMINI_MODEL });
+  asyncHandler(async (req: Request, res: Response) => {
+    const resolved = await resolveClient(req.auth!.organizationId);
+    res.json({ enabled: !!resolved, provider: 'gemini', model: env.GEMINI_MODEL });
   }),
 );
 
@@ -91,14 +94,15 @@ router.post(
   aiLimiter,
   validate({ body: generateSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const genAI = getClient();
-    if (!genAI) {
+    const resolved = await resolveClient(req.auth!.organizationId);
+    if (!resolved) {
       throw new AppError(
         503,
         'AI_NOT_CONFIGURED',
-        'AI generation is not configured yet. Add a Gemini API key to enable it.',
+        'AI generation is not configured yet. Add a Gemini API key in Settings → AI Agent to enable it.',
       );
     }
+    const { genAI, model: modelName } = resolved;
 
     const input = req.body as z.infer<typeof generateSchema>;
     const context = [
@@ -112,7 +116,7 @@ router.post(
       .join('\n');
 
     const model = genAI.getGenerativeModel({
-      model: env.GEMINI_MODEL,
+      model: modelName,
       generationConfig: { responseMimeType: 'application/json', temperature: 0.8 },
     });
 
@@ -168,14 +172,15 @@ router.post(
   aiLimiter,
   validate({ body: itineraryDaySchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const genAI = getClient();
-    if (!genAI) {
+    const resolved = await resolveClient(req.auth!.organizationId);
+    if (!resolved) {
       throw new AppError(
         503,
         'AI_NOT_CONFIGURED',
-        'AI generation is not configured yet. Add a Gemini API key to enable it.',
+        'AI generation is not configured yet. Add a Gemini API key in Settings → AI Agent to enable it.',
       );
     }
+    const { genAI, model: modelName } = resolved;
 
     const input = req.body as z.infer<typeof itineraryDaySchema>;
     const context = [
@@ -186,7 +191,7 @@ router.post(
       .filter(Boolean)
       .join('\n');
 
-    const model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL, generationConfig: { temperature: 0.8 } });
+    const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature: 0.8 } });
 
     const promptText = `You are an expert travel-package copywriter for a travel agency CRM.
 Write a short, vivid plan for ONE day of a trip itinerary.

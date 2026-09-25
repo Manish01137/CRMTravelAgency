@@ -519,7 +519,7 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
     onSuccess: (res, { i }) => setValue(`itinerary.${i}.description`, res.description, { shouldDirty: true }),
     onError: (err) => {
       if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
-        toast.error("AI isn't set up yet — add a Gemini API key on the server to enable it.");
+        toast.error("AI isn't set up yet — add a Gemini API key in Settings → AI Agent to enable it.");
       } else {
         toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
       }
@@ -1008,7 +1008,7 @@ function AiGenerateDialog({
     },
     onError: (err) => {
       if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
-        toast.error("AI isn't set up yet — add a Gemini API key on the server to enable it.");
+        toast.error("AI isn't set up yet — add a Gemini API key in Settings → AI Agent to enable it.");
       } else {
         toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
       }
@@ -1067,7 +1067,7 @@ function AiBanner({ enabled, onOpen }: { enabled: boolean; onOpen: () => void })
           </span>
           <div>
             <p className="font-display text-sm font-bold text-foreground">AI drafting · setup needed</p>
-            <p className="text-xs text-muted-foreground">Add a Gemini API key on the server to auto-write packages.</p>
+            <p className="text-xs text-muted-foreground">Add a Gemini API key in Settings → AI Agent to auto-write packages.</p>
           </div>
         </div>
         <Button type="button" variant="outline" disabled>

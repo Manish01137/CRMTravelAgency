@@ -17,8 +17,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 /**
  * AI Agent Builder — per-organization Gemini persona + API key. Powers Bot
- * Flow's natural-language field extraction and the Inbox's "Suggest Reply" /
- * "Summarize" actions (human-in-the-loop: nothing here ever auto-sends).
+ * Flow's natural-language field extraction, the Inbox's "Suggest Reply" /
+ * "Summarize" actions (human-in-the-loop: nothing here ever auto-sends), and
+ * the Package Builder's "Generate with AI" / per-day AI drafting.
  */
 export function AiAgentSettingsPage() {
   const queryClient = useQueryClient();
@@ -67,7 +68,7 @@ export function AiAgentSettingsPage() {
     <div>
       <PageHeader
         title="AI Agent"
-        description="Persona, key facts and your Gemini API key — powers Bot Flow's natural-language understanding and the Inbox's Suggest Reply / Summarize."
+        description="Persona, key facts and your Gemini API key — powers Bot Flow, the Inbox's Suggest Reply / Summarize, and the Package Builder's Generate with AI."
       />
 
       {settingsQuery.isLoading ? (
