@@ -1,8 +1,8 @@
 import { withTenant } from '../../lib/prisma';
-import { attemptSend, recordOutbound } from '../bot-flow/bot-flow.engine';
+import { attemptSend, recordOutbound, buildPackageContent } from '../bot-flow/bot-flow.engine';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import { classifyBotIntent, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
-import { TOOL_DECLARATIONS, runBotTool } from './tools';
+import { TOOL_DECLARATIONS, runBotTool, matchPackagesInText } from './tools';
 
 /**
  * Smart Bot — webhook-inline WhatsApp bot (POC), feature-flagged per
@@ -140,7 +140,16 @@ async function handleNewLead(
   await reply(organizationId, conv, leadId, msg.phone, greeting, null);
 }
 
-/** Existing lead, free-text message: Gemini routes to a tool (or doesn't), the tool's own deterministic reply gets sent. */
+/**
+ * Existing lead, free-text message. Order matters:
+ *   1. Deterministic package match against the org's own active packages —
+ *      if the message already names one, send it straight away. No Gemini
+ *      call, works even for orgs with no Gemini key configured at all.
+ *      Covers "send me the package" and "send me the itinerary" alike,
+ *      since both mean "send buildPackageContent" in this system.
+ *   2. Only when nothing matches does Gemini classify the message into one
+ *      of the other tools (payment details, handoff, etc.).
+ */
 async function handleExistingLead(
   organizationId: string,
   conv: SmartBotInboundContext,
@@ -150,16 +159,36 @@ async function handleExistingLead(
   const fallback = "Sorry, I didn't quite understand that — would you like to speak with an agent?";
 
   try {
+    const packages = await withTenant(organizationId, (tx) =>
+      tx.package.findMany({ where: { organizationId, isActive: true }, select: { id: true, name: true, destination: true }, take: 50 }),
+    );
+
+    const matched = matchPackagesInText(msg.text, packages);
+    if (matched.length === 1) {
+      const content = await buildPackageContent(organizationId, matched[0].id);
+      if (content) {
+        await reply(organizationId, conv, leadId, msg.phone, content, 'keyword_match');
+        return;
+      }
+    } else if (matched.length > 1) {
+      const list = matched.map((p) => `• ${p.name} — ${p.destination}`).join('\n');
+      await reply(
+        organizationId,
+        conv,
+        leadId,
+        msg.phone,
+        `I found a few matching packages:\n${list}\n\nWhich one would you like?`,
+        'keyword_match',
+      );
+      return;
+    }
+
     const agent = await loadAgentContext(organizationId);
     if (!agent) {
       // No Gemini key configured for this org — can't classify; hand off rather than stay silent.
       await reply(organizationId, conv, leadId, msg.phone, fallback, 'handoff_to_human');
       return;
     }
-
-    const packages = await withTenant(organizationId, (tx) =>
-      tx.package.findMany({ where: { organizationId, isActive: true }, select: { name: true }, take: 50 }),
-    );
 
     const call = await classifyBotIntent(agent.apiKey, DEFAULT_GEMINI_MODEL, msg.text, packages.map((p) => p.name), TOOL_DECLARATIONS);
 

@@ -91,6 +91,35 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 ];
 
+export interface PackageMatchCandidate {
+  id: string;
+  name: string;
+  destination: string;
+}
+
+/**
+ * Deterministic, Gemini-free package match against raw free text — checks
+ * whether the traveller's message directly names one of the org's own active
+ * packages (by package name or destination), e.g. "do you have the Goa
+ * package?" or "send me the Manali itinerary". Called BEFORE Gemini in
+ * smart-bot.service.ts: a message that already names a real package doesn't
+ * need an LLM to route it. Word-boundary matching (not plain substring) so
+ * "Goa" doesn't match "Agoda", and terms under 3 chars are skipped as too
+ * noisy to match on.
+ */
+export function matchPackagesInText(text: string, candidates: PackageMatchCandidate[]): PackageMatchCandidate[] {
+  const matches: PackageMatchCandidate[] = [];
+  for (const pkg of candidates) {
+    const terms = [pkg.name, pkg.destination].filter((t): t is string => !!t && t.trim().length >= 3);
+    const hit = terms.some((term) => {
+      const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+    });
+    if (hit) matches.push(pkg);
+  }
+  return matches;
+}
+
 async function toolSearchPackage(organizationId: string, args: Record<string, unknown>): Promise<ToolResult> {
   const destination = String(args.destination ?? '').trim();
   if (!destination) return { ok: false, reply: 'Which destination are you looking for?' };
