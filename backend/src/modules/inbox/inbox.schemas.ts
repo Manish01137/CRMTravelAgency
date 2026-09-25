@@ -40,6 +40,8 @@ export const createTemplateSchema = z.object({
   category: z.enum(['UTILITY', 'MARKETING', 'AUTHENTICATION']).default('UTILITY'),
   language: z.string().trim().min(2).max(10).default('en_US'),
   bodyText: z.string().trim().min(1, 'Template body is required').max(1024),
+  /** One example value per {{n}} variable in bodyText, in order — required by Meta whenever the body has variables. */
+  bodyExamples: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
 });
 
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;

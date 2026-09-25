@@ -370,11 +370,35 @@ export async function sendWhatsAppTemplate(
   return { externalMessageId: data.messages[0].id };
 }
 
+/**
+ * Meta rejects a BODY component outright when its text contains numbered
+ * variables ({{1}}, {{2}}, ...) but no matching example.body_text — it's not
+ * optional despite some third-party docs implying otherwise. bodyExamples
+ * supplies one example value per variable, in order (1, 2, 3, ...); we build
+ * the required `example: { body_text: [[...]] }` shape (a single array
+ * nested inside the outer array — that's Meta's own documented shape, not a
+ * typo) only when the body actually has variables.
+ */
 export async function createWhatsAppTemplate(
   wabaId: string,
   accessToken: string,
-  input: { name: string; category: string; language: string; bodyText: string },
+  input: { name: string; category: string; language: string; bodyText: string; bodyExamples?: string[] },
 ): Promise<{ externalTemplateId: string }> {
+  const variableNumbers = new Set(Array.from(input.bodyText.matchAll(/\{\{(\d+)\}\}/g), (m) => Number(m[1])));
+
+  const bodyComponent: Record<string, unknown> = { type: 'BODY', text: input.bodyText };
+  if (variableNumbers.size > 0) {
+    const examples = input.bodyExamples ?? [];
+    if (examples.length < variableNumbers.size) {
+      throw new AppError(
+        400,
+        'TEMPLATE_EXAMPLE_REQUIRED',
+        `This template has ${variableNumbers.size} variable(s) — add an example value for each before submitting.`,
+      );
+    }
+    bodyComponent.example = { body_text: [examples.slice(0, variableNumbers.size)] };
+  }
+
   const data = await graphFetch<{ id: string }>(`/${wabaId}/message_templates`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -382,7 +406,7 @@ export async function createWhatsAppTemplate(
       name: input.name,
       category: input.category,
       language: input.language,
-      components: [{ type: 'BODY', text: input.bodyText }],
+      components: [bodyComponent],
     }),
   });
   return { externalTemplateId: data.id };

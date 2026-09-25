@@ -230,7 +230,13 @@ export async function createTemplate(organizationId: string, input: CreateTempla
       throw BadRequest('Connect WhatsApp before creating templates');
     }
     const creds = decryptJson<WhatsAppCredentials>(connection.credentials);
-    const { externalTemplateId } = await createWhatsAppTemplate(connection.externalId, creds.accessToken, input);
+    const { externalTemplateId } = await createWhatsAppTemplate(connection.externalId, creds.accessToken, {
+      name: input.name,
+      category: input.category,
+      language: input.language,
+      bodyText: input.bodyText,
+      bodyExamples: input.bodyExamples,
+    });
     return tx.messageTemplate.create({
       data: {
         organizationId,

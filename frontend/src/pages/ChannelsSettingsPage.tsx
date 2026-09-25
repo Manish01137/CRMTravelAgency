@@ -2,9 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Camera, Instagram, Mail, MessageCircle, Plug, Plus, Trash2, Unplug, UserRound } from 'lucide-react';
+import { AlertTriangle, Camera, FileText, Instagram, Mail, MessageCircle, Plug, Plus, Trash2, Unplug, UserRound } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import type { ChannelsPlatformConfig, ChannelStatus, ChannelType, WhatsAppBusinessProfile } from '@/types';
+import type { ChannelsPlatformConfig, ChannelStatus, ChannelType, MessageTemplate, TemplateStatus, WhatsAppBusinessProfile } from '@/types';
 import { WHATSAPP_VERTICALS } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { launchWhatsAppEmbeddedSignup, buildInstagramAuthUrl, instagramRedirectUri } from '@/lib/metaSignup';
 
 const VERTICAL_LABELS: Record<string, string> = {
@@ -381,6 +382,209 @@ function WhatsAppBusinessProfileCard() {
   );
 }
 
+/** Every distinct {{n}} variable in a template body, sorted ascending — e.g. "Hi {{1}}, {{2}} awaits" -> [1, 2]. */
+function extractVariables(bodyText: string): number[] {
+  const nums = new Set<number>();
+  for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) nums.add(Number(m[1]));
+  return Array.from(nums).sort((a, b) => a - b);
+}
+
+function templateStatusBadge(status: TemplateStatus) {
+  if (status === 'APPROVED') return <Badge variant="success">Active</Badge>;
+  if (status === 'REJECTED') return <Badge variant="destructive">Rejected</Badge>;
+  return <Badge variant="warning">Pending review</Badge>;
+}
+
+/**
+ * Submits straight to Meta for review (POST /inbox/templates, already wired
+ * to createWhatsAppTemplate) — this is what replaces the old manual
+ * "create in WhatsApp Manager, then hand-insert a DB row" workflow. Uses
+ * {{1}}, {{2}}... numbered variables (Meta's standard "positional" format)
+ * rather than named {{variable_name}} placeholders — Meta requires an extra
+ * parameter_format field plus a differently-shaped example object for named
+ * variables, and positional is what every template-creation doc example uses.
+ */
+function CreateTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState<'UTILITY' | 'MARKETING' | 'AUTHENTICATION'>('UTILITY');
+  const [language, setLanguage] = useState('en_US');
+  const [bodyText, setBodyText] = useState('');
+  const [examples, setExamples] = useState<Record<number, string>>({});
+
+  const variables = useMemo(() => extractVariables(bodyText), [bodyText]);
+
+  const reset = () => {
+    setName('');
+    setCategory('UTILITY');
+    setLanguage('en_US');
+    setBodyText('');
+    setExamples({});
+  };
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.post<MessageTemplate>('/inbox/templates', {
+        name,
+        category,
+        language,
+        bodyText,
+        bodyExamples: variables.length > 0 ? variables.map((n) => examples[n]?.trim() ?? '') : undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      toast.success('Template submitted to Meta — it will show as Pending until reviewed');
+      reset();
+      onOpenChange(false);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create the template'),
+  });
+
+  const missingExample = variables.some((n) => !examples[n]?.trim());
+  const canSubmit = name.trim().length > 0 && bodyText.trim().length > 0 && !missingExample;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create WhatsApp template</DialogTitle>
+          <DialogDescription>
+            Submitted directly to Meta for review — approval usually takes anywhere from a few minutes to a day.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <Field label="Name" htmlFor="tplName" hint="Lowercase letters, numbers and underscores only.">
+            <Input
+              id="tplName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="booking_confirmation"
+            />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Category" htmlFor="tplCategory">
+              <select
+                id="tplCategory"
+                className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
+                value={category}
+                onChange={(e) => setCategory(e.target.value as typeof category)}
+              >
+                <option value="UTILITY">Utility</option>
+                <option value="MARKETING">Marketing</option>
+                <option value="AUTHENTICATION">Authentication</option>
+              </select>
+            </Field>
+            <Field label="Language" htmlFor="tplLanguage" hint="Meta's language code, e.g. en_US, hi.">
+              <Input id="tplLanguage" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="en_US" />
+            </Field>
+          </div>
+          <Field
+            label="Body"
+            htmlFor="tplBody"
+            hint="Use {{1}}, {{2}}, etc. for variables — e.g. Hi {{1}}, your trip to {{2}} is confirmed!"
+          >
+            <Textarea id="tplBody" rows={4} maxLength={1024} value={bodyText} onChange={(e) => setBodyText(e.target.value)} />
+          </Field>
+          {variables.length > 0 && (
+            <div className="space-y-3 rounded-lg border border-dashed border-border p-3">
+              <p className="text-xs font-medium text-foreground">
+                Example values — shown to Meta's reviewers so they understand the template, never sent to customers.
+              </p>
+              {variables.map((n) => (
+                <Field key={n} label={`{{${n}}}`} htmlFor={`tplExample${n}`}>
+                  <Input
+                    id={`tplExample${n}`}
+                    value={examples[n] ?? ''}
+                    onChange={(e) => setExamples((prev) => ({ ...prev, [n]: e.target.value }))}
+                    placeholder="e.g. Rahul"
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={!canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()}>
+            {createMutation.isPending && <Spinner className="size-4" />} Submit for review
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Message Templates — list + create, backed by the existing GET/POST
+ * /inbox/templates endpoints (same ones the Inbox composer already reads
+ * from for its "approved templates" dropdown). This is the piece that was
+ * actually missing: the service/API layer already existed, there was just no
+ * UI to reach it, which is why templates were still being added by hand.
+ */
+function TemplatesCard() {
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const templatesQuery = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => api.get<MessageTemplate[]>('/inbox/templates'),
+    refetchInterval: (query) => (query.state.data?.some((t) => t.status === 'PENDING') ? 15_000 : false),
+  });
+
+  const templates = templatesQuery.data ?? [];
+
+  return (
+    <Card className="sm:col-span-2">
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="size-5 text-primary" /> Message Templates
+            </CardTitle>
+            <CardDescription>
+              Create and submit WhatsApp templates for Meta's review, right from here — no more manual setup per client.
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" /> Create Template
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {templatesQuery.isLoading ? (
+          <Skeleton className="h-20 rounded-lg" />
+        ) : templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No templates yet — create one to message leads outside the 24-hour window.
+          </p>
+        ) : (
+          <div className="divide-y divide-border">
+            {templates.map((t) => (
+              <div key={t.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{t.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.category} · {t.language}
+                  </p>
+                </div>
+                {templateStatusBadge(t.status)}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+      <CreateTemplateDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </Card>
+  );
+}
+
 export function ChannelsSettingsPage() {
   const queryClient = useQueryClient();
   const [connectingChannel, setConnectingChannel] = useState<ChannelType | null>(null);
@@ -483,6 +687,7 @@ export function ChannelsSettingsPage() {
           />
           <EmailChannelCard status={email ?? { channel: 'EMAIL', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
           {whatsapp?.status === 'CONNECTED' && <WhatsAppBusinessProfileCard />}
+          {whatsapp?.status === 'CONNECTED' && <TemplatesCard />}
         </div>
       )}
     </div>
