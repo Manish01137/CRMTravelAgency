@@ -8,6 +8,7 @@ import {
   ChevronUp,
   FileText,
   Minus,
+  Package as PackageIcon,
   Plus,
   Sparkles,
   Trash2,
@@ -16,13 +17,14 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { Booking, SightseeingActivity } from '@/types';
+import type { Booking, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ActivityCombobox } from '@/components/ActivityCombobox';
 import { bookingRef } from '@/lib/crmMeta';
 import { toDateInputValue } from '@/lib/format';
@@ -78,6 +80,8 @@ export function ItineraryComposerPage() {
   });
   const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
+  const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
+  const packages = (packagesQuery.data ?? []).filter((p) => p.isActive);
 
   const form = useForm<ComposerValues>({ defaultValues: toValues({ itineraryItems: [] } as unknown as Booking) });
   const { register, control, handleSubmit, reset, watch, setValue, getValues } = form;
@@ -97,7 +101,32 @@ export function ItineraryComposerPage() {
       setPendingReplace({ i, activity: a });
     }
   };
-  const { fields, append, remove } = useFieldArray({ control, name: 'days' });
+  const { fields, append, remove, replace } = useFieldArray({ control, name: 'days' });
+
+  // Selecting a package pulls its saved itinerary in as a starting point —
+  // day titles/descriptions map straight across (PackageItineraryDay has no
+  // subtitle/city/country equivalent, so those stay blank for the user to
+  // fill in). Confirmed first if it would blow away days already designed
+  // here, same "don't silently lose manual work" rule as addActivity below.
+  const [pendingPackage, setPendingPackage] = useState<TravelPackage | null>(null);
+
+  const applyPackageItinerary = (pkg: TravelPackage) => {
+    const mapped = pkg.itinerary.length
+      ? pkg.itinerary
+          .slice()
+          .sort((a, b) => a.day - b.day)
+          .map((d) => ({ title: d.title ?? '', subtitle: '', city: '', country: '', description: d.description ?? '' }))
+      : [{ title: '', subtitle: '', city: '', country: '', description: '' }];
+    replace(mapped);
+    if (!getValues('destination').trim()) setValue('destination', pkg.destination, { shouldDirty: true });
+    setOpenDay(0);
+  };
+
+  const pickPackage = (pkg: TravelPackage) => {
+    const hasContent = getValues('days').some((d) => d.title.trim() || d.description.trim());
+    if (hasContent) setPendingPackage(pkg);
+    else applyPackageItinerary(pkg);
+  };
 
   const [hydrated, setHydrated] = useState(false);
   const booking = bookingQuery.data;
@@ -228,6 +257,34 @@ export function ItineraryComposerPage() {
                   <Button type="button" variant="outline" size="icon" aria-label="More days" onClick={() => setLength(fields.length + 1)}>
                     <Plus />
                   </Button>
+                </div>
+              </Field>
+              <Field
+                label="Fill from package"
+                htmlFor="fillFromPackage"
+                hint="Pulls that package's day-by-day plan in as a starting point."
+              >
+                <div className="relative">
+                  <PackageIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <select
+                    id="fillFromPackage"
+                    value=""
+                    disabled={packagesQuery.isLoading || packages.length === 0}
+                    onChange={(e) => {
+                      const pkg = packages.find((p) => p.id === e.target.value);
+                      if (pkg) pickPackage(pkg);
+                    }}
+                    className="flex h-11 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
+                  >
+                    <option value="">
+                      {packagesQuery.isLoading ? 'Loading packages…' : packages.length === 0 ? 'No active packages yet' : 'Choose a package…'}
+                    </option>
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} — {p.destination}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </Field>
             </div>
@@ -369,6 +426,19 @@ export function ItineraryComposerPage() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!pendingPackage}
+        onOpenChange={(open) => !open && setPendingPackage(null)}
+        title={`Fill from "${pendingPackage?.name}"?`}
+        description="This replaces every day below with that package's itinerary — anything you've already written here will be lost."
+        confirmLabel="Replace days"
+        destructive
+        onConfirm={() => {
+          if (pendingPackage) applyPackageItinerary(pendingPackage);
+          setPendingPackage(null);
+        }}
+      />
     </form>
   );
 }

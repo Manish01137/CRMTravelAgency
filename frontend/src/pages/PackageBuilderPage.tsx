@@ -491,6 +491,15 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
    */
   const addActivity = (i: number, a: SightseeingActivity) => {
     const cur = getValues(`itinerary.${i}.activityBlocks`) ?? [];
+    // Re-picking the same library activity for a day used to append a second,
+    // identical block — invisible in this list (no "already added" marker) but
+    // printed as a duplicate bullet in the PDF. Name match (case/whitespace
+    // insensitive) is the only thing to key off: activityBlocks are snapshot
+    // copies with no id linking back to the library entry.
+    if (cur.some((b) => b.name.trim().toLowerCase() === a.name.trim().toLowerCase())) {
+      toast.info(`"${a.name}" is already added to this day`);
+      return;
+    }
     setValue(
       `itinerary.${i}.activityBlocks`,
       [...cur, { name: a.name, description: a.notes ?? '', imageUrl: a.imageUrl ?? '' }],
