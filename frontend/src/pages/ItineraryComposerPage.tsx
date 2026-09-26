@@ -111,18 +111,24 @@ export function ItineraryComposerPage() {
   const [pendingPackage, setPendingPackage] = useState<TravelPackage | null>(null);
 
   const applyPackageItinerary = (pkg: TravelPackage) => {
-    const mapped = pkg.itinerary.length
-      ? pkg.itinerary
-          .slice()
-          .sort((a, b) => a.day - b.day)
-          .map((d) => ({ title: d.title ?? '', subtitle: '', city: '', country: '', description: d.description ?? '' }))
-      : [{ title: '', subtitle: '', city: '', country: '', description: '' }];
+    const mapped = pkg.itinerary
+      .slice()
+      .sort((a, b) => a.day - b.day)
+      .map((d) => ({ title: d.title ?? '', subtitle: '', city: '', country: '', description: d.description ?? '' }));
     replace(mapped);
     if (!getValues('destination').trim()) setValue('destination', pkg.destination, { shouldDirty: true });
     setOpenDay(0);
+    toast.success(`Filled ${mapped.length} day${mapped.length === 1 ? '' : 's'} from "${pkg.name}"`);
   };
 
   const pickPackage = (pkg: TravelPackage) => {
+    // A package with nothing saved in its own Itinerary step would otherwise
+    // silently replace the days here with a single blank row — visually
+    // indistinguishable from the picker doing nothing at all.
+    if (pkg.itinerary.length === 0) {
+      toast.error(`"${pkg.name}" doesn't have a day-by-day itinerary saved yet — add one in the Package Builder first.`);
+      return;
+    }
     const hasContent = getValues('days').some((d) => d.title.trim() || d.description.trim());
     if (hasContent) setPendingPackage(pkg);
     else applyPackageItinerary(pkg);
