@@ -81,7 +81,10 @@ export function ItineraryComposerPage() {
   const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
   const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
-  const packages = (packagesQuery.data ?? []).filter((p) => p.isActive);
+  // Unlike the customer-facing brochure/LinkTree, this picker is an internal
+  // "pull in itinerary content" tool — a draft/inactive package's day-by-day
+  // plan is just as valid to reuse here, so nothing gets filtered out.
+  const packages = packagesQuery.data ?? [];
 
   const form = useForm<ComposerValues>({ defaultValues: toValues({ itineraryItems: [] } as unknown as Booking) });
   const { register, control, handleSubmit, reset, watch, setValue, getValues } = form;
@@ -283,7 +286,7 @@ export function ItineraryComposerPage() {
                     className="flex h-11 w-full rounded-md border border-input bg-card pl-9 pr-3 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
                   >
                     <option value="">
-                      {packagesQuery.isLoading ? 'Loading packages…' : packages.length === 0 ? 'No active packages yet' : 'Choose a package…'}
+                      {packagesQuery.isLoading ? 'Loading packages…' : packages.length === 0 ? 'No packages yet' : 'Choose a package…'}
                     </option>
                     {packages.map((p) => (
                       <option key={p.id} value={p.id}>
