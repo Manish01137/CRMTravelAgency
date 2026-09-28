@@ -97,7 +97,11 @@ function BrandRow({ orgName, logoUrl }: { orgName: string; logoUrl: string | nul
     <div className="pbx-brand-row">
       <span className="pbx-brand-mark">
         {logoUrl ? (
-          <img src={logoUrl} alt={orgName} />
+          // A background-image div, not <img>: html2canvas (PDF export)
+          // ignores object-fit and can drop a cached non-CORS <img> entirely,
+          // which is why the logo was missing/distorted in downloaded PDFs.
+          // Photo below uses the same approach and exports fine.
+          <span role="img" aria-label={orgName} className="pbx-brand-logo" style={{ backgroundImage: `url('${logoUrl}')` }} />
         ) : (
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="1.8">
             <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" />
@@ -297,7 +301,7 @@ export function PackageBrochurePage() {
 
         .pbx-brand-row { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:6px; }
         .pbx-brand-mark { width:66px; height:66px; border-radius:50%; background:var(--blue-pale); border:2px solid var(--blue); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0; }
-        .pbx-brand-mark img { width:100%; height:100%; object-fit:cover; }
+        .pbx-brand-logo { display:block; width:100%; height:100%; background-size:contain; background-position:center; background-repeat:no-repeat; background-color:#fff; }
         .pbx-brand-mark svg { width:34px; height:34px; }
         .pbx-brand-name { font-family:${DISPLAY_FONT}; font-weight:700; font-size:13px; color:var(--blue-dark); text-align:center; line-height:1.3; }
 
