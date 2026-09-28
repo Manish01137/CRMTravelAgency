@@ -190,6 +190,8 @@ export interface Lead {
   assignedTo: AssignedAgent | null;
   packageId: string | null;
   package: { id: string; name: string; destination: string } | null;
+  /** The package whose Click-to-WhatsApp ad this lead came from (Ad → Package link). */
+  sourcePackage: { id: string; name: string } | null;
   // Phase 4 (Bot Flow) — set when an inbound message matched a "Needs Review"
   // keyword; the bot stopped and handed off to a human.
   needsReview: boolean;
@@ -909,4 +911,13 @@ export interface FollowUpAttempt {
   reason: string | null;
   createdAt: string;
   lead: { id: string; name: string } | null;
+}
+
+/** Ad → Package link: a message from this Click-to-WhatsApp ad gets this package sent automatically. */
+export interface AdPackageMapping {
+  id: string;
+  adId: string;
+  packageId: string;
+  package: { id: string; name: string; destination: string; isActive: boolean };
+  createdAt: string;
 }

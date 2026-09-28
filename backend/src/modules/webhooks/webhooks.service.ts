@@ -4,6 +4,7 @@ import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
+import { attemptSend, buildPackageContent, recordOutbound } from '../bot-flow/bot-flow.engine';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -172,14 +173,35 @@ async function recordInbound(params: {
   interactiveSelectionId?: string | null;
   externalMessageId: string | null;
   leadSource: InboundLeadSource;
-}): Promise<{ conversationId: string; leadId: string | null; isNewConversation: boolean }> {
-  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource } = params;
+  /** Meta's referral.source_id when this message came from a Click-to-WhatsApp ad. */
+  adId?: string | null;
+}): Promise<{
+  conversationId: string;
+  leadId: string | null;
+  isNewConversation: boolean;
+  /** The package linked to this message's ad (Ad → Package), if any. */
+  adPackageId: string | null;
+  /** True when a brand-new lead was created from this ad message and tagged with adPackageId. */
+  adTaggedNewLead: boolean;
+}> {
+  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource, adId } = params;
 
   return withTenant(organizationId, async (tx) => {
     const existing = await tx.conversation.findUnique({
       where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
     });
     const isNewConversation = !existing;
+
+    // Resolved in this same transaction so the lead is already tagged by the
+    // time the message becomes visible to the Bot Flow poller — the engine
+    // relies on that tag to send the ad's package first (bot-flow.engine.ts).
+    const adPackage = adId
+      ? (await tx.adPackageMapping.findUnique({
+          where: { organizationId_adId: { organizationId, adId } },
+          include: { package: { select: { id: true, destination: true } } },
+        }))?.package ?? null
+      : null;
+    let adTaggedNewLead = false;
 
     let leadId: string | undefined;
     if (!existing) {
@@ -197,8 +219,11 @@ async function recordInbound(params: {
             source: leadSource,
             isRepeatCustomer: !!repeatBooking,
             repeatBookingId: repeatBooking?.id,
+            ...(adId && { sourceAdId: adId }),
+            ...(adPackage && { sourcePackageId: adPackage.id, destination: adPackage.destination }),
           },
         });
+        adTaggedNewLead = !!adPackage;
       }
       leadId = lead.id;
     }
@@ -245,7 +270,13 @@ async function recordInbound(params: {
       },
     });
 
-    return { conversationId: conversation.id, leadId: conversation.leadId, isNewConversation };
+    return {
+      conversationId: conversation.id,
+      leadId: conversation.leadId,
+      isNewConversation,
+      adPackageId: adPackage?.id ?? null,
+      adTaggedNewLead,
+    };
   });
 }
 
@@ -261,6 +292,48 @@ async function updateTemplateStatus(organizationId: string, externalTemplateId: 
   await withTenant(organizationId, async (tx) => {
     await tx.messageTemplate.updateMany({ where: { organizationId, externalTemplateId }, data: { status } });
   });
+}
+
+/**
+ * Sends the package linked to the ad this message came from — unless the
+ * org's Bot Flow is about to open a brand-new conversation for this lead,
+ * in which case the engine sends it itself as the very first reply
+ * (bot-flow.engine.ts, session start). Sending it here in that case would
+ * race the 10s poller and could land after the flow's first question.
+ * Returns true when it sent.
+ */
+async function sendAdPackageIfNotFlowHandled(
+  organizationId: string,
+  inbound: { conversationId: string; adPackageId: string | null; adTaggedNewLead: boolean },
+  phone: string,
+): Promise<boolean> {
+  if (!inbound.adPackageId) return false;
+  if (inbound.adTaggedNewLead) {
+    const flowAssigned = await withTenant(organizationId, (tx) =>
+      tx.botFlowAssignment.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } } }),
+    );
+    if (flowAssigned) return false;
+  }
+  const content = await buildPackageContent(organizationId, inbound.adPackageId);
+  if (!content) return false;
+  const result = await attemptSend(organizationId, 'WHATSAPP', phone, content);
+  await recordOutbound(organizationId, inbound.conversationId, content, result);
+  // The package answered this message. If a flow is mid-conversation here,
+  // mark the message handled so the poller doesn't also take "I saw your
+  // Manali ad" as the answer to whatever question the flow last asked.
+  await withTenant(organizationId, async (tx) => {
+    const latestInbound = await tx.message.findFirst({
+      where: { conversationId: inbound.conversationId, direction: 'INBOUND' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (!latestInbound) return;
+    await tx.botFlowSession.updateMany({
+      where: { conversationId: inbound.conversationId },
+      data: { lastProcessedMessageAt: latestInbound.createdAt },
+    });
+  });
+  return !!result?.ok;
 }
 
 async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<void> {
@@ -323,6 +396,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // also feeds Smart Bot's ad → package attribution below.
       const referral = msg.referral as { source_type?: string; source_id?: string } | undefined;
       const leadSource: InboundLeadSource = referral?.source_type === 'ad' ? 'META_ADS' : 'WHATSAPP';
+      const adId = referral?.source_type === 'ad' && referral.source_id ? String(referral.source_id) : null;
       const inbound = await recordInbound({
         organizationId,
         channel: 'WHATSAPP',
@@ -334,7 +408,20 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         interactiveSelectionId,
         externalMessageId: (msg.id as string) ?? null,
         leadSource,
+        adId,
       });
+
+      // Ad → Package: best-effort, and must never affect the inbound message
+      // that was already recorded above.
+      let adPackageSent = false;
+      if (inbound.adPackageId) {
+        try {
+          adPackageSent = await sendAdPackageIfNotFlowHandled(organizationId, inbound, from);
+        } catch (err) {
+          console.error('[ad-package] send failed:', err instanceof Error ? err.message : err);
+        }
+      }
+      if (adPackageSent) continue; // the package IS the reply — don't also run Smart Bot on this message
 
       // Smart Bot (POC, feature-flagged per org) — see smart-bot.service.ts's
       // own guard against double-running alongside Bot Flow. Best-effort: a
@@ -344,7 +431,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         await runSmartBotForWhatsApp(
           organizationId,
           { conversationId: inbound.conversationId, leadId: inbound.leadId, isNewConversation: inbound.isNewConversation },
-          { phone: from, text, adId: referral?.source_id ?? null },
+          { phone: from, text },
         );
       } catch (err) {
         console.error('[smart-bot] runSmartBotForWhatsApp failed:', err instanceof Error ? err.message : err);

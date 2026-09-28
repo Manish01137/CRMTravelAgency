@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, FileText, Instagram, MessageCircle, Plus, Sparkles, Trash2, Workflow } from 'lucide-react';
+import { ArrowLeft, FileText, Instagram, Megaphone, MessageCircle, Plus, Sparkles, Trash2, Workflow } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus } from '@/types';
+import type { AdPackageMapping, BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus, TravelPackage } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -245,6 +245,152 @@ function AssignmentsCard() {
   );
 }
 
+/**
+ * Ad → Package links. A traveller who messages from a linked Click-to-WhatsApp
+ * ad is sent that package automatically as the first reply; if a flow is live
+ * on WhatsApp it then carries on, skipping its destination question.
+ */
+function AdPackagesCard() {
+  const queryClient = useQueryClient();
+  const [adId, setAdId] = useState('');
+  const [packageId, setPackageId] = useState('');
+  const [removing, setRemoving] = useState<AdPackageMapping | null>(null);
+
+  const mappingsQuery = useQuery({ queryKey: ['ad-package-mappings'], queryFn: () => api.get<AdPackageMapping[]>('/ad-package-mappings') });
+  const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
+  const mappings = mappingsQuery.data ?? [];
+  const packages = packagesQuery.data ?? [];
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['ad-package-mappings'] });
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post<AdPackageMapping>('/ad-package-mappings', { adId: adId.trim(), packageId }),
+    onSuccess: () => {
+      invalidate();
+      setAdId('');
+      setPackageId('');
+      toast.success('Ad linked — its package will now be sent automatically');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not link the ad'),
+  });
+  const updateMutation = useMutation({
+    mutationFn: (v: { id: string; packageId: string }) => api.patch(`/ad-package-mappings/${v.id}`, { packageId: v.packageId }),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Package updated');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update the link'),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/ad-package-mappings/${id}`),
+    onSuccess: () => {
+      invalidate();
+      setRemoving(null);
+      toast.success('Ad unlinked');
+    },
+    onError: () => toast.error('Could not remove the link'),
+  });
+
+  const adIdValid = /^\d{6,30}$/.test(adId.trim());
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Megaphone className="size-5 text-primary" /> Ads → Packages
+        </CardTitle>
+        <CardDescription>
+          Running a Click-to-WhatsApp ad for a package? Link it here — anyone who messages from that ad is sent the package
+          straight away, no questions first. If a flow is live on WhatsApp it carries on after, without asking where they want to go.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <Field label="Ad ID" htmlFor="adId">
+            <Input id="adId" inputMode="numeric" value={adId} onChange={(e) => setAdId(e.target.value)} placeholder="120213456789012345" />
+          </Field>
+          <Field label="Package to send" htmlFor="adPackage">
+            <Select value={packageId} onValueChange={setPackageId}>
+              <SelectTrigger id="adPackage">
+                <SelectValue placeholder={packagesQuery.isLoading ? 'Loading packages…' : 'Choose a package'} />
+              </SelectTrigger>
+              <SelectContent>
+                {packages.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} — {p.destination}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Button onClick={() => createMutation.mutate()} disabled={!adIdValid || !packageId || createMutation.isPending}>
+            {createMutation.isPending ? <Spinner className="size-4" /> : <Plus />} Link ad
+          </Button>
+        </div>
+        {adId.trim() && !adIdValid ? (
+          <p className="-mt-2 text-xs text-destructive">The Ad ID is the long number from Meta Ads Manager — digits only.</p>
+        ) : (
+          <p className="-mt-2 text-xs text-muted-foreground">Find it in Meta Ads Manager → your ad → the numeric Ad ID.</p>
+        )}
+
+        {mappingsQuery.isLoading ? (
+          <Skeleton className="h-16 rounded-lg" />
+        ) : mappings.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+            No ads linked yet. Messages from ads will go through your normal flow until you link one.
+          </p>
+        ) : (
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {mappings.map((m) => (
+              <div key={m.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="font-mono text-sm text-foreground">Ad {m.adId}</p>
+                  {!m.package.isActive && (
+                    <p className="text-xs text-amber-700">This package is inactive — it will still be sent from this ad.</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={m.packageId} onValueChange={(v) => updateMutation.mutate({ id: m.id, packageId: v })}>
+                    <SelectTrigger className="w-full sm:w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Keep the current package selectable even if the list hasn't loaded yet. */}
+                      {!packages.some((p) => p.id === m.packageId) && (
+                        <SelectItem value={m.packageId}>
+                          {m.package.name} — {m.package.destination}
+                        </SelectItem>
+                      )}
+                      {packages.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} — {p.destination}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="icon-sm" aria-label={`Unlink ad ${m.adId}`} onClick={() => setRemoving(m)}>
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(v) => !v && setRemoving(null)}
+        title={`Unlink ad ${removing?.adId ?? ''}?`}
+        description="Messages from this ad will go through your normal flow instead of getting the package automatically."
+        confirmLabel="Unlink"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => removing && deleteMutation.mutate(removing.id)}
+      />
+    </Card>
+  );
+}
+
 export function BotFlowsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -273,6 +419,7 @@ export function BotFlowsPage() {
       </PageHeader>
 
       <AssignmentsCard />
+      <AdPackagesCard />
 
       {flowsQuery.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

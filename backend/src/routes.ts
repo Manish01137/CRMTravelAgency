@@ -25,6 +25,7 @@ import communicationsRoutes from './modules/communications/communications.routes
 import callLogRoutes from './modules/call-log/call-log.routes';
 // Phase 4 — Automation & AI
 import botFlowRoutes from './modules/bot-flow/bot-flow.routes';
+import adPackageMappingsRoutes from './modules/ad-package-mappings/ad-package-mappings.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
 import automationRoutes from './modules/automation/automation.routes';
 // Super Admin panel — platform owner only, entirely separate auth surface.
@@ -58,6 +59,7 @@ router.use('/communications', communicationsRoutes);
 router.use('/call-log', callLogRoutes);
 // Phase 4 — Automation & AI
 router.use('/bot-flows', botFlowRoutes);
+router.use('/ad-package-mappings', adPackageMappingsRoutes);
 router.use('/ai-agent', aiAgentRoutes);
 router.use('/automation', automationRoutes);
 // Super Admin panel

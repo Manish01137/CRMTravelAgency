@@ -28,8 +28,6 @@ export interface SmartBotInboundContext {
 export interface SmartBotInboundMessage {
   phone: string;
   text: string;
-  /** Meta's referral.source_id from a Click-to-WhatsApp ad, present only on a new contact's first message. */
-  adId: string | null;
 }
 
 export async function runSmartBotForWhatsApp(
@@ -90,10 +88,10 @@ async function reply(
 }
 
 /**
- * Brand-new lead's first message: send exactly one greeting — referencing
- * the ad-mapped package if the referral's source_id matched an
- * AdPackageMapping, generic otherwise — then stop. No intent classification
- * runs on this first message.
+ * Brand-new lead's first message: send exactly one greeting, then stop. No
+ * intent classification runs on this first message. (A message from a
+ * linked ad never gets here — webhooks.service.ts sends that ad's package as
+ * the reply instead, and lead attribution happens in recordInbound.)
  *
  * The updateMany below is an ATOMIC claim, not a read-then-write: two
  * concurrent webhook deliveries for the same brand-new number (Meta can and
@@ -114,30 +112,7 @@ async function handleNewLead(
   );
   if (claimed.count === 0) return; // another concurrent delivery already claimed this greeting
 
-  let sourcePackage: { id: string; name: string } | null = null;
-  if (msg.adId) {
-    const mapping = await withTenant(organizationId, (tx) =>
-      tx.adPackageMapping.findUnique({
-        where: { organizationId_adId: { organizationId, adId: msg.adId! } },
-        include: { package: { select: { id: true, name: true } } },
-      }),
-    );
-    sourcePackage = mapping?.package ?? null;
-  }
-
-  if (sourcePackage) {
-    await withTenant(organizationId, (tx) =>
-      tx.lead.update({ where: { id: leadId }, data: { sourceAdId: msg.adId, sourcePackageId: sourcePackage!.id } }),
-    );
-  } else if (msg.adId) {
-    // Ad click with no configured mapping yet — still record which ad it was, just no package attribution.
-    await withTenant(organizationId, (tx) => tx.lead.update({ where: { id: leadId }, data: { sourceAdId: msg.adId } }));
-  }
-
-  const greeting = sourcePackage
-    ? `Hi! 👋 Thanks for reaching out about our *${sourcePackage.name}* package. How can I help you plan this trip?`
-    : `Hi! 👋 Thanks for reaching out — how can I help you plan your next trip?`;
-
+  const greeting = `Hi! 👋 Thanks for reaching out — how can I help you plan your next trip?`;
   await reply(organizationId, conv, leadId, msg.phone, greeting, null);
 }
 

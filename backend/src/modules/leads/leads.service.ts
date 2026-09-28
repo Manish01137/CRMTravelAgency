@@ -10,6 +10,7 @@ const assignedToSelect = {
   assignedTo: { select: { id: true, name: true, email: true } },
   repeatBooking: { select: { id: true, bookingNumber: true, destination: true, totalAmount: true, currency: true } },
   package: { select: { id: true, name: true, destination: true } },
+  sourcePackage: { select: { id: true, name: true } },
 } satisfies Prisma.LeadInclude;
 
 /** Ensures an assignee, if given, is a real member of THIS organization (RLS-scoped). */

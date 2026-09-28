@@ -16,6 +16,7 @@ import {
   Clock3,
   Contact2,
   History,
+  Megaphone,
   Mail,
   MapPin,
   MessageCircle,
@@ -249,6 +250,19 @@ function RepeatCustomerBadge({ lead }: { lead: Lead }) {
   );
 }
 
+/** Came from a Click-to-WhatsApp ad linked to a package — that package was sent automatically. */
+function AdPackageBadge({ lead }: { lead: Lead }) {
+  if (!lead.sourcePackage) return null;
+  return (
+    <span
+      title={`Came from the ad for "${lead.sourcePackage.name}" — that package was sent automatically`}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 ring-1 ring-inset ring-sky-100"
+    >
+      <Megaphone className="size-3" /> Ad: {lead.sourcePackage.name}
+    </span>
+  );
+}
+
 /** Bot Flow stopped auto-responding after a "Needs Review" keyword match — flags for a human. */
 function NeedsReviewBadge({ lead }: { lead: Lead }) {
   if (!lead.needsReview) return null;
@@ -419,6 +433,7 @@ function LeadIdentityCell({ lead, onEdit }: { lead: Lead; onEdit: () => void }) 
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <SourceBadge source={lead.source} />
+        <AdPackageBadge lead={lead} />
         <NeedsReviewBadge lead={lead} />
         <RepeatCustomerBadge lead={lead} />
         <span className="text-[11px] text-muted-foreground">ID: {shortId(lead.id)}</span>
