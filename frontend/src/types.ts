@@ -913,11 +913,9 @@ export interface FollowUpAttempt {
   lead: { id: string; name: string } | null;
 }
 
-/** Ad → Package link: a message from this Click-to-WhatsApp ad gets this package sent automatically. */
-export interface AdPackageMapping {
-  id: string;
+/** Ads → Packages: a message from this Click-to-WhatsApp ad gets these packages sent automatically. */
+export interface AdPackageLink {
   adId: string;
-  packageId: string;
-  package: { id: string; name: string; destination: string; isActive: boolean };
   createdAt: string;
+  packages: { id: string; name: string; destination: string; isActive: boolean }[];
 }

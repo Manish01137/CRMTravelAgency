@@ -5,6 +5,7 @@ import { uploadBufferToStorage } from '../../lib/storage';
 import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { attemptSend, buildPackageContent, recordOutbound } from '../bot-flow/bot-flow.engine';
+import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -179,9 +180,9 @@ async function recordInbound(params: {
   conversationId: string;
   leadId: string | null;
   isNewConversation: boolean;
-  /** The package linked to this message's ad (Ad → Package), if any. */
-  adPackageId: string | null;
-  /** True when a brand-new lead was created from this ad message and tagged with adPackageId. */
+  /** The packages linked to this message's ad (Ads → Packages), in send order. */
+  adPackageIds: string[];
+  /** True when a brand-new lead was created from this ad message and tagged with it. */
   adTaggedNewLead: boolean;
 }> {
   const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource, adId } = params;
@@ -195,12 +196,7 @@ async function recordInbound(params: {
     // Resolved in this same transaction so the lead is already tagged by the
     // time the message becomes visible to the Bot Flow poller — the engine
     // relies on that tag to send the ad's package first (bot-flow.engine.ts).
-    const adPackage = adId
-      ? (await tx.adPackageMapping.findUnique({
-          where: { organizationId_adId: { organizationId, adId } },
-          include: { package: { select: { id: true, destination: true } } },
-        }))?.package ?? null
-      : null;
+    const adPackages = adId ? await findAdPackages(tx, organizationId, adId) : [];
     let adTaggedNewLead = false;
 
     let leadId: string | undefined;
@@ -220,10 +216,15 @@ async function recordInbound(params: {
             isRepeatCustomer: !!repeatBooking,
             repeatBookingId: repeatBooking?.id,
             ...(adId && { sourceAdId: adId }),
-            ...(adPackage && { sourcePackageId: adPackage.id, destination: adPackage.destination }),
+            // sourcePackageId drives the "Ad: <package>" badge — the first
+            // package; destination only when every linked package shares one.
+            ...(adPackages.length > 0 && {
+              sourcePackageId: adPackages[0].id,
+              destination: sharedDestination(adPackages) ?? undefined,
+            }),
           },
         });
-        adTaggedNewLead = !!adPackage;
+        adTaggedNewLead = adPackages.length > 0;
       }
       leadId = lead.id;
     }
@@ -274,7 +275,7 @@ async function recordInbound(params: {
       conversationId: conversation.id,
       leadId: conversation.leadId,
       isNewConversation,
-      adPackageId: adPackage?.id ?? null,
+      adPackageIds: adPackages.map((p) => p.id),
       adTaggedNewLead,
     };
   });
@@ -295,29 +296,34 @@ async function updateTemplateStatus(organizationId: string, externalTemplateId: 
 }
 
 /**
- * Sends the package linked to the ad this message came from — unless the
- * org's Bot Flow is about to open a brand-new conversation for this lead,
- * in which case the engine sends it itself as the very first reply
- * (bot-flow.engine.ts, session start). Sending it here in that case would
- * race the 10s poller and could land after the flow's first question.
- * Returns true when it sent.
+ * Sends the packages linked to the ad this message came from, one message
+ * each — unless the org's Bot Flow is about to open a brand-new
+ * conversation for this lead, in which case the engine sends them itself as
+ * the very first replies (bot-flow.engine.ts, session start). Sending them
+ * here in that case would race the 10s poller and could land after the
+ * flow's first question. Returns true when at least one was sent.
  */
-async function sendAdPackageIfNotFlowHandled(
+async function sendAdPackagesIfNotFlowHandled(
   organizationId: string,
-  inbound: { conversationId: string; adPackageId: string | null; adTaggedNewLead: boolean },
+  inbound: { conversationId: string; adPackageIds: string[]; adTaggedNewLead: boolean },
   phone: string,
 ): Promise<boolean> {
-  if (!inbound.adPackageId) return false;
+  if (inbound.adPackageIds.length === 0) return false;
   if (inbound.adTaggedNewLead) {
     const flowAssigned = await withTenant(organizationId, (tx) =>
       tx.botFlowAssignment.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } } }),
     );
     if (flowAssigned) return false;
   }
-  const content = await buildPackageContent(organizationId, inbound.adPackageId);
-  if (!content) return false;
-  const result = await attemptSend(organizationId, 'WHATSAPP', phone, content);
-  await recordOutbound(organizationId, inbound.conversationId, content, result);
+  let anySent = false;
+  for (const packageId of inbound.adPackageIds) {
+    const content = await buildPackageContent(organizationId, packageId);
+    if (!content) continue;
+    const result = await attemptSend(organizationId, 'WHATSAPP', phone, content);
+    await recordOutbound(organizationId, inbound.conversationId, content, result);
+    anySent ||= !!result?.ok;
+  }
+  if (!anySent) return false;
   // The package answered this message. If a flow is mid-conversation here,
   // mark the message handled so the poller doesn't also take "I saw your
   // Manali ad" as the answer to whatever question the flow last asked.
@@ -333,7 +339,7 @@ async function sendAdPackageIfNotFlowHandled(
       data: { lastProcessedMessageAt: latestInbound.createdAt },
     });
   });
-  return !!result?.ok;
+  return true;
 }
 
 async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<void> {
@@ -414,9 +420,9 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // Ad → Package: best-effort, and must never affect the inbound message
       // that was already recorded above.
       let adPackageSent = false;
-      if (inbound.adPackageId) {
+      if (inbound.adPackageIds.length > 0) {
         try {
-          adPackageSent = await sendAdPackageIfNotFlowHandled(organizationId, inbound, from);
+          adPackageSent = await sendAdPackagesIfNotFlowHandled(organizationId, inbound, from);
         } catch (err) {
           console.error('[ad-package] send failed:', err instanceof Error ? err.message : err);
         }

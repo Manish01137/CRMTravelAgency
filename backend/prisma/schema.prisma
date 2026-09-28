@@ -1203,8 +1203,11 @@ model AdPackageMapping {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, adId])
+  // One row per (ad, package): an ad can send several packages (up to 5,
+  // enforced by the API).
+  @@unique([organizationId, adId, packageId])
   @@index([organizationId])
+  @@index([organizationId, adId])
   @@map("ad_package_mappings")
 }
 

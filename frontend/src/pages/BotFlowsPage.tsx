@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { ArrowLeft, FileText, Instagram, Megaphone, MessageCircle, Plus, Sparkles, Trash2, Workflow } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { AdPackageMapping, BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus, TravelPackage } from '@/types';
+import type { AdPackageLink, BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus, TravelPackage } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -245,40 +245,147 @@ function AssignmentsCard() {
   );
 }
 
+const MAX_PACKAGES_PER_AD = 5;
+
+/** Checkbox list of the org's packages — pick up to MAX_PACKAGES_PER_AD, in the order shown. */
+function PackageChecklist({
+  id,
+  packages,
+  loading,
+  selected,
+  onChange,
+}: {
+  id: string;
+  packages: TravelPackage[];
+  loading: boolean;
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const full = selected.length >= MAX_PACKAGES_PER_AD;
+  return (
+    <div id={id} className="max-h-52 w-full min-w-0 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1.5">
+      {loading ? (
+        <p className="p-2 text-sm text-muted-foreground">Loading packages…</p>
+      ) : packages.length === 0 ? (
+        <p className="p-2 text-sm text-muted-foreground">No packages yet — create one in Packages first.</p>
+      ) : (
+        packages.map((p) => {
+          const checked = selected.includes(p.id);
+          return (
+            <label
+              key={p.id}
+              className={cn(
+                'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                !checked && full ? 'opacity-50' : 'cursor-pointer hover:bg-muted/60',
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={!checked && full}
+                onChange={(e) => onChange(e.target.checked ? [...selected, p.id] : selected.filter((x) => x !== p.id))}
+              />
+              <span className="min-w-0 flex-1 truncate">
+                {p.name} <span className="text-muted-foreground">— {p.destination}</span>
+              </span>
+              {!p.isActive && <Badge variant="muted">Inactive</Badge>}
+            </label>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/** Edit which packages one already-linked ad sends. */
+function EditAdPackagesDialog({
+  ad,
+  packages,
+  loading,
+  onOpenChange,
+}: {
+  ad: AdPackageLink | null;
+  packages: TravelPackage[];
+  loading: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [lastAdId, setLastAdId] = useState<string | null>(null);
+  if (ad && ad.adId !== lastAdId) {
+    setLastAdId(ad.adId);
+    setSelected(ad.packages.map((p) => p.id));
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.put<AdPackageLink>(`/ad-package-mappings/${ad!.adId}`, { packageIds: selected }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ad-package-mappings'] });
+      toast.success('Ad updated');
+      onOpenChange(false);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update the ad'),
+  });
+
+  return (
+    <Dialog
+      open={!!ad}
+      onOpenChange={(open) => {
+        if (!open) setLastAdId(null);
+        onOpenChange(open);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Packages for ad {ad?.adId}</DialogTitle>
+          <DialogDescription>
+            Each ticked package is sent as its own message to anyone who messages from this ad.
+          </DialogDescription>
+        </DialogHeader>
+        <Field className="min-w-0" label="Packages to send" htmlFor="editAdPackages" hint={`${selected.length}/${MAX_PACKAGES_PER_AD} selected`}>
+          <PackageChecklist id="editAdPackages" packages={packages} loading={loading} selected={selected} onChange={setSelected} />
+        </Field>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button onClick={() => saveMutation.mutate()} disabled={selected.length === 0 || saveMutation.isPending}>
+            {saveMutation.isPending && <Spinner className="size-4" />} Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
- * Ad → Package links. A traveller who messages from a linked Click-to-WhatsApp
- * ad is sent that package automatically as the first reply; if a flow is live
- * on WhatsApp it then carries on, skipping its destination question.
+ * Ads → Packages. A traveller who messages from a linked Click-to-WhatsApp ad
+ * is sent that ad's packages automatically as the first replies; if a flow is
+ * live on WhatsApp it then carries on, skipping its destination question when
+ * the packages share one.
  */
 function AdPackagesCard() {
   const queryClient = useQueryClient();
   const [adId, setAdId] = useState('');
-  const [packageId, setPackageId] = useState('');
-  const [removing, setRemoving] = useState<AdPackageMapping | null>(null);
+  const [packageIds, setPackageIds] = useState<string[]>([]);
+  const [editing, setEditing] = useState<AdPackageLink | null>(null);
+  const [removing, setRemoving] = useState<AdPackageLink | null>(null);
 
-  const mappingsQuery = useQuery({ queryKey: ['ad-package-mappings'], queryFn: () => api.get<AdPackageMapping[]>('/ad-package-mappings') });
+  const adsQuery = useQuery({ queryKey: ['ad-package-mappings'], queryFn: () => api.get<AdPackageLink[]>('/ad-package-mappings') });
   const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
-  const mappings = mappingsQuery.data ?? [];
+  const ads = adsQuery.data ?? [];
   const packages = packagesQuery.data ?? [];
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['ad-package-mappings'] });
 
   const createMutation = useMutation({
-    mutationFn: () => api.post<AdPackageMapping>('/ad-package-mappings', { adId: adId.trim(), packageId }),
+    mutationFn: () => api.post<AdPackageLink>('/ad-package-mappings', { adId: adId.trim(), packageIds }),
     onSuccess: () => {
       invalidate();
       setAdId('');
-      setPackageId('');
-      toast.success('Ad linked — its package will now be sent automatically');
+      setPackageIds([]);
+      toast.success(packageIds.length > 1 ? 'Ad linked — its packages will now be sent automatically' : 'Ad linked — its package will now be sent automatically');
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not link the ad'),
-  });
-  const updateMutation = useMutation({
-    mutationFn: (v: { id: string; packageId: string }) => api.patch(`/ad-package-mappings/${v.id}`, { packageId: v.packageId }),
-    onSuccess: () => {
-      invalidate();
-      toast.success('Package updated');
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update the link'),
   });
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/ad-package-mappings/${id}`),
@@ -299,13 +406,14 @@ function AdPackagesCard() {
           <Megaphone className="size-5 text-primary" /> Ads → Packages
         </CardTitle>
         <CardDescription>
-          Running a Click-to-WhatsApp ad for a package? Link it here — anyone who messages from that ad is sent the package
-          straight away, no questions first. If a flow is live on WhatsApp it carries on after, without asking where they want to go.
+          Running Click-to-WhatsApp ads? Link each ad to the package(s) it promotes — anyone who messages from that ad is sent
+          them straight away, no questions first. If a flow is live on WhatsApp it carries on after.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field
+            className="min-w-0"
             label="Ad ID"
             htmlFor="adId"
             error={adId.trim() && !adIdValid ? 'Digits only — the long number from Meta Ads Manager.' : undefined}
@@ -313,63 +421,54 @@ function AdPackagesCard() {
           >
             <Input id="adId" inputMode="numeric" value={adId} onChange={(e) => setAdId(e.target.value)} placeholder="Paste the Ad ID" />
           </Field>
-          <Field label="Package to send" htmlFor="adPackage">
-            <Select value={packageId} onValueChange={setPackageId}>
-              <SelectTrigger id="adPackage">
-                <SelectValue placeholder={packagesQuery.isLoading ? 'Loading packages…' : 'Choose a package'} />
-              </SelectTrigger>
-              <SelectContent>
-                {packages.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} — {p.destination}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          {/* Blank label keeps the button level with the inputs on wider screens; hidden on phones where it stacks. */}
-          <Field label={'\u00a0'} className="[&>div:first-child]:hidden sm:[&>div:first-child]:flex">
-            <Button className="w-full sm:w-auto" onClick={() => createMutation.mutate()} disabled={!adIdValid || !packageId || createMutation.isPending}>
-              {createMutation.isPending ? <Spinner className="size-4" /> : <Plus />} Link ad
-            </Button>
+          <Field
+            className="min-w-0"
+            label="Packages to send"
+            htmlFor="adPackages"
+            error={packagesQuery.isError ? 'Could not load your packages — refresh the page.' : undefined}
+            hint={`Up to ${MAX_PACKAGES_PER_AD} — each is sent as its own message. ${packageIds.length}/${MAX_PACKAGES_PER_AD} selected.`}
+          >
+            <PackageChecklist id="adPackages" packages={packages} loading={packagesQuery.isLoading} selected={packageIds} onChange={setPackageIds} />
           </Field>
         </div>
+        <div className="flex justify-end">
+          <Button className="w-full sm:w-auto" onClick={() => createMutation.mutate()} disabled={!adIdValid || packageIds.length === 0 || createMutation.isPending}>
+            {createMutation.isPending ? <Spinner className="size-4" /> : <Plus />} Link ad
+          </Button>
+        </div>
 
-        {mappingsQuery.isLoading ? (
+        {adsQuery.isLoading ? (
           <Skeleton className="h-16 rounded-lg" />
-        ) : mappings.length === 0 ? (
+        ) : ads.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
             No ads linked yet. Messages from ads will go through your normal flow until you link one.
           </p>
         ) : (
           <div className="divide-y divide-border rounded-lg border border-border">
-            {mappings.map((m) => (
-              <div key={m.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4">
+            {ads.map((ad) => (
+              <div key={ad.adId} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-start sm:gap-4">
                 <div className="sm:w-56 sm:shrink-0">
                   <p className="text-xs text-muted-foreground">Ad ID</p>
-                  <p className="break-all font-mono text-sm text-foreground">{m.adId}</p>
-                  {!m.package.isActive && <p className="mt-0.5 text-xs text-amber-700">Package is inactive — still sent from this ad.</p>}
+                  <p className="break-all font-mono text-sm text-foreground">{ad.adId}</p>
                 </div>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <Select value={m.packageId} onValueChange={(v) => updateMutation.mutate({ id: m.id, packageId: v })}>
-                    <SelectTrigger className="min-w-0 flex-1" title={`${m.package.name} — ${m.package.destination}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* Keep the current package selectable even if the list hasn't loaded yet. */}
-                      {!packages.some((p) => p.id === m.packageId) && (
-                        <SelectItem value={m.packageId}>
-                          {m.package.name} — {m.package.destination}
-                        </SelectItem>
+                <ul className="min-w-0 flex-1 space-y-1">
+                  {ad.packages.map((p) => (
+                    <li key={p.id} className="break-words text-sm">
+                      <span className="font-medium text-foreground">{p.name}</span>{' '}
+                      <span className="text-muted-foreground">— {p.destination}</span>
+                      {!p.isActive && (
+                        <Badge variant="muted" className="ml-2 align-middle">
+                          Inactive · still sent
+                        </Badge>
                       )}
-                      {packages.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} — {p.destination}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={`Unlink ad ${m.adId}`} onClick={() => setRemoving(m)}>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="outline" size="sm" onClick={() => setEditing(ad)}>
+                    Edit
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" aria-label={`Unlink ad ${ad.adId}`} onClick={() => setRemoving(ad)}>
                     <Trash2 className="size-4 text-destructive" />
                   </Button>
                 </div>
@@ -379,15 +478,16 @@ function AdPackagesCard() {
         )}
       </CardContent>
 
+      <EditAdPackagesDialog ad={editing} packages={packages} loading={packagesQuery.isLoading} onOpenChange={(open) => !open && setEditing(null)} />
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Unlink ad ${removing?.adId ?? ''}?`}
-        description="Messages from this ad will go through your normal flow instead of getting the package automatically."
+        description="Messages from this ad will go through your normal flow instead of getting its packages automatically."
         confirmLabel="Unlink"
         destructive
         loading={deleteMutation.isPending}
-        onConfirm={() => removing && deleteMutation.mutate(removing.id)}
+        onConfirm={() => removing && deleteMutation.mutate(removing.adId)}
       />
     </Card>
   );

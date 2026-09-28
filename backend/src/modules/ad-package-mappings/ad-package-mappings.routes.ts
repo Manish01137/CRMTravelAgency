@@ -1,32 +1,50 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
 import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { requireRole } from '../../middleware/requireRole';
-import { withTenant } from '../../lib/prisma';
+import { withTenant, type TenantTx } from '../../lib/prisma';
 import { AppError, BadRequest, NotFound } from '../../lib/errors';
+import { MAX_PACKAGES_PER_AD, findAdPackages } from './ad-package-mappings.service';
 
-// Ad → Package links: when a traveller messages from a Click-to-WhatsApp ad
-// whose id is linked here, that package is sent to them automatically (see
-// sendAdPackageIfMapped in webhooks.service.ts and the session-start path in
-// bot-flow.engine.ts).
+// Ads → Packages: a traveller who messages from a linked Click-to-WhatsApp ad
+// is sent that ad's packages automatically (see sendAdPackagesIfNotFlowHandled
+// in webhooks.service.ts and the session-start path in bot-flow.engine.ts).
+// Stored as one row per (ad, package); the API works per ad.
 
 // Meta ad ids are long numeric strings; accept pasted whitespace.
 const adIdSchema = z.string().trim().regex(/^\d{6,30}$/, 'Ad ID should be the numeric ID from Meta Ads Manager');
+const packageIdsSchema = z
+  .array(z.string().uuid())
+  .min(1, 'Choose at least one package')
+  .max(MAX_PACKAGES_PER_AD, `Up to ${MAX_PACKAGES_PER_AD} packages per ad`)
+  .transform((ids) => [...new Set(ids)]);
 
-const createSchema = z.object({
-  adId: adIdSchema,
-  packageId: z.string().uuid('Choose a package'),
-});
+const createSchema = z.object({ adId: adIdSchema, packageIds: packageIdsSchema });
+const updateSchema = z.object({ packageIds: packageIdsSchema });
+const adIdParam = z.object({ adId: adIdSchema });
 
-const updateSchema = z.object({ packageId: z.string().uuid('Choose a package') });
+async function assertPackagesInOrg(tx: TenantTx, packageIds: string[]) {
+  const found = await tx.package.count({ where: { id: { in: packageIds } } }); // RLS-scoped to this org
+  if (found !== packageIds.length) throw BadRequest('A selected package was not found in your organization');
+}
 
-const idParam = z.object({ id: z.string().uuid('Invalid link id') });
-
-const packageSelect = { package: { select: { id: true, name: true, destination: true, isActive: true } } } satisfies Prisma.AdPackageMappingInclude;
+async function replacePackages(tx: TenantTx, organizationId: string, adId: string, packageIds: string[]) {
+  await tx.adPackageMapping.deleteMany({ where: { organizationId, adId, packageId: { notIn: packageIds } } });
+  await tx.adPackageMapping.createMany({
+    data: packageIds.map((packageId) => ({ organizationId, adId, packageId })),
+    skipDuplicates: true,
+  });
+  // Until the ad_multi_package migration runs, the old one-package-per-ad
+  // unique index makes skipDuplicates silently drop the extras — refuse
+  // (rolling the whole change back) rather than report a partial save.
+  const saved = await tx.adPackageMapping.count({ where: { organizationId, adId } });
+  if (saved !== packageIds.length) {
+    throw new AppError(409, 'MIGRATION_PENDING', "Several packages per ad needs a server update that hasn't been applied yet — link one package for now.");
+  }
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -36,9 +54,21 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const organizationId = req.auth!.organizationId;
     const rows = await withTenant(organizationId, (tx) =>
-      tx.adPackageMapping.findMany({ where: { organizationId }, include: packageSelect, orderBy: { createdAt: 'desc' } }),
+      tx.adPackageMapping.findMany({
+        where: { organizationId },
+        include: { package: { select: { id: true, name: true, destination: true, isActive: true } } },
+        orderBy: { createdAt: 'desc' },
+      }),
     );
-    res.json(rows);
+    // Group rows into one entry per ad (newest ad first), packages alphabetical — same order they're sent in.
+    const byAd = new Map<string, { adId: string; createdAt: Date; packages: (typeof rows)[number]['package'][] }>();
+    for (const r of rows) {
+      const ad = byAd.get(r.adId) ?? { adId: r.adId, createdAt: r.createdAt, packages: [] };
+      ad.packages.push(r.package);
+      byAd.set(r.adId, ad);
+    }
+    const ads = [...byAd.values()].map((ad) => ({ ...ad, packages: ad.packages.sort((a, b) => a.name.localeCompare(b.name)) }));
+    res.json(ads);
   }),
 );
 
@@ -48,47 +78,46 @@ router.post(
   validate({ body: createSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const organizationId = req.auth!.organizationId;
-    const { adId, packageId } = req.body as z.infer<typeof createSchema>;
-    const row = await withTenant(organizationId, async (tx) => {
-      const pkg = await tx.package.findUnique({ where: { id: packageId } });
-      if (!pkg) throw BadRequest('Selected package was not found in your organization');
-      const existing = await tx.adPackageMapping.findUnique({
-        where: { organizationId_adId: { organizationId, adId } },
-        include: packageSelect,
-      });
-      if (existing) throw new AppError(409, 'CONFLICT', `This ad is already linked to "${existing.package.name}" — edit that link instead`);
-      return tx.adPackageMapping.create({ data: { organizationId, adId, packageId }, include: packageSelect });
+    const { adId, packageIds } = req.body as z.infer<typeof createSchema>;
+    const ad = await withTenant(organizationId, async (tx) => {
+      await assertPackagesInOrg(tx, packageIds);
+      const existing = await tx.adPackageMapping.count({ where: { organizationId, adId } });
+      if (existing > 0) throw new AppError(409, 'CONFLICT', 'This ad is already linked — edit it in the list below instead');
+      await replacePackages(tx, organizationId, adId, packageIds);
+      return { adId, packages: await findAdPackages(tx, organizationId, adId) };
     });
-    res.status(201).json(row);
+    res.status(201).json(ad);
   }),
 );
 
-router.patch(
-  '/:id',
+router.put(
+  '/:adId',
   requireRole('ADMIN'),
-  validate({ params: idParam, body: updateSchema }),
+  validate({ params: adIdParam, body: updateSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const organizationId = req.auth!.organizationId;
-    const { packageId } = req.body as z.infer<typeof updateSchema>;
-    const row = await withTenant(organizationId, async (tx) => {
-      const pkg = await tx.package.findUnique({ where: { id: packageId } });
-      if (!pkg) throw BadRequest('Selected package was not found in your organization');
-      const found = await tx.adPackageMapping.findUnique({ where: { id: req.params.id } });
-      if (!found) throw NotFound('Ad link not found');
-      return tx.adPackageMapping.update({ where: { id: req.params.id }, data: { packageId }, include: packageSelect });
+    const { adId } = req.params as z.infer<typeof adIdParam>;
+    const { packageIds } = req.body as z.infer<typeof updateSchema>;
+    const ad = await withTenant(organizationId, async (tx) => {
+      const existing = await tx.adPackageMapping.count({ where: { organizationId, adId } });
+      if (existing === 0) throw NotFound('Ad link not found');
+      await assertPackagesInOrg(tx, packageIds);
+      await replacePackages(tx, organizationId, adId, packageIds);
+      return { adId, packages: await findAdPackages(tx, organizationId, adId) };
     });
-    res.json(row);
+    res.json(ad);
   }),
 );
 
 router.delete(
-  '/:id',
+  '/:adId',
   requireRole('ADMIN'),
-  validate({ params: idParam }),
+  validate({ params: adIdParam }),
   asyncHandler(async (req: Request, res: Response) => {
     const organizationId = req.auth!.organizationId;
+    const { adId } = req.params as z.infer<typeof adIdParam>;
     await withTenant(organizationId, async (tx) => {
-      const result = await tx.adPackageMapping.deleteMany({ where: { id: req.params.id, organizationId } });
+      const result = await tx.adPackageMapping.deleteMany({ where: { organizationId, adId } });
       if (result.count === 0) throw NotFound('Ad link not found');
     });
     res.json({ ok: true });

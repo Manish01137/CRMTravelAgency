@@ -6,6 +6,7 @@ import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, ty
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import { matchPackagesInText } from '../../lib/packageMatch';
+import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
 
 /**
  * Bot Flow's execution engine — advances ONE conversation's BotFlowSession by
@@ -49,8 +50,10 @@ interface StepRow {
 
 interface LoadedState {
   conversation: { id: string; channel: 'WHATSAPP' | 'INSTAGRAM'; externalContactId: string; leadId: string | null; createdAt: Date };
-  /** Ad → Package attribution on this conversation's lead — see openingAdPackage / the walk below. */
-  lead: { sourcePackageId: string | null; destination: string | null; createdAt: Date } | null;
+  /** Ads → Packages attribution on this conversation's lead — see openingAdPackages / the walk below. */
+  lead: { destination: string | null; createdAt: Date } | null;
+  /** Packages linked to the ad this lead came from (empty for non-ad leads or unlinked ads). */
+  adPackageIds: string[];
   sessionId: string;
   sessionStatus: 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
   currentStepId: string | null;
@@ -63,7 +66,7 @@ type Action =
   | { kind: 'NEEDS_REVIEW'; reason: string }
   | { kind: 'REPEAT_FALLBACK' }
   | { kind: 'REPLY_AND_STAY'; reply: string }
-  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string; nextStep: StepRow | null };
+  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string | string[]; nextStep: StepRow | null };
 
 const LEAD_DATE_FIELD = 'travelDate';
 const LEAD_INT_FIELD = 'travelerCount';
@@ -88,21 +91,21 @@ function findStartStep(steps: StepRow[]): StepRow | null {
 }
 
 /**
- * The ad-linked package to open this session with, or null. Only when the
+ * The ad-linked packages to open this session with (possibly none). Only when the
  * lead was created together with this conversation from a linked ad
  * (recordInbound tags it in the same transaction) and nothing has been sent
  * here yet — webhooks.service.ts sends the package itself in every other
  * case, so this is what keeps it from ever going out twice.
  */
-async function openingAdPackage(state: LoadedState, organizationId: string): Promise<string | null> {
+async function openingAdPackages(state: LoadedState, organizationId: string): Promise<string[]> {
   const lead = state.lead;
-  if (!lead?.sourcePackageId) return null;
+  if (!lead || state.adPackageIds.length === 0) return [];
   const createdWithConversation = Math.abs(lead.createdAt.getTime() - state.conversation.createdAt.getTime()) < 60_000;
-  if (!createdWithConversation) return null;
+  if (!createdWithConversation) return [];
   const outbound = await withTenant(organizationId, (tx) =>
     tx.message.count({ where: { conversationId: state.conversation.id, direction: 'OUTBOUND' } }),
   );
-  return outbound === 0 ? lead.sourcePackageId : null;
+  return outbound === 0 ? state.adPackageIds : [];
 }
 
 // --- Phase 1: load everything needed to decide, in one fast transaction -----
@@ -134,9 +137,19 @@ async function loadState(organizationId: string, conversationId: string): Promis
     const flow = await tx.botFlow.findUnique({ where: { id: session.flowId }, include: { steps: { orderBy: { order: 'asc' } } } });
     if (!flow) return null;
 
-    const lead = conversation.leadId
-      ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { sourcePackageId: true, destination: true, createdAt: true } })
+    const leadRow = conversation.leadId
+      ? await tx.lead.findUnique({
+          where: { id: conversation.leadId },
+          select: { sourceAdId: true, sourcePackageId: true, destination: true, createdAt: true },
+        })
       : null;
+    // sourcePackageId is only set when the ad was linked at click time; the
+    // current link decides which packages count (it may have been edited).
+    const adPackageIds =
+      leadRow?.sourceAdId && leadRow.sourcePackageId
+        ? (await findAdPackages(tx, organizationId, leadRow.sourceAdId)).map((p) => p.id)
+        : [];
+    const lead = leadRow ? { destination: leadRow.destination, createdAt: leadRow.createdAt } : null;
 
     return {
       conversation: {
@@ -147,6 +160,7 @@ async function loadState(organizationId: string, conversationId: string): Promis
         createdAt: conversation.createdAt,
       },
       lead,
+      adPackageIds,
       sessionId: session.id,
       sessionStatus: session.status,
       currentStepId: session.currentStepId,
@@ -186,8 +200,11 @@ async function decide(
     // Brand-new session: the inbound message just triggered the flow — open
     // with the first step, preceded by the ad's package when this lead came
     // from a linked Click-to-WhatsApp ad.
-    const adPackageId = await openingAdPackage(state, organizationId);
-    const reply = adPackageId ? (await buildPackageContent(organizationId, adPackageId)) ?? undefined : undefined;
+    const reply: string[] = [];
+    for (const packageId of await openingAdPackages(state, organizationId)) {
+      const content = await buildPackageContent(organizationId, packageId);
+      if (content) reply.push(content);
+    }
     return { kind: 'ADVANCE', reply, nextStep: findStartStep(state.steps) };
   }
 
@@ -472,9 +489,9 @@ export async function advanceBotFlow(
   if (action.leadField) {
     await writeLeadField(organizationId, state.conversation.leadId, action.leadField, action.leadValue);
   }
-  if (action.reply) {
-    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, action.reply);
-    await recordOutbound(organizationId, conversationId, action.reply, result);
+  for (const reply of action.reply === undefined ? [] : [action.reply].flat()) {
+    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, reply);
+    await recordOutbound(organizationId, conversationId, reply, result);
   }
 
   // Walk forward through any run of non-interactive steps (MESSAGE, SEND_PACKAGE),
@@ -486,8 +503,8 @@ export async function advanceBotFlow(
   let needsReviewReason: string | null = null;
   // A lead from a linked ad already told us where they want to go (and got
   // that package) — don't ask again, and don't resend the same package.
-  const adPackageId = state.lead?.sourcePackageId ?? null;
-  const destinationKnown = !!(adPackageId && state.lead?.destination);
+  const adPackageIds = new Set(state.adPackageIds);
+  const destinationKnown = adPackageIds.size > 0 && !!state.lead?.destination;
   const nextOf = (step: StepRow) => (step.nextStepId ? state.steps.find((s) => s.id === step.nextStepId) ?? null : null);
   const visited = new Set<string>();
 
@@ -530,7 +547,7 @@ export async function advanceBotFlow(
       const config = (cursor.config ?? {}) as { packageId?: string; packageIds?: string[] };
       const candidateIds = config.packageIds?.length ? config.packageIds : config.packageId ? [config.packageId] : [];
       const chosenId = await pickPackageForLead(organizationId, candidateIds, state.conversation.leadId);
-      const text = chosenId && chosenId === adPackageId ? null : await buildPackageContent(organizationId, chosenId);
+      const text = chosenId && adPackageIds.has(chosenId) ? null : await buildPackageContent(organizationId, chosenId);
       if (text) {
         const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, text);
         await recordOutbound(organizationId, conversationId, text, result);
