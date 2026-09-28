@@ -23,7 +23,7 @@ const schema = z.object({
 
   // Google Gemini (AI package generation). Optional — feature is gated behind it.
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default('gemini-1.5-flash'),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'), // 1.5-flash is retired by Google
 
   // --- Phase 3: Communication --------------------------------------------
   // At-rest encryption key for channel credentials (OAuth tokens, provider API

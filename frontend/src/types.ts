@@ -889,7 +889,8 @@ export interface AiAgentSettings {
   systemPrompt: string | null;
   agencyFacts: string | null;
   tone: string | null;
-  hasGeminiKey: boolean;
+  /** Whether the server has a Gemini key configured — AI is platform-level, not per-org. */
+  aiEnabled: boolean;
   updatedAt: string | null;
 }
 

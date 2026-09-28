@@ -1,23 +1,29 @@
 import { withTenant } from '../../lib/prisma';
-import { encrypt, decrypt, isEncryptionConfigured } from '../../lib/encryption';
+import { env } from '../../env';
 import { suggestReply as geminiSuggestReply, summarizeConversation as geminiSummarize, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
-import { AppError, BadRequest, NotFound } from '../../lib/errors';
+import { BadRequest, NotFound } from '../../lib/errors';
 import type { UpdateSettingsInput } from './ai-agent.schemas';
+
+// The Gemini key is platform-level (backend GEMINI_API_KEY only) — orgs never
+// supply their own. Each org still owns its persona: prompt, facts, tone.
+// AiAgentSettings.geminiApiKey is left in the schema but no longer read or
+// written.
 
 export interface AiAgentSettingsView {
   systemPrompt: string | null;
   agencyFacts: string | null;
   tone: string | null;
-  hasGeminiKey: boolean;
+  /** Whether AI is available at all, i.e. the server has a key configured. */
+  aiEnabled: boolean;
   updatedAt: Date | null;
 }
 
-function toView(row: { systemPrompt: string | null; agencyFacts: string | null; tone: string | null; geminiApiKey: string | null; updatedAt: Date } | null): AiAgentSettingsView {
+function toView(row: { systemPrompt: string | null; agencyFacts: string | null; tone: string | null; updatedAt: Date } | null): AiAgentSettingsView {
   return {
     systemPrompt: row?.systemPrompt ?? null,
     agencyFacts: row?.agencyFacts ?? null,
     tone: row?.tone ?? null,
-    hasGeminiKey: !!row?.geminiApiKey,
+    aiEnabled: !!env.GEMINI_API_KEY,
     updatedAt: row?.updatedAt ?? null,
   };
 }
@@ -30,14 +36,10 @@ export async function getSettings(organizationId: string): Promise<AiAgentSettin
 }
 
 export async function updateSettings(organizationId: string, input: UpdateSettingsInput): Promise<AiAgentSettingsView> {
-  if (input.geminiApiKey && !isEncryptionConfigured()) {
-    throw new AppError(503, 'ENCRYPTION_NOT_CONFIGURED', 'The server is not configured to store API keys yet — contact your administrator');
-  }
   const data = {
     ...(input.systemPrompt !== undefined && { systemPrompt: input.systemPrompt }),
     ...(input.agencyFacts !== undefined && { agencyFacts: input.agencyFacts }),
     ...(input.tone !== undefined && { tone: input.tone }),
-    ...(input.geminiApiKey !== undefined && { geminiApiKey: encrypt(input.geminiApiKey) }),
   };
   const row = await withTenant(organizationId, (tx) =>
     tx.aiAgentSettings.upsert({
@@ -49,30 +51,19 @@ export async function updateSettings(organizationId: string, input: UpdateSettin
   return toView(row);
 }
 
-export async function clearGeminiKey(organizationId: string): Promise<AiAgentSettingsView> {
-  const row = await withTenant(organizationId, (tx) =>
-    tx.aiAgentSettings.upsert({
-      where: { organizationId },
-      create: { organizationId, geminiApiKey: null },
-      update: { geminiApiKey: null },
-    }),
-  );
-  return toView(row);
-}
-
-/** Loads + decrypts the org's persona + Gemini key together — used by both
- *  the HTTP endpoints below and Bot Flow's execution engine. */
+/** The server's Gemini key + this org's persona — used by every AI feature
+ *  (Bot Flow, Smart Bot, Suggest Reply, Summarize). Null when the server has
+ *  no key, which each caller already treats as "AI unavailable". */
 export async function loadAgentContext(organizationId: string): Promise<{
   apiKey: string;
   systemPrompt: string | null;
   agencyFacts: string | null;
   tone: string | null;
 } | null> {
-  return withTenant(organizationId, async (tx) => {
-    const row = await tx.aiAgentSettings.findUnique({ where: { organizationId } });
-    if (!row?.geminiApiKey) return null;
-    return { apiKey: decrypt(row.geminiApiKey), systemPrompt: row.systemPrompt, agencyFacts: row.agencyFacts, tone: row.tone };
-  });
+  if (!env.GEMINI_API_KEY) return null;
+  const apiKey = env.GEMINI_API_KEY;
+  const row = await withTenant(organizationId, (tx) => tx.aiAgentSettings.findUnique({ where: { organizationId } }));
+  return { apiKey, systemPrompt: row?.systemPrompt ?? null, agencyFacts: row?.agencyFacts ?? null, tone: row?.tone ?? null };
 }
 
 /** Loads the last N turns of a conversation directly (same Prisma tables Phase
@@ -96,7 +87,7 @@ async function loadConversationTurns(organizationId: string, conversationId: str
 
 export async function suggestReplyForConversation(organizationId: string, conversationId: string): Promise<string> {
   const agent = await loadAgentContext(organizationId);
-  if (!agent) throw BadRequest('Add a Gemini API key in Settings → AI Agent first');
+  if (!agent) throw BadRequest('AI is not enabled on this server yet — contact your administrator');
   const turns = await loadConversationTurns(organizationId, conversationId);
   if (turns.length === 0) throw BadRequest('This conversation has no messages yet');
   return geminiSuggestReply(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, turns);
@@ -104,7 +95,7 @@ export async function suggestReplyForConversation(organizationId: string, conver
 
 export async function summarizeConversationById(organizationId: string, conversationId: string): Promise<string> {
   const agent = await loadAgentContext(organizationId);
-  if (!agent) throw BadRequest('Add a Gemini API key in Settings → AI Agent first');
+  if (!agent) throw BadRequest('AI is not enabled on this server yet — contact your administrator');
   const turns = await loadConversationTurns(organizationId, conversationId);
   if (turns.length === 0) throw BadRequest('This conversation has no messages yet');
   return geminiSummarize(agent.apiKey, DEFAULT_GEMINI_MODEL, turns);

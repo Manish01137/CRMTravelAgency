@@ -3,10 +3,9 @@ import { env } from '../env';
 import { AppError } from './errors';
 
 /**
- * Per-organization Gemini client — separate from the global GEMINI_API_KEY
- * used by Phase 1's package-description generator (src/modules/ai). Each
- * org supplies its OWN key (Settings → AI Agent), encrypted at rest, so this
- * module always takes the key as a parameter rather than reading env.
+ * Gemini helpers for the AI features. Callers pass the key in (from
+ * loadAgentContext, i.e. the server's GEMINI_API_KEY) rather than this
+ * module reading env directly.
  */
 
 function client(apiKey: string): GoogleGenerativeAI {

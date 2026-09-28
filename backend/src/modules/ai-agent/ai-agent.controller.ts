@@ -11,10 +11,6 @@ export async function updateSettings(req: Request, res: Response): Promise<void>
   res.json(await service.updateSettings(req.auth!.organizationId, body));
 }
 
-export async function clearKey(req: Request, res: Response): Promise<void> {
-  res.json(await service.clearGeminiKey(req.auth!.organizationId));
-}
-
 export async function suggestReply(req: Request, res: Response): Promise<void> {
   const { conversationId } = req.body as { conversationId: string };
   const reply = await service.suggestReplyForConversation(req.auth!.organizationId, conversationId);

@@ -7,7 +7,8 @@ import { requireRole } from '../../middleware/requireRole';
 import * as controller from './ai-agent.controller';
 import { conversationIdBody, updateSettingsSchema } from './ai-agent.schemas';
 
-// AI Agent Builder (Gemini) — per-organization persona + API key, plus the
+// AI Agent Builder (Gemini) — per-organization persona (the key itself is the
+// server's GEMINI_API_KEY), plus the
 // Inbox's "Suggest Reply"/"Summarize" actions. Human-in-the-loop by design:
 // suggest/summarize only ever return text for an agent to review — nothing
 // here sends a message on its own.
@@ -24,7 +25,6 @@ router.use(requireAuth);
 
 router.get('/settings', asyncHandler(controller.getSettings));
 router.patch('/settings', requireRole('ADMIN'), validate({ body: updateSettingsSchema }), asyncHandler(controller.updateSettings));
-router.delete('/settings/key', requireRole('ADMIN'), asyncHandler(controller.clearKey));
 
 router.post('/suggest-reply', aiLimiter, validate({ body: conversationIdBody }), asyncHandler(controller.suggestReply));
 router.post('/summarize', aiLimiter, validate({ body: conversationIdBody }), asyncHandler(controller.summarize));

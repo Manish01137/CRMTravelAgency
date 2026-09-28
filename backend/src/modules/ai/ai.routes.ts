@@ -8,21 +8,17 @@ import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { AppError, BadRequest } from '../../lib/errors';
-import { loadAgentContext } from '../ai-agent/ai-agent.service';
-
 /**
- * AI package generation (Google Gemini). Prefers the organization's own key
- * (Settings → AI Agent, same key that powers Bot Flow/Smart Bot) and falls
- * back to the global GEMINI_API_KEY env var for orgs that never set one. When
- * neither is available the endpoint returns a clear 503 so the UI can show a
- * "not configured yet" state instead of failing mysteriously.
+ * AI package generation (Google Gemini), using the server's GEMINI_API_KEY —
+ * the same platform-level key every AI feature uses. Without it the endpoints
+ * return a clear 503 so the UI can show a "not enabled" state.
  */
 
-async function resolveClient(organizationId: string): Promise<{ genAI: GoogleGenerativeAI; model: string } | null> {
-  const agent = await loadAgentContext(organizationId);
-  if (agent) return { genAI: new GoogleGenerativeAI(agent.apiKey), model: env.GEMINI_MODEL };
-  if (env.GEMINI_API_KEY) return { genAI: new GoogleGenerativeAI(env.GEMINI_API_KEY), model: env.GEMINI_MODEL };
-  return null;
+let client: GoogleGenerativeAI | null = null;
+function resolveClient(): { genAI: GoogleGenerativeAI; model: string } | null {
+  if (!env.GEMINI_API_KEY) return null;
+  client ??= new GoogleGenerativeAI(env.GEMINI_API_KEY);
+  return { genAI: client, model: env.GEMINI_MODEL };
 }
 
 const aiLimiter = rateLimit({
@@ -82,8 +78,8 @@ const router = Router();
 router.get(
   '/status',
   requireAuth,
-  asyncHandler(async (req: Request, res: Response) => {
-    const resolved = await resolveClient(req.auth!.organizationId);
+  asyncHandler(async (_req: Request, res: Response) => {
+    const resolved = resolveClient();
     res.json({ enabled: !!resolved, provider: 'gemini', model: env.GEMINI_MODEL });
   }),
 );
@@ -94,12 +90,12 @@ router.post(
   aiLimiter,
   validate({ body: generateSchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const resolved = await resolveClient(req.auth!.organizationId);
+    const resolved = resolveClient();
     if (!resolved) {
       throw new AppError(
         503,
         'AI_NOT_CONFIGURED',
-        'AI generation is not configured yet. Add a Gemini API key in Settings → AI Agent to enable it.',
+        'AI generation is not enabled on this server yet — contact your administrator.',
       );
     }
     const { genAI, model: modelName } = resolved;
@@ -172,12 +168,12 @@ router.post(
   aiLimiter,
   validate({ body: itineraryDaySchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const resolved = await resolveClient(req.auth!.organizationId);
+    const resolved = resolveClient();
     if (!resolved) {
       throw new AppError(
         503,
         'AI_NOT_CONFIGURED',
-        'AI generation is not configured yet. Add a Gemini API key in Settings → AI Agent to enable it.',
+        'AI generation is not enabled on this server yet — contact your administrator.',
       );
     }
     const { genAI, model: modelName } = resolved;
