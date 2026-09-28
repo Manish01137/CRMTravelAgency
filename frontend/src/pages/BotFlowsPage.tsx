@@ -204,7 +204,7 @@ function AssignmentsCard() {
           channels.map((c) => {
             const current = assignments.find((a) => a.channel === c.channel);
             return (
-              <div key={c.channel} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+              <div key={c.channel} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                 <div className="flex items-center gap-2">
                   {c.channel === 'WHATSAPP' ? <MessageCircle className="size-4 text-emerald-600" /> : <Instagram className="size-4 text-pink-600" />}
                   <div>
@@ -215,7 +215,7 @@ function AssignmentsCard() {
                 {c.status !== 'CONNECTED' ? (
                   <Badge variant="muted">Not connected</Badge>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full items-center gap-2 sm:w-auto">
                     <Select
                       value={current?.flowId ?? '__none'}
                       onValueChange={(v) => {
@@ -226,7 +226,7 @@ function AssignmentsCard() {
                         assignMutation.mutate({ channel: c.channel, flowId: v });
                       }}
                     >
-                      <SelectTrigger className="w-56"><SelectValue placeholder="No flow assigned" /></SelectTrigger>
+                      <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="No flow assigned" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none">No flow assigned</SelectItem>
                         {flows.map((f) => (
@@ -304,9 +304,14 @@ function AdPackagesCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <Field label="Ad ID" htmlFor="adId">
-            <Input id="adId" inputMode="numeric" value={adId} onChange={(e) => setAdId(e.target.value)} placeholder="120213456789012345" />
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
+          <Field
+            label="Ad ID"
+            htmlFor="adId"
+            error={adId.trim() && !adIdValid ? 'Digits only — the long number from Meta Ads Manager.' : undefined}
+            hint="Meta Ads Manager → your ad → Ad ID."
+          >
+            <Input id="adId" inputMode="numeric" value={adId} onChange={(e) => setAdId(e.target.value)} placeholder="Paste the Ad ID" />
           </Field>
           <Field label="Package to send" htmlFor="adPackage">
             <Select value={packageId} onValueChange={setPackageId}>
@@ -322,15 +327,13 @@ function AdPackagesCard() {
               </SelectContent>
             </Select>
           </Field>
-          <Button onClick={() => createMutation.mutate()} disabled={!adIdValid || !packageId || createMutation.isPending}>
-            {createMutation.isPending ? <Spinner className="size-4" /> : <Plus />} Link ad
-          </Button>
+          {/* Blank label keeps the button level with the inputs on wider screens; hidden on phones where it stacks. */}
+          <Field label={'\u00a0'} className="[&>div:first-child]:hidden sm:[&>div:first-child]:flex">
+            <Button className="w-full sm:w-auto" onClick={() => createMutation.mutate()} disabled={!adIdValid || !packageId || createMutation.isPending}>
+              {createMutation.isPending ? <Spinner className="size-4" /> : <Plus />} Link ad
+            </Button>
+          </Field>
         </div>
-        {adId.trim() && !adIdValid ? (
-          <p className="-mt-2 text-xs text-destructive">The Ad ID is the long number from Meta Ads Manager — digits only.</p>
-        ) : (
-          <p className="-mt-2 text-xs text-muted-foreground">Find it in Meta Ads Manager → your ad → the numeric Ad ID.</p>
-        )}
 
         {mappingsQuery.isLoading ? (
           <Skeleton className="h-16 rounded-lg" />
@@ -341,16 +344,15 @@ function AdPackagesCard() {
         ) : (
           <div className="divide-y divide-border rounded-lg border border-border">
             {mappings.map((m) => (
-              <div key={m.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="font-mono text-sm text-foreground">Ad {m.adId}</p>
-                  {!m.package.isActive && (
-                    <p className="text-xs text-amber-700">This package is inactive — it will still be sent from this ad.</p>
-                  )}
+              <div key={m.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="sm:w-56 sm:shrink-0">
+                  <p className="text-xs text-muted-foreground">Ad ID</p>
+                  <p className="break-all font-mono text-sm text-foreground">{m.adId}</p>
+                  {!m.package.isActive && <p className="mt-0.5 text-xs text-amber-700">Package is inactive — still sent from this ad.</p>}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                   <Select value={m.packageId} onValueChange={(v) => updateMutation.mutate({ id: m.id, packageId: v })}>
-                    <SelectTrigger className="w-full sm:w-64">
+                    <SelectTrigger className="min-w-0 flex-1" title={`${m.package.name} — ${m.package.destination}`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -367,7 +369,7 @@ function AdPackagesCard() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button variant="ghost" size="icon-sm" aria-label={`Unlink ad ${m.adId}`} onClick={() => setRemoving(m)}>
+                  <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={`Unlink ad ${m.adId}`} onClick={() => setRemoving(m)}>
                     <Trash2 className="size-4 text-destructive" />
                   </Button>
                 </div>
