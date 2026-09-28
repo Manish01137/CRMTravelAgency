@@ -2,7 +2,8 @@ import { withTenant } from '../../lib/prisma';
 import { attemptSend, recordOutbound, buildPackageContent } from '../bot-flow/bot-flow.engine';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import { classifyBotIntent, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
-import { TOOL_DECLARATIONS, runBotTool, matchPackagesInText } from './tools';
+import { TOOL_DECLARATIONS, runBotTool } from './tools';
+import { matchPackagesInText } from '../../lib/packageMatch';
 
 /**
  * Smart Bot — webhook-inline WhatsApp bot (POC), feature-flagged per

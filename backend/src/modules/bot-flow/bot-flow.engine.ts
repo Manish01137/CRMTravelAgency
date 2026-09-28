@@ -5,6 +5,7 @@ import { sendWhatsAppText, sendInstagramText, sendWhatsAppList, type WhatsAppLis
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
+import { matchPackagesInText } from '../../lib/packageMatch';
 
 /**
  * Bot Flow's execution engine — advances ONE conversation's BotFlowSession by
@@ -195,13 +196,22 @@ async function decide(
   if (currentStep.type === 'CAROUSEL') {
     const config = (currentStep.config ?? {}) as { packageIds?: string[] };
     const packageIds = config.packageIds ?? [];
-    // Only a genuine tap on one of the rows we sent counts — a typed reply
-    // ("first one please") isn't matched against titles, same tradeoff
-    // CONFIRM makes for anything beyond its 2-option Gemini fallback.
-    const picked = interactiveSelectionId && packageIds.includes(interactiveSelectionId) ? interactiveSelectionId : null;
+    // A tap on one of the list rows, or a typed reply naming exactly one of
+    // the listed packages ("kashmir") — anything ambiguous falls back.
+    let picked = interactiveSelectionId && packageIds.includes(interactiveSelectionId) ? interactiveSelectionId : null;
+    if (!picked && messageBody.trim() && packageIds.length > 0) {
+      const candidates = await withTenant(organizationId, (tx) =>
+        tx.package.findMany({ where: { id: { in: packageIds }, organizationId }, select: { id: true, name: true, destination: true } }),
+      );
+      const matches = matchPackagesInText(messageBody, candidates);
+      if (matches.length === 1) picked = matches[0].id;
+    }
     if (!picked) return { kind: 'REPEAT_FALLBACK' };
+    // The list itself only shows names — the pick is what earns the full
+    // package details (price, description, brochure link).
+    const reply = (await buildPackageContent(organizationId, picked)) ?? undefined;
     const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
-    return { kind: 'ADVANCE', nextStep };
+    return { kind: 'ADVANCE', reply, nextStep };
   }
 
   // CLOSING/MESSAGE/HANDOFF/SEND_PACKAGE don't accept further input as the CURRENT
