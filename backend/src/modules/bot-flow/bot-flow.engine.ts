@@ -6,6 +6,7 @@ import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, ty
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import { matchPackagesInText } from '../../lib/packageMatch';
+import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
 
 /**
@@ -66,6 +67,7 @@ type Action =
   | { kind: 'NEEDS_REVIEW'; reason: string }
   | { kind: 'REPEAT_FALLBACK' }
   | { kind: 'REPLY_AND_STAY'; reply: string }
+  | { kind: 'IGNORE' }
   | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string | string[]; nextStep: StepRow | null };
 
 const LEAD_DATE_FIELD = 'travelDate';
@@ -190,11 +192,19 @@ async function decide(
   organizationId: string,
   interactiveSelectionId: string | null,
 ): Promise<Action> {
-  const matched = matchesKeyword(messageBody, state.flowNeedsReviewKeywords);
+  const placeholder = !interactiveSelectionId && isPlaceholderBody(messageBody);
+  const matched = placeholder ? null : matchesKeyword(messageBody, state.flowNeedsReviewKeywords);
   if (matched) return { kind: 'NEEDS_REVIEW', reason: `Matched "Needs Review" keyword: "${matched}"` };
 
   const agent = await loadAgentContext(organizationId).catch(() => null);
   const currentStep = state.currentStepId ? state.steps.find((s) => s.id === state.currentStepId) ?? null : null;
+
+  // Mid-flow, a voice note / sticker / message WhatsApp won't share is not an
+  // answer — ask for a typed reply instead of storing the label (a reaction
+  // just passes). A brand-new session still opens normally below.
+  if (currentStep && placeholder) {
+    return isReactionBody(messageBody) ? { kind: 'IGNORE' } : { kind: 'REPLY_AND_STAY', reply: TYPE_YOUR_REPLY };
+  }
 
   if (!currentStep) {
     // Brand-new session: the inbound message just triggered the flow — open
@@ -474,6 +484,11 @@ export async function advanceBotFlow(
   if (action.kind === 'REPEAT_FALLBACK') {
     const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, state.flowFallbackMessage);
     await recordOutbound(organizationId, conversationId, state.flowFallbackMessage, result);
+    await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
+    return;
+  }
+
+  if (action.kind === 'IGNORE') {
     await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
     return;
   }

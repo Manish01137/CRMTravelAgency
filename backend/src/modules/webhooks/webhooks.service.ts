@@ -6,6 +6,7 @@ import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { attemptSend, buildPackageContent, recordOutbound } from '../bot-flow/bot-flow.engine';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
+import { describeWhatsAppMessage } from '../../lib/whatsappInbound';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -377,22 +378,13 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // buildCarouselContent), so the Bot Flow engine can match it directly
       // instead of trying to parse free text. button_reply covered too, for
       // any future quick-reply-button use — same shape, different field name.
-      let text: string;
-      let mediaUrl: string | null = null;
-      let interactiveSelectionId: string | null = null;
-      if (type === 'text') {
-        text = String((msg.text as { body?: string })?.body ?? '');
-      } else if (type === 'interactive') {
-        const interactive = (msg.interactive as { list_reply?: { id?: string; title?: string }; button_reply?: { id?: string; title?: string } }) ?? {};
-        const reply = interactive.list_reply ?? interactive.button_reply;
-        interactiveSelectionId = reply?.id ?? null;
-        text = reply?.title ?? '[interactive message]';
-      } else if (type === 'image') {
-        const image = msg.image as { id?: string; caption?: string } | undefined;
-        text = image?.caption ?? '';
-        if (image?.id) mediaUrl = await downloadWhatsAppMedia(organizationId, image.id);
-      } else {
-        text = `[${type} message]`;
+      const described = describeWhatsAppMessage(msg);
+      const text = described.text;
+      const interactiveSelectionId = described.interactiveSelectionId;
+      const mediaUrl = described.imageId ? await downloadWhatsAppMedia(organizationId, described.imageId) : null;
+      if (type === 'unsupported') {
+        // Meta's own reason — kept in the log for diagnosis (the label above is what the Inbox shows).
+        console.warn('[webhooks] unsupported WhatsApp message', JSON.stringify({ organizationId, from, unsupported: msg.unsupported, errors: msg.errors }));
       }
       // "Click to WhatsApp" ad conversations carry a `referral` object on the
       // first message (source_type: "ad", source_id: the ad's own id) — Meta's

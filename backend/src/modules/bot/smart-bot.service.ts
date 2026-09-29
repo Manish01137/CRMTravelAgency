@@ -4,6 +4,7 @@ import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import { classifyBotIntent, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
 import { TOOL_DECLARATIONS, runBotTool } from './tools';
 import { matchPackagesInText } from '../../lib/packageMatch';
+import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 
 /**
  * Smart Bot — webhook-inline WhatsApp bot (POC), feature-flagged per
@@ -133,6 +134,13 @@ async function handleExistingLead(
   msg: SmartBotInboundMessage,
 ): Promise<void> {
   const fallback = "Sorry, I didn't quite understand that — would you like to speak with an agent?";
+
+  // A voice note / sticker / message WhatsApp won't share arrives as a
+  // [label] — nothing to classify. Ask for a typed reply; let reactions pass.
+  if (isPlaceholderBody(msg.text)) {
+    if (!isReactionBody(msg.text)) await reply(organizationId, conv, leadId, msg.phone, TYPE_YOUR_REPLY, null);
+    return;
+  }
 
   try {
     const packages = await withTenant(organizationId, (tx) =>
