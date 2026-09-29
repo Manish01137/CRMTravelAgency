@@ -7,6 +7,7 @@ import { validate } from '../../lib/validate';
 import { systemPrisma, withTenant } from '../../lib/prisma';
 import { NotFound } from '../../lib/errors';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
+import { fetchImageForExport, ImageProxyError } from '../../lib/imageProxy';
 
 /**
  * PUBLIC endpoints — no auth. This is the agency's shareable "host page"
@@ -372,6 +373,40 @@ router.post(
     });
 
     res.status(201).json({ ok: true, message: 'Thanks! The team will get back to you shortly.' });
+  }),
+);
+
+// Brochure PDF export (html2canvas `proxy` option): re-serves a remote image
+// same-origin so logos/photos from hosts without CORS headers still render in
+// the PDF. See lib/imageProxy.ts for the SSRF safeguards.
+const imageProxyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many image requests, please try again shortly' } },
+});
+
+router.get(
+  '/image-proxy',
+  imageProxyLimiter,
+  validate({ query: z.object({ url: z.string().min(1).max(2000), responseType: z.string().optional() }) }),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const image = await fetchImageForExport(String(req.query.url));
+      res.setHeader('Content-Type', image.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // An SVG opened directly on our origin could run script — never let it.
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+      res.send(image.body);
+    } catch (err) {
+      if (err instanceof ImageProxyError) {
+        res.status(err.status).json({ error: { code: 'IMAGE_PROXY', message: err.message } });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

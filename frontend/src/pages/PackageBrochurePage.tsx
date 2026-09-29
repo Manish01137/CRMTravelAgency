@@ -199,7 +199,12 @@ export function PackageBrochurePage() {
         try {
           const canvas = await html2canvas(page, {
             scale: 2,
-            useCORS: true,
+            // Every cross-origin image (logo, photos) goes through our own
+            // same-origin proxy rather than relying on the image host sending
+            // CORS headers — a logo pasted from an agency's website usually
+            // doesn't, and came out blank in the PDF.
+            useCORS: false,
+            proxy: '/api/public/image-proxy',
             backgroundColor: '#ffffff',
           });
           const imgData = canvas.toDataURL('image/jpeg', 0.92);
