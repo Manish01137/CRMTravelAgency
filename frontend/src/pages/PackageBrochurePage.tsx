@@ -7,6 +7,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { dayPlanLines } from '@/lib/itinerary';
 import type { PackageItineraryDay, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -51,12 +52,7 @@ interface PublicBrochure {
 const lines = (s: string | null | undefined) =>
   (s ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
 
-/** The day's narrative — description, else activity blocks (newer builder flow). */
-const dayBullets = (d: PackageItineraryDay): string[] => {
-  if (d.description && d.description.trim()) return lines(d.description);
-  const blocks = d.activityBlocks ?? [];
-  return blocks.map((b) => [b.name, b.description].filter(Boolean).join(' — ')).filter(Boolean);
-};
+const daySightseeing = (d: PackageItineraryDay) => (d.activityBlocks ?? []).filter((b) => b.name?.trim());
 
 const dayPhoto = (d: PackageItineraryDay): string | null => {
   const own = (d.images ?? []).filter(Boolean);
@@ -180,6 +176,17 @@ export function PackageBrochurePage() {
    * and stacks them into one multi-page PDF sized to match each page's own
    * rendered dimensions (terms pages auto-paginate to a variable height).
    */
+  /**
+   * Each PDF page is an image of the rendered page, so resolution is what
+   * decides how sharp text looks when zoomed. 3x (≈290 dpi on the PDF page)
+   * keeps text crisp; tall auto-paginated pages get less so the canvas stays
+   * under iOS Safari's ~16.7M-pixel limit, past which it silently fails.
+   */
+  function exportScale(width: number, height: number): number {
+    const MAX_PIXELS = 16_000_000;
+    return Math.max(1, Math.min(3, Math.sqrt(MAX_PIXELS / (width * height))));
+  }
+
   async function downloadPdf() {
     const container = pagesRef.current;
     if (!container || !pkg) return;
@@ -198,7 +205,7 @@ export function PackageBrochurePage() {
         const height = page.offsetHeight;
         try {
           const canvas = await html2canvas(page, {
-            scale: 2,
+            scale: exportScale(width, height),
             // Every cross-origin image (logo, photos) goes through our own
             // same-origin proxy rather than relying on the image host sending
             // CORS headers — a logo pasted from an agency's website usually
@@ -207,7 +214,7 @@ export function PackageBrochurePage() {
             proxy: '/api/public/image-proxy',
             backgroundColor: '#ffffff',
           });
-          const imgData = canvas.toDataURL('image/jpeg', 0.92);
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
           if (!doc) {
             doc = new jsPDF({ unit: 'px', format: [width, height], hotfixes: ['px_scaling'] });
           } else {
@@ -353,6 +360,12 @@ export function PackageBrochurePage() {
         .pbx-day-badge { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:20px; padding:8px 26px; border-radius:12px; }
         .pbx-day-title { font-family:${DISPLAY_FONT}; font-weight:800; font-size:27px; margin:16px 0 16px; text-transform:uppercase; color:${INK}; }
         .pbx-day-photo { height:400px; margin-top:16px; }
+        .pbx-sights { margin-top:8px; }
+        .pbx-sights-title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:15px; letter-spacing:.08em; text-transform:uppercase; color:var(--blue); margin-bottom:8px; }
+        .pbx-sight { border-left:4px solid var(--yellow); background:var(--blue-pale); border-radius:0 10px 10px 0; padding:9px 14px; margin-bottom:8px; }
+        .pbx-sight-name { font-weight:700; font-size:15px; color:${INK}; }
+        .pbx-sight-desc { font-size:13.5px; line-height:1.5; color:${INK}; opacity:.85; margin-top:2px; }
+        .pbx-day-meta { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:12px; font-size:14px; color:${INK}; }
 
         table.pbx-price-table { width:100%; border-collapse:collapse; margin:8px 0 16px; }
         table.pbx-price-table th { background:var(--blue-pale); color:var(--blue-dark); font-family:${DISPLAY_FONT}; font-size:14px; text-align:left; padding:12px 16px; }
@@ -438,8 +451,8 @@ export function PackageBrochurePage() {
             <span className="pbx-tl-icon">🚌</span>
             <div className="pbx-tl-line">
               <div className="pbx-tl-rows">
-                {pkg.itinerary.map((it) => (
-                  <div key={it.day} className="pbx-tl-row">
+                {pkg.itinerary.map((it, i) => (
+                  <div key={i} className="pbx-tl-row">
                     <span className="pbx-tl-dot" />
                     <span className="pbx-tl-day">DAY {it.day}</span>
                     <span className="pbx-tl-label">{it.title}</span>
@@ -463,8 +476,8 @@ export function PackageBrochurePage() {
       )}
 
       {/* ===================== 3 · DAY PAGES ===================== */}
-      {pkg.itinerary.map((d) => (
-        <Page key={d.day} label={`day ${d.day}`}>
+      {pkg.itinerary.map((d, i) => (
+        <Page key={i} label={`day ${d.day}`}>
           <BrandRow orgName={orgName} logoUrl={logoUrl} />
           <div style={{ textAlign: 'center' }}>
             <span className="pbx-day-badge">DAY {d.day}</span>
@@ -472,7 +485,37 @@ export function PackageBrochurePage() {
           <div className="pbx-day-title" style={{ textAlign: 'center' }}>
             {d.title}
           </div>
-          <Bullets items={dayBullets(d)} />
+          <Bullets items={dayPlanLines(d)} />
+          {daySightseeing(d).length > 0 && (
+            <div className="pbx-sights">
+              <div className="pbx-sights-title">Sightseeing</div>
+              {daySightseeing(d).map((b, k) => (
+                <div key={k} className="pbx-sight">
+                  <div className="pbx-sight-name">{b.name}</div>
+                  {b.description && <div className="pbx-sight-desc">{b.description}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {(d.stay || d.meals || (d.activities?.length ?? 0) > 0) && (
+            <div className="pbx-day-meta">
+              {d.stay && (
+                <span>
+                  <b>Stay:</b> {d.stay}
+                </span>
+              )}
+              {d.meals && (
+                <span>
+                  <b>Meals:</b> {d.meals}
+                </span>
+              )}
+              {(d.activities?.length ?? 0) > 0 && (
+                <span>
+                  <b>Activities:</b> {d.activities!.join(', ')}
+                </span>
+              )}
+            </div>
+          )}
           <Photo url={dayPhoto(d)} className="pbx-day-photo" />
         </Page>
       ))}
