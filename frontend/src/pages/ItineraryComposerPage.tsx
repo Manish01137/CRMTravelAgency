@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { preventEnterSubmit } from '@/lib/forms';
 import type { Booking, SightseeingActivity, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -89,20 +90,15 @@ export function ItineraryComposerPage() {
   const form = useForm<ComposerValues>({ defaultValues: toValues({ itineraryItems: [] } as unknown as Booking) });
   const { register, control, handleSubmit, reset, watch, setValue, getValues } = form;
 
-  // A sightseeing pick that would overwrite an already-written description —
-  // held here until confirmed, so existing manual content is never silently
-  // lost. Null = no pending confirmation. Same pattern as the Package
-  // Builder's Itinerary step.
-  const [pendingReplace, setPendingReplace] = useState<{ i: number; activity: SightseeingActivity } | null>(null);
-
+  /** Each sightseeing pick adds its own line to the day's notes — never replaces what's there. */
   const addActivity = (i: number, a: SightseeingActivity) => {
-    if (!a.notes) return;
-    const existingDescription = getValues(`days.${i}.description`)?.trim();
-    if (!existingDescription) {
-      setValue(`days.${i}.description`, a.notes, { shouldDirty: true });
-    } else {
-      setPendingReplace({ i, activity: a });
+    const line = a.notes ? `${a.name} — ${a.notes}` : a.name;
+    const cur = getValues(`days.${i}.description`) ?? '';
+    if (cur.split('\n').some((l) => l.trim().toLowerCase() === line.toLowerCase())) {
+      toast.info(`"${a.name}" is already in this day's notes`);
+      return;
     }
+    setValue(`days.${i}.description`, cur.trim() ? `${cur.trimEnd()}\n${line}` : line, { shouldDirty: true });
   };
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'days' });
 
@@ -206,7 +202,7 @@ export function ItineraryComposerPage() {
   };
 
   return (
-    <form onSubmit={handleSubmit((v) => saveMutation.mutate(v))}>
+    <form onSubmit={handleSubmit((v) => saveMutation.mutate(v))} onKeyDown={preventEnterSubmit}>
       {/* Header */}
       <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-r from-primary via-indigo-600 to-violet-600 p-5 text-white shadow-pop">
         <div className="animate-blob pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
@@ -393,24 +389,6 @@ export function ItineraryComposerPage() {
                         <ActivityCombobox activities={library} onPick={(a) => addActivity(i, a)} />
                         <Textarea rows={4} className="mt-2" {...register(`days.${i}.description`)} placeholder="After breakfast, proceed to…" />
                       </Field>
-                      {pendingReplace?.i === i && (
-                        <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-                          <span className="min-w-0 flex-1">Replace description with "{pendingReplace.activity.name}"'s notes?</span>
-                          <button
-                            type="button"
-                            className="font-semibold underline"
-                            onClick={() => {
-                              setValue(`days.${i}.description`, pendingReplace.activity.notes ?? '', { shouldDirty: true });
-                              setPendingReplace(null);
-                            }}
-                          >
-                            Replace
-                          </button>
-                          <button type="button" className="text-amber-700" onClick={() => setPendingReplace(null)}>
-                            Cancel
-                          </button>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

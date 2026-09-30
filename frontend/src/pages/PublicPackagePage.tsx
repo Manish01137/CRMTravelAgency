@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { TravelPackage } from '@/types';
+import { dayPlanLines } from '@/lib/itinerary';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -237,8 +238,8 @@ export function PublicPackagePage() {
           <motion.div {...rise(0.2)}>
             <Banner>BRIEF ITINERARY</Banner>
             <div className="space-y-1">
-              {pkg.itinerary.map((d) => (
-                <div key={d.day} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--blue-pale)' }}>
+              {pkg.itinerary.map((d, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ backgroundColor: 'var(--blue-pale)' }}>
                   <span
                     className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
                     style={{ backgroundColor: 'var(--blue)', fontFamily: DISPLAY_FONT }}
@@ -255,8 +256,8 @@ export function PublicPackagePage() {
         {/* Day-by-day detail */}
         {pkg.itinerary.length > 0 && (
           <motion.div {...rise(0.24)} className="mt-8 space-y-4">
-            {pkg.itinerary.map((d) => (
-              <div key={d.day} className="overflow-hidden rounded-2xl" style={{ border: `1.5px solid ${HAIRLINE}` }}>
+            {pkg.itinerary.map((d, i) => (
+              <div key={i} className="overflow-hidden rounded-2xl" style={{ border: `1.5px solid ${HAIRLINE}` }}>
                 <div className="px-5 pt-5 text-center">
                   <span
                     className="inline-block rounded-xl px-5 py-1.5 text-sm font-bold text-white"
@@ -269,9 +270,9 @@ export function PublicPackagePage() {
                   </h3>
                 </div>
                 <div className="px-5 pb-5">
-                  {d.description && (
+                  {dayPlanLines(d).length > 0 && (
                     <ul className="mt-3">
-                      <BulletList items={lines(d.description)} />
+                      <BulletList items={dayPlanLines(d)} />
                     </ul>
                   )}
                   {(d.images?.length ?? 0) > 0 && (

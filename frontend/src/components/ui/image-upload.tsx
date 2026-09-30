@@ -217,6 +217,13 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
             defaultValue={value ?? ''}
             placeholder="https://…/image.jpg"
             onBlur={(e) => onChange(e.target.value.trim() || null)}
+            onKeyDown={(e) => {
+              // Enter would otherwise submit the surrounding form before blur saves the URL.
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onChange(e.currentTarget.value.trim() || null);
+              }
+            }}
             className="w-full rounded-md border border-input bg-card px-3 py-1.5 text-xs shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
           />
         ) : (

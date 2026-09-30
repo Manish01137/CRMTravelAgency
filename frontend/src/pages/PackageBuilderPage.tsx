@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { preventEnterSubmit } from '@/lib/forms';
 import { useAuth } from '@/context/AuthContext';
 import type { LinktreeCategory as CategoryType, Hotel, PdfTemplateId, SightseeingActivity, SignatureTheme, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -157,6 +158,39 @@ const STEPS = [
   { key: 'review', label: 'Review', Icon: Star },
 ] as const;
 
+/** Where each saved field lives in the wizard — used to point at server-side validation errors. */
+const FIELD_LOCATION: Record<string, { label: string; step: number }> = {
+  name: { label: 'Package name', step: 0 },
+  code: { label: 'Package code', step: 0 },
+  slug: { label: 'Public URL slug', step: 0 },
+  destination: { label: 'Destination', step: 0 },
+  nights: { label: 'Nights', step: 0 },
+  days: { label: 'Days', step: 0 },
+  bookingTitle: { label: 'Booking title', step: 0 },
+  priceAmount: { label: 'Price', step: 0 },
+  originalPrice: { label: 'Original price', step: 0 },
+  priceCurrency: { label: 'Currency', step: 0 },
+  pricingOptions: { label: 'Pricing options', step: 0 },
+  bannerImageUrl: { label: 'Banner image', step: 0 },
+  whatsappBannerUrl: { label: 'WhatsApp banner image', step: 0 },
+  whatsappDescription: { label: 'WhatsApp description', step: 0 },
+  description: { label: 'Description', step: 0 },
+  contactNumber: { label: 'Contact number', step: 0 },
+  contactEmail: { label: 'Contact email', step: 0 },
+  categories: { label: 'Categories', step: 0 },
+  itinerary: { label: 'Itinerary (a day title, photo or sightseeing entry)', step: 1 },
+  inclusions: { label: 'Inclusions', step: 2 },
+  exclusions: { label: 'Exclusions', step: 2 },
+  pickupPoints: { label: 'Pickup / drop points', step: 2 },
+  thingsToCarry: { label: 'Things to carry', step: 2 },
+  cancellationPolicy: { label: 'Cancellation policy', step: 3 },
+  paymentTerms: { label: 'Payment terms', step: 3 },
+  termsConditions: { label: 'Terms & conditions', step: 3 },
+  faqs: { label: 'FAQs', step: 4 },
+  highlights: { label: 'Highlights', step: 5 },
+  galleryImages: { label: 'Gallery images', step: 5 },
+};
+
 export interface OrgPolicyDefaults {
   cancellationPolicy?: string | null;
   paymentTerms?: string | null;
@@ -241,10 +275,12 @@ function toPayload(v: Values): Record<string, unknown> {
     description: v.description.trim() || null,
     contactNumber: v.contactNumber.trim() || null,
     contactEmail: v.contactEmail.trim() || null,
+    // Days are numbered by position among the saved (titled) days, so deleting
+    // or leaving a day blank never leaves the PDF starting at "Day 2".
     itinerary: v.itinerary
       .filter((d) => d.title.trim())
       .map((d, i) => ({
-        day: Number(d.day) || i + 1,
+        day: i + 1,
         title: d.title.trim(),
         description: d.description.trim() || undefined,
         hotelId: d.hotelId || undefined,
@@ -345,7 +381,7 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       <div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Package name" htmlFor="name" error={errors.name?.message} required>
-            <Input id="name" placeholder="BALI_V1_2026" {...register('name', { required: 'Name is required' })} />
+            <Input id="name" maxLength={150} placeholder="BALI_V1_2026" {...register('name', { required: 'Name is required' })} />
           </Field>
           <Field label="Package code" htmlFor="code" hint="Auto-generated if left blank.">
             <Input id="code" placeholder="Optional" {...register('code')} />
@@ -365,7 +401,7 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Duration" required>
           <div className="flex gap-2">
-            <Input type="number" min={0} aria-label="Number" className="w-24" {...register('nights')} />
+            <Input type="number" min={0} aria-label="Nights" className="w-24" {...register('nights')} />
             <span className="flex items-center rounded-md border border-input bg-card px-3 text-sm text-muted-foreground">Nights</span>
             <Input type="number" min={1} aria-label="Days" className="w-24" {...register('days')} />
             <span className="flex items-center rounded-md border border-input bg-card px-3 text-sm text-muted-foreground">Days</span>
@@ -378,10 +414,10 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Destination" htmlFor="destination" error={errors.destination?.message} required>
-          <Input id="destination" placeholder="Bali, Indonesia" {...register('destination', { required: 'Destination is required' })} />
+          <Input id="destination" maxLength={120} placeholder="Bali, Indonesia" {...register('destination', { required: 'Destination is required' })} />
         </Field>
         <Field label="Price" htmlFor="priceAmount" error={errors.priceAmount?.message} required>
-          <Input id="priceAmount" type="number" min={0} placeholder="13999" {...register('priceAmount', { required: true })} />
+          <Input id="priceAmount" type="number" min={0} placeholder="13999" {...register('priceAmount', { required: 'Price is required' })} />
         </Field>
         <Field label="Original price" htmlFor="originalPrice" hint="Shown struck-through as a discount.">
           <Input id="originalPrice" type="number" min={0} placeholder="16000" {...register('originalPrice')} />
@@ -479,11 +515,6 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   const activitiesQuery = useQuery({ queryKey: ['sightseeing'], queryFn: () => api.get<SightseeingActivity[]>('/sightseeing') });
   const library = (activitiesQuery.data ?? []).filter((a) => a.isActive);
 
-  // A sightseeing pick that would overwrite an already-written description —
-  // held here until the agent confirms, so existing manual content is never
-  // silently lost. Null = no pending confirmation.
-  const [pendingReplace, setPendingReplace] = useState<{ i: number; activity: SightseeingActivity } | null>(null);
-
   /**
    * Pull a library activity into a day as an INDEPENDENT COPY. Its name,
    * description and image are snapshotted into this package/day right now — from
@@ -500,21 +531,14 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       toast.info(`"${a.name}" is already added to this day`);
       return;
     }
+    // The block carries the activity's own description — it is NOT also
+    // copied into the day's description, which made the same text show twice
+    // on the package page and hid every later pick from the PDF.
     setValue(
       `itinerary.${i}.activityBlocks`,
       [...cur, { name: a.name, description: a.notes ?? '', imageUrl: a.imageUrl ?? '' }],
       { shouldDirty: true },
     );
-
-    // Also offer the pick's notes as the day's plain description — but never
-    // silently overwrite something already written by hand.
-    if (!a.notes) return;
-    const existingDescription = getValues(`itinerary.${i}.description`)?.trim();
-    if (!existingDescription) {
-      setValue(`itinerary.${i}.description`, a.notes, { shouldDirty: true });
-    } else {
-      setPendingReplace({ i, activity: a });
-    }
   };
 
   const aiDayMutation = useMutation({
@@ -626,25 +650,7 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                 }}
               />
 
-              <Textarea rows={2} placeholder="Pickup time, transfers, plan for the day…" {...register(`itinerary.${i}.description`)} />
-              {pendingReplace?.i === i && (
-                <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-                  <span className="min-w-0 flex-1">Replace description with "{pendingReplace.activity.name}"'s notes?</span>
-                  <button
-                    type="button"
-                    className="font-semibold underline"
-                    onClick={() => {
-                      setValue(`itinerary.${i}.description`, pendingReplace.activity.notes ?? '', { shouldDirty: true });
-                      setPendingReplace(null);
-                    }}
-                  >
-                    Replace
-                  </button>
-                  <button type="button" className="text-amber-700" onClick={() => setPendingReplace(null)}>
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <Textarea rows={2} placeholder="Day plan — pickup time, transfers, what happens today… (one point per line)" {...register(`itinerary.${i}.description`)} />
               <div className="grid gap-2 sm:grid-cols-2">
                 <Controller
                   control={control}
@@ -703,7 +709,6 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
                   );
                 }}
               />
-              <input type="hidden" {...register(`itinerary.${i}.day`)} value={i + 1} />
             </div>
             <div className="flex flex-col items-center gap-1">
               <GripVertical className="size-4 text-muted-foreground/40" />
@@ -976,6 +981,7 @@ function AiGenerateDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [prompt, setPrompt] = useState('');
+  const existingDays = open ? form.getValues('itinerary').filter((d) => d.title.trim()).length : 0;
   const mutation = useMutation({
     mutationFn: () => {
       const v = form.getValues();
@@ -996,18 +1002,23 @@ function AiGenerateDialog({
         description: ai.description || cur.description,
         inclusions: ai.inclusions || cur.inclusions,
         exclusions: ai.exclusions || cur.exclusions,
+        // AI writes each day's title and plan; anything already set up on that
+        // day (hotel, meals, photos, sightseeing) is kept rather than wiped.
         itinerary: ai.itinerary?.length
-          ? ai.itinerary.map((d) => ({
-              day: String(d.day),
-              title: d.title,
-              description: d.description ?? '',
-              hotelId: '',
-              stay: '',
-              activities: '',
-              meals: '',
-              images: [],
-              activityBlocks: [],
-            }))
+          ? ai.itinerary.map((d, i) => {
+              const existing = cur.itinerary[i];
+              return {
+                day: String(i + 1),
+                title: d.title,
+                description: d.description ?? '',
+                hotelId: existing?.hotelId ?? '',
+                stay: existing?.stay ?? '',
+                activities: existing?.activities ?? '',
+                meals: existing?.meals ?? '',
+                images: existing?.images ?? [],
+                activityBlocks: existing?.activityBlocks ?? [],
+              };
+            })
           : cur.itinerary,
         highlights: ai.highlights?.length ? ai.highlights.map((value) => ({ value })) : cur.highlights,
         faqs: ai.faqs?.length ? ai.faqs : cur.faqs,
@@ -1049,6 +1060,12 @@ function AiGenerateDialog({
           <p className="text-xs text-muted-foreground">
             Uses your current <b>Name</b>, <b>Destination</b>, <b>Duration</b> and <b>Price</b> as context.
           </p>
+          {existingDays > 0 && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              This rewrites the titles and plans of your {existingDays} existing day{existingDays === 1 ? '' : 's'}, plus the
+              description, inclusions, highlights and FAQs. Hotels, meals, photos and sightseeing you added are kept.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <DialogClose asChild>
@@ -1177,8 +1194,17 @@ export function PackageBuilderPage() {
       navigate('/packages');
     },
     onError: (err: unknown) => {
-      const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : 'Could not save package';
-      toast.error(msg);
+      // Server-side validation names the failing field — say which one and
+      // jump to its step, instead of a bare "Validation failed".
+      const fieldErrors = err instanceof ApiError ? err.fieldErrors : undefined;
+      const [field, messages] = Object.entries(fieldErrors ?? {})[0] ?? [];
+      const where = field ? FIELD_LOCATION[field] : undefined;
+      if (field) {
+        toast.error(`Could not save — ${where?.label ?? field}: ${messages?.[0] ?? 'invalid value'}`);
+        if (where) setStep(where.step);
+        return;
+      }
+      toast.error(err instanceof Error ? err.message : 'Could not save package');
     },
   });
 
@@ -1208,7 +1234,7 @@ export function PackageBuilderPage() {
   const isPublished = form.watch('isActive');
 
   return (
-    <form onSubmit={onSave}>
+    <form onSubmit={onSave} onKeyDown={preventEnterSubmit}>
       {/* Sticky sub-header */}
       <div className="sticky top-0 z-20 -mx-4 mb-5 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6">
         <div className="flex items-center justify-between gap-3">
