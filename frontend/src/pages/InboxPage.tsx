@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   AlertCircle,
   Check,
+  ChevronDown,
   CheckCheck,
   Clock,
   FileText,
@@ -22,7 +23,17 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { ChannelMessage, Conversation, ConversationChannel, ConversationFilter, MessageTemplate } from '@/types';
+import type {
+  ChannelMessage,
+  Conversation,
+  ConversationChannel,
+  ConversationFilter,
+  ConversationStage,
+  ConversationStageCounts,
+  LeadStatus,
+  MessageTemplate,
+} from '@/types';
+import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -32,7 +43,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { initials, formatSmartTime } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 
@@ -85,6 +103,16 @@ function statusIcon(status: ChannelMessage['status'], whatsapp: boolean) {
   }
 }
 
+function StagePill({ status, className }: { status: LeadStatus; className?: string }) {
+  const style = LEAD_STATUS_STYLES[status];
+  return (
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ring-1 ring-inset', style.pill, className)}>
+      <span className={cn('size-1.5 rounded-full', style.dot)} />
+      {style.label}
+    </span>
+  );
+}
+
 function ConversationRow({
   c,
   active,
@@ -111,6 +139,7 @@ function ConversationRow({
           </div>
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
+            {c.lead && <StagePill status={c.lead.status} className="shrink-0" />}
             {c.unreadCount > 0 && (
               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                 {c.unreadCount > 9 ? '9+' : c.unreadCount}
@@ -142,6 +171,7 @@ export function InboxPage() {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ConversationChannel>('WHATSAPP');
   const [filter, setFilter] = useState<ConversationFilter>('all');
+  const [stage, setStage] = useState<ConversationStage | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput.trim(), 300);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -150,16 +180,22 @@ export function InboxPage() {
   const [pendingMedia, setPendingMedia] = useState<{ url: string; kind: 'image' | 'document'; name: string } | null>(null);
 
   const conversationsQuery = useQuery({
-    queryKey: ['conversations', channel, filter, search],
+    queryKey: ['conversations', channel, filter, stage, search],
     queryFn: () =>
       api.get<Conversation[]>(
-        `/inbox/conversations?channel=${channel}&filter=${filter}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
+        `/inbox/conversations?channel=${channel}&filter=${filter}${stage ? `&stage=${stage}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
     refetchInterval: 8000,
   });
 
+  const stageCountsQuery = useQuery({
+    queryKey: ['conversations', 'stage-counts', channel],
+    queryFn: () => api.get<ConversationStageCounts>(`/inbox/conversations/stage-counts?channel=${channel}`),
+    refetchInterval: 15000,
+  });
+  const stageCounts = stageCountsQuery.data;
+
   const conversations = conversationsQuery.data ?? [];
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
   const favoriteMutation = useMutation({
     mutationFn: ({ id, isFavorite }: { id: string; isFavorite: boolean }) =>
@@ -181,6 +217,23 @@ export function InboxPage() {
     queryFn: () => api.get<{ conversation: Conversation; messages: ChannelMessage[] }>(`/inbox/conversations/${selectedId}/messages`),
     enabled: !!selectedId,
     refetchInterval: 5000,
+  });
+  // Stays open even when a stage change moves the chat out of the filtered list.
+  const listed = conversations.find((c) => c.id === selectedId) ?? null;
+  const fromThread = threadQuery.data?.conversation.id === selectedId ? threadQuery.data.conversation : null;
+  const selected = listed ?? fromThread;
+  const selectedStatus = (fromThread ?? listed)?.lead?.status ?? null;
+  const selectedLeadId = (fromThread ?? listed)?.lead?.id ?? selected?.leadId ?? null;
+
+  const stageMutation = useMutation({
+    mutationFn: (status: LeadStatus) => api.patch(`/leads/${selectedLeadId}`, { status }),
+    onSuccess: (_data, status) => {
+      toast.success(`Moved to ${LEAD_STATUS_STYLES[status].label}`);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not change the stage'),
   });
 
   const templatesQuery = useQuery({
@@ -326,6 +379,47 @@ export function InboxPage() {
                 </button>
               ))}
             </div>
+            <div className="-mx-3 mt-2 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filter by lead stage">
+              <button
+                type="button"
+                onClick={() => setStage(null)}
+                className={cn(
+                  'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors',
+                  stage === null ? 'bg-foreground text-background ring-foreground' : 'bg-card text-muted-foreground ring-border hover:text-foreground',
+                )}
+              >
+                All stages{stageCounts ? ` · ${stageCounts.total}` : ''}
+              </button>
+              {LEAD_STATUSES.map(({ value }) => {
+                const style = LEAD_STATUS_STYLES[value];
+                const count = stageCounts?.byStage[value] ?? 0;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setStage(stage === value ? null : value)}
+                    className={cn(
+                      'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
+                      stage === value ? style.chipActive : style.chipIdle,
+                    )}
+                  >
+                    {style.label} · {count}
+                  </button>
+                );
+              })}
+              {(stageCounts?.none ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStage(stage === 'none' ? null : 'none')}
+                  className={cn(
+                    'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors',
+                    stage === 'none' ? 'bg-slate-600 text-white ring-slate-600' : 'bg-card text-muted-foreground ring-border hover:text-foreground',
+                  )}
+                >
+                  No lead · {stageCounts!.none}
+                </button>
+              )}
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading ? (
@@ -337,9 +431,19 @@ export function InboxPage() {
             ) : conversations.length === 0 ? (
               <EmptyState
                 icon={filter === 'favorites' ? <Star /> : filter === 'unread' ? <MailOpen /> : <InboxIcon />}
-                title={filter === 'favorites' ? 'No favorites yet' : filter === 'unread' ? 'No unread conversations' : 'No conversations yet'}
+                title={
+                  stage
+                    ? `No chats in ${stage === 'none' ? 'No lead' : LEAD_STATUS_STYLES[stage].label}`
+                    : filter === 'favorites'
+                      ? 'No favorites yet'
+                      : filter === 'unread'
+                        ? 'No unread conversations'
+                        : 'No conversations yet'
+                }
                 description={
-                  filter === 'favorites'
+                  stage
+                    ? 'Try another stage, or All stages.'
+                    : filter === 'favorites'
                     ? 'Star a conversation to pin it here.'
                     : filter === 'unread'
                       ? "You're all caught up."
@@ -390,6 +494,37 @@ export function InboxPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  {selectedLeadId && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={stageMutation.isPending}
+                          className={cn(
+                            'mr-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm transition-colors disabled:opacity-60',
+                            selectedStatus ? LEAD_STATUS_STYLES[selectedStatus].solid : 'bg-white/90 text-foreground',
+                          )}
+                          aria-label="Change lead stage"
+                          title="Change lead stage"
+                        >
+                          {stageMutation.isPending ? <Spinner className="size-3" /> : null}
+                          {selectedStatus ? LEAD_STATUS_STYLES[selectedStatus].label : 'Stage'}
+                          <ChevronDown className="size-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Move lead to</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {LEAD_STATUSES.map(({ value }) => (
+                          <DropdownMenuItem key={value} disabled={value === selectedStatus} onSelect={() => stageMutation.mutate(value)}>
+                            <span className={cn('size-2 rounded-full', LEAD_STATUS_STYLES[value].dot)} />
+                            {LEAD_STATUS_STYLES[value].label}
+                            {value === selectedStatus && <Check className="ml-auto size-3.5" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   {channel === 'WHATSAPP' && selected.contactPhone && (
                     <a
                       href={`tel:${selected.contactPhone}`}

@@ -7,11 +7,18 @@ export const conversationChannelParam = z.enum(['WHATSAPP', 'INSTAGRAM']);
 // comment for why.
 export const conversationFilterParam = z.enum(['all', 'unread', 'favorites']).default('all');
 
+// Lead stage chips above the chat list — "none" is chats with no lead attached.
+export const LEAD_STAGES = ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL_SENT', 'NEGOTIATION', 'WON', 'LOST'] as const;
+export const conversationStageParam = z.enum([...LEAD_STAGES, 'none']);
+
 export const listConversationsQuerySchema = z.object({
   channel: conversationChannelParam,
   search: z.string().trim().max(200).optional(),
   filter: conversationFilterParam.optional(),
+  stage: conversationStageParam.optional(),
 });
+
+export const stageCountsQuerySchema = z.object({ channel: conversationChannelParam });
 
 export const conversationIdParam = z.object({ id: z.string().uuid('Invalid conversation id') });
 
@@ -45,6 +52,7 @@ export const createTemplateSchema = z.object({
 });
 
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
+export type StageCountsQuery = z.infer<typeof stageCountsQuerySchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type SetFavoriteInput = z.infer<typeof setFavoriteSchema>;

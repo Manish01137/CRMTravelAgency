@@ -307,6 +307,77 @@ export async function sendWhatsAppDocument(
   return { externalMessageId: data.messages[0].id };
 }
 
+export interface WhatsAppChoice {
+  /** Comes back verbatim as interactive.button_reply.id / list_reply.id when tapped. */
+  id: string;
+  title: string;
+  description?: string;
+}
+
+/** Up to 3 tappable reply buttons under a message (titles ≤ 20 chars). Free-form — 24h window only. */
+export async function sendWhatsAppButtons(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  bodyText: string,
+  buttons: WhatsAppChoice[],
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: bodyText.slice(0, 1024) },
+        action: { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+      },
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
+/** A list menu: one button that opens up to 10 tappable rows (titles ≤ 24, descriptions ≤ 72). 24h window only. */
+export async function sendWhatsAppList(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  bodyText: string,
+  buttonLabel: string,
+  rows: WhatsAppChoice[],
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: bodyText.slice(0, 1024) },
+        action: {
+          button: buttonLabel.slice(0, 20),
+          sections: [
+            {
+              rows: rows.slice(0, 10).map((r) => ({
+                id: r.id,
+                title: r.title.slice(0, 24),
+                ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+              })),
+            },
+          ],
+        },
+      },
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
 export interface WhatsAppCarouselCard {
   imageUrl: string;
   /** Up to 160 characters and 2 line breaks (WhatsApp's own limits). */

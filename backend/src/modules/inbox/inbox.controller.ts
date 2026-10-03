@@ -1,10 +1,14 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput } from './inbox.schemas';
+import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery } from './inbox.schemas';
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
   const query = req.query as unknown as ListConversationsQuery;
   res.json(await service.listConversations(req.auth!.organizationId, query));
+}
+
+export async function stageCounts(req: Request, res: Response): Promise<void> {
+  res.json(await service.stageCounts(req.auth!.organizationId, req.query as unknown as StageCountsQuery));
 }
 
 export async function setFavorite(req: Request, res: Response): Promise<void> {

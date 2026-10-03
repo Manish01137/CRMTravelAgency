@@ -9,6 +9,7 @@ import {
   listConversationsQuerySchema,
   sendMessageSchema,
   setFavoriteSchema,
+  stageCountsQuerySchema,
 } from './inbox.schemas';
 
 // Unified WhatsApp + Instagram inbox — ONE screen, filtered by `channel`
@@ -17,6 +18,7 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/conversations', validate({ query: listConversationsQuerySchema }), asyncHandler(controller.listConversations));
+router.get('/conversations/stage-counts', validate({ query: stageCountsQuerySchema }), asyncHandler(controller.stageCounts));
 router.patch(
   '/conversations/:id/favorite',
   validate({ params: conversationIdParam, body: setFavoriteSchema }),

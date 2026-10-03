@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ANSWER_TYPES } from '../../lib/answerValidation';
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 
@@ -28,16 +29,25 @@ export const updateFlowSchema = z
 
 const confirmOptionSchema = z.object({
   label: z.string().trim().min(1).max(80),
+  // Shown under the option in a WhatsApp list menu (4+ options).
+  description: z.preprocess(emptyToUndefined, z.string().trim().max(72).optional()),
   nextStepId: z.string().uuid().nullable(),
 });
 
-// SEND_PACKAGE's packageId, AI_OPEN's instructions, CAROUSEL's packageIds —
+// SEND_PACKAGE's packageId, AI_OPEN's instructions, CAROUSEL's packageIds,
+// COLLECT's validation settings, CONFIRM's list button —
 // one shared shape rather than a discriminated union, since each type only
 // ever reads its own key.
 const stepConfigSchema = z.object({
   packageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   instructions: z.preprocess(emptyToUndefined, z.string().max(2000).optional()),
-  packageIds: z.array(z.string().uuid()).max(10, 'A WhatsApp list message can hold at most 10 rows').optional(),
+  packageIds: z.array(z.string().uuid()).max(10, 'A WhatsApp carousel can hold at most 10 cards').optional(),
+  // COLLECT: answer type, tries before moving on, and the "invalid answer" reply.
+  validation: z.preprocess(emptyToUndefined, z.enum(ANSWER_TYPES).optional()),
+  maxAttempts: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(5).optional()),
+  errorMessage: z.preprocess(emptyToUndefined, z.string().trim().max(500).optional()),
+  // CONFIRM with 4+ options: the label on the button that opens the WhatsApp list.
+  buttonLabel: z.preprocess(emptyToUndefined, z.string().trim().max(20).optional()),
 });
 
 export const upsertStepSchema = z

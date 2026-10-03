@@ -1,7 +1,9 @@
+import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
-import { attemptSend, recordOutbound, sendPackage, sendPackageCarousel } from './bot-send';
+import { attemptSend, recordOutbound, sendChoices, sendPackage, sendPackageCarousel } from './bot-send';
+import { defaultAnswerType, validateAnswer, parseTravelDate, DEFAULT_ERROR_MESSAGES, type AnswerType } from '../../lib/answerValidation';
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
@@ -34,7 +36,13 @@ import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.servi
  */
 
 type StepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN' | 'CAROUSEL';
-type ConfirmOption = { label: string; nextStepId: string | null };
+type ConfirmOption = { label: string; description?: string; nextStepId: string | null };
+/** COLLECT: what a valid answer looks like, how many tries, what to say on a bad one. */
+type CollectConfig = { validation?: AnswerType; maxAttempts?: number; errorMessage?: string };
+/** CONFIRM: the label on the button that opens a WhatsApp list menu (4+ options). */
+type ConfirmConfig = { buttonLabel?: string };
+
+const DEFAULT_MAX_ATTEMPTS = 3;
 
 interface StepRow {
   id: string;
@@ -55,6 +63,8 @@ interface LoadedState {
   sessionId: string;
   sessionStatus: 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
   currentStepId: string | null;
+  /** Session scratch space — `_retry` counts invalid answers per step. */
+  collectedData: Record<string, unknown>;
   flowFallbackMessage: string;
   flowNeedsReviewKeywords: string[];
   steps: StepRow[];
@@ -63,7 +73,7 @@ interface LoadedState {
 type Action =
   | { kind: 'NEEDS_REVIEW'; reason: string }
   | { kind: 'REPEAT_FALLBACK' }
-  | { kind: 'REPLY_AND_STAY'; reply: string }
+  | { kind: 'REPLY_AND_STAY'; reply: string; retry?: { stepId: string; count: number } }
   | { kind: 'IGNORE' }
   | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string; packages?: string[]; nextStep: StepRow | null };
 
@@ -163,6 +173,10 @@ async function loadState(organizationId: string, conversationId: string): Promis
       sessionId: session.id,
       sessionStatus: session.status,
       currentStepId: session.currentStepId,
+      collectedData:
+        session.collectedData && typeof session.collectedData === 'object' && !Array.isArray(session.collectedData)
+          ? (session.collectedData as Record<string, unknown>)
+          : {},
       flowFallbackMessage: flow.fallbackMessage,
       flowNeedsReviewKeywords: Array.isArray(flow.needsReviewKeywords) ? (flow.needsReviewKeywords as string[]) : [],
       steps: flow.steps as unknown as StepRow[],
@@ -211,20 +225,50 @@ async function decide(
   }
 
   if (currentStep.type === 'COLLECT') {
-    let leadValue: unknown = messageBody.trim();
+    const config = (currentStep.config ?? {}) as CollectConfig;
+    const answerType = config.validation ?? defaultAnswerType(currentStep.leadField);
+    const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
+
+    // The AI's reading of the message first ("I'm Rahul" → "Rahul"), then the raw text.
+    let extractedValue: unknown = null;
     if (currentStep.leadField && agent) {
       const extracted = await extractLeadFields(agent.apiKey, DEFAULT_GEMINI_MODEL, messageBody).catch(() => ({}));
-      const field = currentStep.leadField as keyof typeof extracted;
-      if (extracted[field] != null) leadValue = extracted[field];
+      extractedValue = extracted[currentStep.leadField as keyof typeof extracted] ?? null;
     }
-    const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
-    return { kind: 'ADVANCE', leadField: currentStep.leadField ?? undefined, leadValue, nextStep };
+    const checked = [extractedValue, messageBody].filter((v) => v != null).map((v) => validateAnswer(answerType, v));
+    const valid = checked.find((r) => r.ok);
+    if (valid?.ok) return { kind: 'ADVANCE', leadField: currentStep.leadField ?? undefined, leadValue: valid.value, nextStep };
+
+    // Invalid — ask again, up to the step's attempt limit, then move on without saving it.
+    const retries = (state.collectedData._retry ?? {}) as Record<string, number>;
+    const count = (retries[currentStep.id] ?? 0) + 1;
+    const maxAttempts = config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+    if (count < maxAttempts) {
+      const reply = config.errorMessage?.trim() || DEFAULT_ERROR_MESSAGES[answerType];
+      return { kind: 'REPLY_AND_STAY', reply, retry: { stepId: currentStep.id, count } };
+    }
+    return { kind: 'ADVANCE', nextStep };
   }
 
   if (currentStep.type === 'CONFIRM') {
     const options = (Array.isArray(currentStep.options) ? currentStep.options : []) as ConfirmOption[];
     const lower = messageBody.trim().toLowerCase();
-    let matchedOption = options.find((o) => lower.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(lower));
+    let matchedOption: ConfirmOption | undefined;
+
+    // 1. A tapped button / list row on THIS question (an old message's tap falls through to its text).
+    const tapPrefix = `${currentStep.id}:`;
+    if (interactiveSelectionId?.startsWith(tapPrefix)) {
+      matchedOption = options[parseInt(interactiveSelectionId.slice(tapPrefix.length), 10)];
+    }
+    // 2. "2" / "2." — the number from the text version of the options.
+    const numbered = lower.match(/^(\d{1,2})\.?$/);
+    if (!matchedOption && numbered) matchedOption = options[parseInt(numbered[1], 10) - 1];
+    // 3. The option's own words (exact first, then contained either way).
+    if (!matchedOption && lower) {
+      matchedOption =
+        options.find((o) => o.label.trim().toLowerCase() === lower) ??
+        options.find((o) => lower.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(lower));
+    }
 
     if (!matchedOption && options.length === 2 && agent) {
       const answer = await classifyYesNo(agent.apiKey, DEFAULT_GEMINI_MODEL, currentStep.question ?? '', messageBody).catch(() => null);
@@ -305,8 +349,8 @@ async function writeLeadField(organizationId: string, leadId: string | null, fie
   if (!leadId || rawValue == null) return;
   await withTenant(organizationId, async (tx) => {
     if (field === LEAD_DATE_FIELD) {
-      const d = new Date(String(rawValue));
-      if (Number.isNaN(d.getTime())) return; // couldn't parse — leave the existing value alone rather than corrupt it
+      const d = rawValue instanceof Date ? rawValue : parseTravelDate(String(rawValue));
+      if (!d || Number.isNaN(d.getTime())) return; // couldn't parse — leave the existing value alone rather than corrupt it
       await tx.lead.updateMany({ where: { id: leadId, organizationId }, data: { travelDate: d } });
       return;
     }
@@ -320,6 +364,21 @@ async function writeLeadField(organizationId: string, leadId: string | null, fie
     if (!text) return;
     await tx.lead.updateMany({ where: { id: leadId, organizationId }, data: { [field]: text } });
   });
+}
+
+/** A CONFIRM question with its options as WhatsApp buttons / a list menu (numbered text on Instagram). */
+async function sendConfirm(organizationId: string, state: LoadedState, step: StepRow): Promise<void> {
+  const options = (Array.isArray(step.options) ? step.options : []) as ConfirmOption[];
+  const config = (step.config ?? {}) as ConfirmConfig;
+  await sendChoices(
+    organizationId,
+    state.conversation.channel,
+    state.conversation.externalContactId,
+    state.conversation.id,
+    step.question?.trim() || 'Please choose an option:',
+    options.map((o, i) => ({ id: `${step.id}:${i}`, label: o.label, description: o.description })),
+    config.buttonLabel?.trim() || undefined,
+  );
 }
 
 /**
@@ -351,6 +410,9 @@ export async function advanceBotFlow(
   if (action.kind === 'REPEAT_FALLBACK') {
     const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, state.flowFallbackMessage);
     await recordOutbound(organizationId, conversationId, state.flowFallbackMessage, result);
+    // Didn't match any option — put the buttons back in front of them.
+    const current = state.steps.find((s) => s.id === state.currentStepId);
+    if (current?.type === 'CONFIRM') await sendConfirm(organizationId, state, current);
     await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
     return;
   }
@@ -363,7 +425,13 @@ export async function advanceBotFlow(
   if (action.kind === 'REPLY_AND_STAY') {
     const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, action.reply);
     await recordOutbound(organizationId, conversationId, action.reply, result);
-    await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
+    const retry = action.retry;
+    const collectedData = retry
+      ? ({ ...state.collectedData, _retry: { ...((state.collectedData._retry ?? {}) as Record<string, number>), [retry.stepId]: retry.count } } as Prisma.InputJsonValue)
+      : undefined;
+    await withTenant(organizationId, (tx) =>
+      tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt, ...(collectedData ? { collectedData } : {}) } }),
+    );
     return;
   }
 
@@ -445,7 +513,12 @@ export async function advanceBotFlow(
       continue;
     }
 
-    // Interactive (COLLECT/CONFIRM/AI_OPEN) or terminal (CLOSING) — send its
+    if (cursor.type === 'CONFIRM') {
+      await sendConfirm(organizationId, state, cursor);
+      break;
+    }
+
+    // Interactive (COLLECT/AI_OPEN) or terminal (CLOSING) — send its
     // message, then stop the chain here.
     if (cursor.question) {
       const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, cursor.question);
@@ -456,11 +529,13 @@ export async function advanceBotFlow(
   }
 
   if (!cursor && sessionStatus === 'ACTIVE') sessionStatus = 'COMPLETED'; // walked off the end of the flow
+  // Attempt counts belong to the question they were for — start fresh on the next one.
+  const { _retry: _cleared, ...collectedData } = state.collectedData;
 
   await withTenant(organizationId, async (tx) => {
     await tx.botFlowSession.update({
       where: { id: state.sessionId },
-      data: { currentStepId: cursor?.id ?? null, status: sessionStatus, lastProcessedMessageAt: messageCreatedAt },
+      data: { currentStepId: cursor?.id ?? null, status: sessionStatus, lastProcessedMessageAt: messageCreatedAt, collectedData: collectedData as Prisma.InputJsonValue },
     });
     if (sessionStatus === 'NEEDS_REVIEW' && state.conversation.leadId) {
       await tx.lead.updateMany({ where: { id: state.conversation.leadId, organizationId }, data: { needsReview: true, needsReviewReason } });

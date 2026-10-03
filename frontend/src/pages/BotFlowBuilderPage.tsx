@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { BotFlowConfirmOption, BotFlowDetail, BotFlowLeadField, BotFlowStep, BotFlowStepType, TravelPackage } from '@/types';
+import type { BotFlowAnswerType, BotFlowConfirmOption, BotFlowDetail, BotFlowLeadField, BotFlowStep, BotFlowStepType, TravelPackage } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -66,6 +66,31 @@ const LEAD_FIELD_LABELS: Record<BotFlowLeadField, string> = {
   notes: 'Notes',
 };
 const LEAD_FIELDS = Object.keys(LEAD_FIELD_LABELS) as BotFlowLeadField[];
+
+const ANSWER_TYPE_LABELS: Record<BotFlowAnswerType, string> = {
+  text: 'Any text',
+  email: 'Email address',
+  phone: 'Phone number',
+  number: 'Number',
+  date: 'Date',
+};
+
+// Mirrors backend/src/lib/answerValidation.ts.
+function defaultAnswerType(leadField: BotFlowLeadField | ''): BotFlowAnswerType {
+  if (leadField === 'email') return 'email';
+  if (leadField === 'phone') return 'phone';
+  if (leadField === 'travelerCount') return 'number';
+  if (leadField === 'travelDate') return 'date';
+  return 'text';
+}
+
+const DEFAULT_ERROR_MESSAGES: Record<BotFlowAnswerType, string> = {
+  text: 'Sorry, I didn’t get that — could you type your answer?',
+  email: 'That doesn’t look like a valid email address. Please send it again (e.g. name@example.com).',
+  phone: 'That doesn’t look like a valid phone number. Please send it again with the country code (e.g. +91 98765 43210).',
+  number: 'Please reply with a number (e.g. 4).',
+  date: 'Please send the date like 25/12/2026 or 25 Dec.',
+};
 
 const STEP_STYLES: Record<BotFlowStepType, { icon: typeof MessageSquareText; label: string; accent: string; bg: string }> = {
   COLLECT: { icon: MessageSquareText, label: 'Collect', accent: 'border-sky-400', bg: 'bg-sky-50' },
@@ -129,7 +154,13 @@ function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
         <p className="mt-1 text-[11px] text-muted-foreground">→ Lead.{LEAD_FIELD_LABELS[step.leadField]}</p>
       )}
       {step.type === 'CONFIRM' && step.options && (
-        <p className="mt-1 text-[11px] text-muted-foreground">{step.options.length} options</p>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {step.options.map((o, i) => (
+            <span key={i} className="max-w-full truncate rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] text-amber-800">
+              {o.label}
+            </span>
+          ))}
+        </div>
       )}
       {step.type === 'AI_OPEN' && step.config.instructions && (
         <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">AI: {step.config.instructions}</p>
@@ -166,6 +197,10 @@ function StepEditor({
   const [nextStepId, setNextStepId] = useState<string | null>(null);
   const [packageIds, setPackageIds] = useState<string[]>([]);
   const [instructions, setInstructions] = useState('');
+  const [validation, setValidation] = useState<BotFlowAnswerType | ''>('');
+  const [maxAttempts, setMaxAttempts] = useState(3);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [buttonLabel, setButtonLabel] = useState('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const packagesQuery = useQuery({
@@ -185,6 +220,10 @@ function StepEditor({
     // with only the single packageId still hydrates correctly here.
     setPackageIds(step.config.packageIds ?? (step.config.packageId ? [step.config.packageId] : []));
     setInstructions(step.config.instructions ?? '');
+    setValidation(step.config.validation ?? '');
+    setMaxAttempts(step.config.maxAttempts ?? 3);
+    setErrorMessage(step.config.errorMessage ?? '');
+    setButtonLabel(step.config.buttonLabel ?? '');
   }, [step]);
 
   if (!step) return null;
@@ -193,15 +232,26 @@ function StepEditor({
 
   const handleSave = () => {
     if (step.type === 'CONFIRM') {
-      onSave({ question, options });
+      onSave({
+        question,
+        options: options.map((o) => ({ ...o, label: o.label.trim(), description: o.description?.trim() || undefined })),
+        config: { buttonLabel: buttonLabel.trim() || undefined },
+      });
     } else if (step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL') {
       onSave({ question: question || undefined, nextStepId, config: { packageIds } });
     } else if (step.type === 'AI_OPEN') {
       onSave({ question, nextStepId, config: { instructions } });
     } else if (step.type === 'HANDOFF') {
       onSave({ question: question || undefined });
+    } else if (step.type === 'COLLECT') {
+      onSave({
+        question,
+        leadField: leadField || undefined,
+        nextStepId,
+        config: { validation: validation || undefined, maxAttempts, errorMessage: errorMessage.trim() || undefined },
+      });
     } else {
-      // COLLECT, MESSAGE, CLOSING
+      // MESSAGE, CLOSING
       onSave({ question, leadField: leadField || undefined, nextStepId });
     }
   };
@@ -213,7 +263,12 @@ function StepEditor({
         ? packageIds.length > 0
         : step.type === 'AI_OPEN'
           ? !!question.trim() && !!instructions.trim()
-          : !!question.trim();
+          : step.type === 'CONFIRM'
+            ? !!question.trim() && options.every((o) => o.label.trim())
+            : !!question.trim();
+  const effectiveAnswerType = validation || defaultAnswerType(leadField);
+  // WhatsApp's own limits decide how the options are shown.
+  const asButtons = options.length <= 3 && options.every((o) => o.label.trim().length <= 20);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -224,7 +279,8 @@ function StepEditor({
           </DialogTitle>
           <DialogDescription>
             {step.type === 'COLLECT' && "Ask a question and write the traveller's answer into a Lead field."}
-            {step.type === 'CONFIRM' && 'Ask a yes/no or multiple-choice question and branch based on the answer.'}
+            {step.type === 'CONFIRM' &&
+              'Ask a question with tappable options — each one leads to its own branch. Up to 3 short options show as WhatsApp buttons; more become a list menu.'}
             {step.type === 'CLOSING' && 'End the flow with a final message.'}
             {step.type === 'MESSAGE' && 'Send a message with no reply needed — the flow continues on to the next step right away.'}
             {step.type === 'HANDOFF' && 'End the bot\'s turn and flag this lead for a human — same as a "Needs Review" keyword match.'}
@@ -319,6 +375,51 @@ function StepEditor({
             </Field>
           )}
 
+          {step.type === 'COLLECT' && (
+            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Answer check</p>
+              <div className="grid grid-cols-[1fr_7rem] gap-2">
+                <Field label="Accept" htmlFor="stepValidation">
+                  <Select value={validation || '__auto'} onValueChange={(v) => setValidation(v === '__auto' ? '' : (v as BotFlowAnswerType))}>
+                    <SelectTrigger id="stepValidation"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__auto">Auto ({ANSWER_TYPE_LABELS[defaultAnswerType(leadField)]})</SelectItem>
+                      {(Object.keys(ANSWER_TYPE_LABELS) as BotFlowAnswerType[]).map((t) => (
+                        <SelectItem key={t} value={t}>{ANSWER_TYPE_LABELS[t]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Attempts" htmlFor="stepAttempts">
+                  <Select value={String(maxAttempts)} onValueChange={(v) => setMaxAttempts(Number(v))}>
+                    <SelectTrigger id="stepAttempts"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              {effectiveAnswerType !== 'text' && (
+                <Field
+                  label="Reply to an invalid answer"
+                  htmlFor="stepError"
+                  hint={`After ${maxAttempts} ${maxAttempts === 1 ? 'try' : 'tries'} the flow moves on without saving the answer.`}
+                >
+                  <Textarea
+                    id="stepError"
+                    rows={2}
+                    maxLength={500}
+                    value={errorMessage}
+                    onChange={(e) => setErrorMessage(e.target.value)}
+                    placeholder={DEFAULT_ERROR_MESSAGES[effectiveAnswerType]}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+
           {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL'] as BotFlowStepType[]).includes(step.type) && (
             <Field label="Then go to" htmlFor="stepNext" hint="Or drag a connection on the canvas instead.">
               <Select value={nextStepId ?? '__end'} onValueChange={(v) => setNextStepId(v === '__end' ? null : v)}>
@@ -334,41 +435,81 @@ function StepEditor({
           )}
 
           {step.type === 'CONFIRM' && (
-            <Field label="Options" htmlFor="stepOptions" hint="Each option branches to a different step.">
+            <Field
+              label="Options"
+              htmlFor="stepOptions"
+              hint={
+                asButtons
+                  ? 'Shown as WhatsApp reply buttons (up to 3, max 20 characters each). Each option branches to its own step.'
+                  : 'Shown as a WhatsApp list menu (up to 10 options; titles over 24 characters are shortened, with the full text underneath). Each option branches to its own step.'
+              }
+            >
               <div className="space-y-2">
-                {options.map((opt, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg border border-border p-2">
-                    <Input
-                      value={opt.label}
-                      onChange={(e) => setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, label: e.target.value } : o)))}
-                      placeholder="Yes"
-                      className="flex-1"
-                    />
-                    <Select
-                      value={opt.nextStepId ?? '__end'}
-                      onValueChange={(v) => setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, nextStepId: v === '__end' ? null : v } : o)))}
-                    >
-                      <SelectTrigger className="w-40 shrink-0"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__end">End flow</SelectItem>
-                        {otherSteps.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {options.length > 2 && (
-                      <Button variant="ghost" size="icon-sm" onClick={() => setOptions((prev) => prev.filter((_, idx) => idx !== i))} aria-label="Remove option">
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
+                {options.map((opt, i) => {
+                  const limit = asButtons ? 20 : 24;
+                  const len = opt.label.trim().length;
+                  return (
+                    <div key={i} className="space-y-1.5 rounded-lg border border-border p-2">
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            value={opt.label}
+                            maxLength={80}
+                            onChange={(e) => setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, label: e.target.value } : o)))}
+                            placeholder={i === 0 ? 'Yes' : i === 1 ? 'No' : `Option ${i + 1}`}
+                            className="pr-12"
+                          />
+                          <span
+                            className={cn(
+                              'pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] tabular-nums',
+                              len > limit ? 'text-amber-600' : 'text-muted-foreground',
+                            )}
+                          >
+                            {len}/{limit}
+                          </span>
+                        </div>
+                        <Select
+                          value={opt.nextStepId ?? '__end'}
+                          onValueChange={(v) => setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, nextStepId: v === '__end' ? null : v } : o)))}
+                        >
+                          <SelectTrigger className="w-40 shrink-0"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__end">End flow</SelectItem>
+                            {otherSteps.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {options.length > 2 && (
+                          <Button variant="ghost" size="icon-sm" onClick={() => setOptions((prev) => prev.filter((_, idx) => idx !== i))} aria-label="Remove option">
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                      {!asButtons && (
+                        <Input
+                          value={opt.description ?? ''}
+                          maxLength={72}
+                          onChange={(e) => setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, description: e.target.value } : o)))}
+                          placeholder="Description under this option (optional)"
+                          className="h-8 text-xs"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
                 {options.length < 10 && (
                   <Button variant="outline" size="sm" onClick={() => setOptions((prev) => [...prev, { label: '', nextStepId: null }])}>
                     <Plus className="size-3.5" /> Add option
                   </Button>
                 )}
               </div>
+            </Field>
+          )}
+
+          {step.type === 'CONFIRM' && !asButtons && (
+            <Field label="List button label" htmlFor="stepButtonLabel" hint="The button they tap to open the list. Max 20 characters.">
+              <Input id="stepButtonLabel" maxLength={20} value={buttonLabel} onChange={(e) => setButtonLabel(e.target.value)} placeholder="Choose an option" />
             </Field>
           )}
         </div>

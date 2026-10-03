@@ -755,11 +755,22 @@ export interface Conversation {
   lastInboundAt: string | null;
   unreadCount: number;
   isFavorite: boolean;
+  /** The linked lead's pipeline stage (Inbox stage chips / badge). */
+  lead?: { id: string; status: LeadStatus } | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type ConversationFilter = 'all' | 'unread' | 'favorites';
+
+/** Inbox stage chip: a lead stage, or chats with no lead. */
+export type ConversationStage = LeadStatus | 'none';
+
+export interface ConversationStageCounts {
+  total: number;
+  none: number;
+  byStage: Record<LeadStatus, number>;
+}
 
 export type MessageDirection = 'INBOUND' | 'OUTBOUND';
 export type MessageStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED';
@@ -829,16 +840,28 @@ export type BotFlowLeadField = 'name' | 'email' | 'phone' | 'destination' | 'tra
 
 export interface BotFlowConfirmOption {
   label: string;
+  /** Shown under the option in a WhatsApp list menu (4+ options). */
+  description?: string;
   nextStepId: string | null;
 }
+
+export type BotFlowAnswerType = 'text' | 'email' | 'phone' | 'number' | 'date';
 
 export interface BotFlowStepConfig {
   /** SEND_PACKAGE only. */
   packageId?: string;
   /** AI_OPEN only — guidance for how the AI should handle this part of the conversation. */
   instructions?: string;
-  /** CAROUSEL only — up to 10 packages, sent as a WhatsApp Interactive List, in this order. */
+  /** CAROUSEL only — up to 10 packages, sent as a WhatsApp carousel, in this order. */
   packageIds?: string[];
+  /** COLLECT only — what a valid answer looks like (defaults from the Lead field). */
+  validation?: BotFlowAnswerType;
+  /** COLLECT only — tries before the flow moves on without the answer (default 3). */
+  maxAttempts?: number;
+  /** COLLECT only — the reply to an invalid answer. */
+  errorMessage?: string;
+  /** CONFIRM only — label on the button that opens the list menu (4+ options). */
+  buttonLabel?: string;
 }
 
 export interface BotFlowStep {

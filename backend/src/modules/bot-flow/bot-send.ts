@@ -1,7 +1,16 @@
 import { withTenant } from '../../lib/prisma';
 import { decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
-import { sendWhatsAppText, sendInstagramText, sendWhatsAppImage, sendWhatsAppCarousel, type WhatsAppCarouselCard } from '../../lib/meta';
+import {
+  sendWhatsAppText,
+  sendInstagramText,
+  sendWhatsAppImage,
+  sendWhatsAppCarousel,
+  sendWhatsAppButtons,
+  sendWhatsAppList,
+  type WhatsAppCarouselCard,
+  type WhatsAppChoice,
+} from '../../lib/meta';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
 /**
@@ -76,6 +85,63 @@ export async function recordOutbound(
       data: { lastMessageAt: new Date(), lastMessagePreview: (mediaUrl ? `📷 ${body}` : body).slice(0, 200) },
     });
   });
+}
+
+// --- Questions with tappable options -------------------------------------------
+
+export interface Choice {
+  /** Returned as the tap's interactiveSelectionId. */
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/** "Question\n\n1. Yes\n2. No" — how a choice question reads as plain text (Instagram, fallbacks, the Inbox). */
+export function numberedChoices(question: string, choices: Choice[]): string {
+  return [question, choices.map((c, i) => `${i + 1}. ${c.label}`).join('\n')].join('\n\n');
+}
+
+/**
+ * Sends a question with options to tap. WhatsApp: up to 3 short options
+ * (≤ 20 chars) become reply buttons; otherwise a list menu (up to 10 rows,
+ * long labels carried into the row description). Instagram, or if WhatsApp
+ * rejects it: a numbered text list — the engine accepts "1", "2", … too.
+ */
+export async function sendChoices(
+  organizationId: string,
+  channel: BotChannel,
+  to: string,
+  conversationId: string,
+  question: string,
+  choices: Choice[],
+  listButtonLabel = 'Choose an option',
+): Promise<SendResult | null> {
+  const asText = numberedChoices(question, choices);
+  if (channel === 'WHATSAPP' && choices.length > 0 && choices.length <= 10) {
+    const credentials = await credentialsFor(organizationId, channel);
+    if (!credentials) return null;
+    const creds = decryptJson<WhatsAppCredentials>(credentials);
+    const useButtons = choices.length <= 3 && choices.every((c) => c.label.length <= 20);
+    const result = await trySend(() => {
+      if (useButtons) {
+        return sendWhatsAppButtons(creds.phoneNumberId, creds.accessToken, to, question, choices.map((c) => ({ id: c.id, title: c.label })));
+      }
+      const rows: WhatsAppChoice[] = choices.map((c) => ({
+        id: c.id,
+        title: c.label.length <= 24 ? c.label : clip(c.label, 24),
+        description: c.description || (c.label.length > 24 ? clip(c.label, 72) : undefined),
+      }));
+      return sendWhatsAppList(creds.phoneNumberId, creds.accessToken, to, question, listButtonLabel, rows);
+    });
+    if (result.ok) {
+      await recordOutbound(organizationId, conversationId, asText, result);
+      return result;
+    }
+    console.warn('[bot-send] interactive question failed, sending numbered text:', result.errorMessage);
+  }
+  const result = await attemptSend(organizationId, channel, to, asText);
+  await recordOutbound(organizationId, conversationId, asText, result);
+  return result;
 }
 
 // --- Package content ----------------------------------------------------------

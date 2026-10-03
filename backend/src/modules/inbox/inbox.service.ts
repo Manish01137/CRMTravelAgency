@@ -11,7 +11,7 @@ import {
 } from '../../lib/meta';
 import { BadRequest, NotFound } from '../../lib/errors';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
-import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput } from './inbox.schemas';
+import { LEAD_STAGES, type CreateTemplateInput, type ListConversationsQuery, type SendMessageInput, type StageCountsQuery } from './inbox.schemas';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -45,6 +45,7 @@ export async function listConversations(organizationId: string, query: ListConve
         channel: query.channel,
         ...(query.filter === 'unread' ? { unreadCount: { gt: 0 } } : {}),
         ...(query.filter === 'favorites' ? { isFavorite: true } : {}),
+        ...(query.stage === 'none' ? { leadId: null } : query.stage ? { lead: { status: query.stage } } : {}),
         ...(query.search
           ? {
               OR: [
@@ -56,8 +57,27 @@ export async function listConversations(organizationId: string, query: ListConve
       },
       orderBy: { lastMessageAt: 'desc' },
       take: 200,
+      include: { lead: { select: { id: true, status: true } } },
     }),
   );
+}
+
+/** How many chats on this channel sit in each lead stage — the counts on the Inbox stage chips. */
+export async function stageCounts(organizationId: string, query: StageCountsQuery) {
+  return withTenant(organizationId, async (tx) => {
+    const [grouped, total, noLead] = await Promise.all([
+      tx.lead.groupBy({
+        by: ['status'],
+        where: { organizationId, conversations: { some: { channel: query.channel } } },
+        _count: { _all: true },
+      }),
+      tx.conversation.count({ where: { organizationId, channel: query.channel } }),
+      tx.conversation.count({ where: { organizationId, channel: query.channel, leadId: null } }),
+    ]);
+    const byStage = Object.fromEntries(LEAD_STAGES.map((s) => [s, 0])) as Record<(typeof LEAD_STAGES)[number], number>;
+    for (const g of grouped) byStage[g.status] = g._count._all;
+    return { total, none: noLead, byStage };
+  });
 }
 
 export async function setFavorite(organizationId: string, conversationId: string, isFavorite: boolean) {
@@ -73,10 +93,11 @@ export async function listMessages(organizationId: string, conversationId: strin
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation) throw NotFound('Conversation not found');
     const messages = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' }, take: 500 });
+    const lead = conversation.leadId ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { id: true, status: true } }) : null;
     if (conversation.unreadCount > 0) {
       await tx.conversation.update({ where: { id: conversationId }, data: { unreadCount: 0 } });
     }
-    return { conversation, messages };
+    return { conversation: { ...conversation, lead }, messages };
   });
 }
 
