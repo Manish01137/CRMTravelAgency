@@ -251,6 +251,19 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
   };
 }
 
+function dayHasContent(d: Values['itinerary'][number]): boolean {
+  return !!(
+    d.title.trim() ||
+    d.description.trim() ||
+    d.stay.trim() ||
+    d.meals.trim() ||
+    d.activities.trim() ||
+    d.hotelId ||
+    d.images.length > 0 ||
+    d.activityBlocks.some((b) => b.name.trim())
+  );
+}
+
 function toPayload(v: Values): Record<string, unknown> {
   const num = (s: string) => (s.trim() === '' ? null : Number(s));
   return {
@@ -275,13 +288,15 @@ function toPayload(v: Values): Record<string, unknown> {
     description: v.description.trim() || null,
     contactNumber: v.contactNumber.trim() || null,
     contactEmail: v.contactEmail.trim() || null,
-    // Days are numbered by position among the saved (titled) days, so deleting
-    // or leaving a day blank never leaves the PDF starting at "Day 2".
+    // A day is kept if it has ANY content — picking sightseeing (or a hotel,
+    // photo, plan) before typing a title used to drop the whole day silently,
+    // so it never reached the package page or PDF. Untitled days get "Day N".
+    // Days are numbered by position among the kept days.
     itinerary: v.itinerary
-      .filter((d) => d.title.trim())
+      .filter(dayHasContent)
       .map((d, i) => ({
         day: i + 1,
-        title: d.title.trim(),
+        title: d.title.trim() || `Day ${i + 1}`,
         description: d.description.trim() || undefined,
         hotelId: d.hotelId || undefined,
         stay: d.stay.trim() || undefined,
@@ -889,7 +904,7 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       ),
     },
     { label: 'Categories', value: v.categories.filter((c) => c.value).map((c) => c.value).join(', ') || '—' },
-    { label: 'Itinerary days', value: String(v.itinerary.filter((d) => d.title.trim()).length) },
+    { label: 'Itinerary days', value: String(v.itinerary.filter(dayHasContent).length) },
     { label: 'FAQs', value: String(v.faqs.filter((f) => f.question.trim()).length) },
     { label: 'Highlights', value: String(v.highlights.filter((h) => h.value.trim()).length) },
     { label: 'Public slug', value: v.slug || 'auto-generated' },
@@ -981,7 +996,7 @@ function AiGenerateDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [prompt, setPrompt] = useState('');
-  const existingDays = open ? form.getValues('itinerary').filter((d) => d.title.trim()).length : 0;
+  const existingDays = open ? form.getValues('itinerary').filter(dayHasContent).length : 0;
   const mutation = useMutation({
     mutationFn: () => {
       const v = form.getValues();
