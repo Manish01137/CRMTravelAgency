@@ -1,6 +1,6 @@
 import { SchemaType, type FunctionDeclaration } from '@google/generative-ai';
 import { withTenant } from '../../lib/prisma';
-import { buildPackageContent } from '../bot-flow/bot-flow.engine';
+import { buildPackageContent } from '../bot-flow/bot-send';
 
 /**
  * Smart Bot's tool layer. Gemini (via classifyBotIntent in lib/gemini.ts)

@@ -4,7 +4,7 @@ import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
-import { attemptSend, buildPackageContent, recordOutbound } from '../bot-flow/bot-flow.engine';
+import { sendPackage } from '../bot-flow/bot-send';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
 import { describeWhatsAppMessage } from '../../lib/whatsappInbound';
 import { env } from '../../env';
@@ -318,10 +318,7 @@ async function sendAdPackagesIfNotFlowHandled(
   }
   let anySent = false;
   for (const packageId of inbound.adPackageIds) {
-    const content = await buildPackageContent(organizationId, packageId);
-    if (!content) continue;
-    const result = await attemptSend(organizationId, 'WHATSAPP', phone, content);
-    await recordOutbound(organizationId, inbound.conversationId, content, result);
+    const result = await sendPackage(organizationId, 'WHATSAPP', phone, inbound.conversationId, packageId);
     anySent ||= !!result?.ok;
   }
   if (!anySent) return false;

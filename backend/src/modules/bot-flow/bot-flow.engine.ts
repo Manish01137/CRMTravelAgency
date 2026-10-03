@@ -1,10 +1,7 @@
 import { withTenant } from '../../lib/prisma';
-import { decryptJson } from '../../lib/encryption';
-import { env } from '../../env';
-import { sendWhatsAppText, sendInstagramText, sendWhatsAppList, type WhatsAppListRow } from '../../lib/meta';
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
-import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
+import { attemptSend, recordOutbound, sendPackage, sendPackageCarousel } from './bot-send';
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
@@ -68,7 +65,7 @@ type Action =
   | { kind: 'REPEAT_FALLBACK' }
   | { kind: 'REPLY_AND_STAY'; reply: string }
   | { kind: 'IGNORE' }
-  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string | string[]; nextStep: StepRow | null };
+  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string; packages?: string[]; nextStep: StepRow | null };
 
 const LEAD_DATE_FIELD = 'travelDate';
 const LEAD_INT_FIELD = 'travelerCount';
@@ -210,12 +207,7 @@ async function decide(
     // Brand-new session: the inbound message just triggered the flow — open
     // with the first step, preceded by the ad's package when this lead came
     // from a linked Click-to-WhatsApp ad.
-    const reply: string[] = [];
-    for (const packageId of await openingAdPackages(state, organizationId)) {
-      const content = await buildPackageContent(organizationId, packageId);
-      if (content) reply.push(content);
-    }
-    return { kind: 'ADVANCE', reply, nextStep: findStartStep(state.steps) };
+    return { kind: 'ADVANCE', packages: await openingAdPackages(state, organizationId), nextStep: findStartStep(state.steps) };
   }
 
   if (currentStep.type === 'COLLECT') {
@@ -258,8 +250,10 @@ async function decide(
   if (currentStep.type === 'CAROUSEL') {
     const config = (currentStep.config ?? {}) as { packageIds?: string[] };
     const packageIds = config.packageIds ?? [];
-    // A tap on one of the list rows, or a typed reply naming exactly one of
-    // the listed packages ("kashmir") — anything ambiguous falls back.
+    // The carousel's buttons open each package's page, so a reply here is
+    // either a package named in text ("kashmir") — send that one — or
+    // anything else, which just moves the flow on. (A tap on a row of the
+    // older list-style message still counts as a pick.)
     let picked = interactiveSelectionId && packageIds.includes(interactiveSelectionId) ? interactiveSelectionId : null;
     if (!picked && messageBody.trim() && packageIds.length > 0) {
       const candidates = await withTenant(organizationId, (tx) =>
@@ -268,112 +262,14 @@ async function decide(
       const matches = matchPackagesInText(messageBody, candidates);
       if (matches.length === 1) picked = matches[0].id;
     }
-    if (!picked) return { kind: 'REPEAT_FALLBACK' };
-    // The list itself only shows names — the pick is what earns the full
-    // package details (price, description, brochure link).
-    const reply = (await buildPackageContent(organizationId, picked)) ?? undefined;
     const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
-    return { kind: 'ADVANCE', reply, nextStep };
+    return { kind: 'ADVANCE', packages: picked ? [picked] : [], nextStep };
   }
 
   // CLOSING/MESSAGE/HANDOFF/SEND_PACKAGE don't accept further input as the CURRENT
   // step — they auto-chain or end the session, so the session should already have
   // moved past them by now. Treat any stray reply as "flow's over."
   return { kind: 'ADVANCE', nextStep: null };
-}
-
-// --- Sending (external call — outside any transaction) ----------------------
-
-export interface SendResult {
-  ok: boolean;
-  externalMessageId?: string;
-  errorMessage?: string;
-}
-
-export async function attemptSend(
-  organizationId: string,
-  channel: 'WHATSAPP' | 'INSTAGRAM',
-  externalContactId: string,
-  body: string,
-): Promise<SendResult | null> {
-  // A short read-only lookup, its own fast transaction — not held open across the send below.
-  const connection = await withTenant(organizationId, (tx) =>
-    tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel } } }),
-  );
-  if (!connection?.credentials) return null; // channel got disconnected mid-flow — nothing safe to do
-
-  try {
-    if (channel === 'WHATSAPP') {
-      const creds = decryptJson<WhatsAppCredentials>(connection.credentials);
-      const sent = await sendWhatsAppText(creds.phoneNumberId, creds.accessToken, externalContactId, body);
-      return { ok: true, externalMessageId: sent.externalMessageId };
-    }
-    const creds = decryptJson<InstagramCredentials>(connection.credentials);
-    const sent = await sendInstagramText(creds.igUserId, creds.accessToken, externalContactId, body);
-    return { ok: true, externalMessageId: sent.externalMessageId };
-  } catch (err) {
-    return { ok: false, errorMessage: err instanceof Error ? err.message : 'Send failed' };
-  }
-}
-
-/** CAROUSEL's send path — a WhatsApp Interactive List message, not plain text. No Instagram equivalent. */
-async function attemptSendList(
-  organizationId: string,
-  channel: 'WHATSAPP' | 'INSTAGRAM',
-  externalContactId: string,
-  content: { bodyText: string; buttonLabel: string; rows: WhatsAppListRow[] },
-): Promise<SendResult | null> {
-  if (channel !== 'WHATSAPP') return null;
-  const connection = await withTenant(organizationId, (tx) =>
-    tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel } } }),
-  );
-  if (!connection?.credentials) return null;
-
-  try {
-    const creds = decryptJson<WhatsAppCredentials>(connection.credentials);
-    const sent = await sendWhatsAppList(creds.phoneNumberId, creds.accessToken, externalContactId, content.bodyText, content.buttonLabel, content.rows);
-    return { ok: true, externalMessageId: sent.externalMessageId };
-  } catch (err) {
-    return { ok: false, errorMessage: err instanceof Error ? err.message : 'Send failed' };
-  }
-}
-
-export async function recordOutbound(organizationId: string, conversationId: string, body: string, result: SendResult | null): Promise<void> {
-  await withTenant(organizationId, async (tx) => {
-    await tx.message.create({
-      data: {
-        organizationId,
-        conversationId,
-        direction: 'OUTBOUND',
-        body,
-        status: result?.ok ? 'SENT' : 'FAILED',
-        externalMessageId: result?.externalMessageId,
-        errorMessage: result?.errorMessage,
-        sentById: null,
-      },
-    });
-    await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), lastMessagePreview: body.slice(0, 200) } });
-  });
-}
-
-function formatMoney(amount: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
-  } catch {
-    return `${currency} ${amount}`;
-  }
-}
-
-/** SEND_PACKAGE's content — same shareable-summary shape the Inbox's "Send" package button uses, built server-side. */
-export async function buildPackageContent(organizationId: string, packageId: string | undefined): Promise<string | null> {
-  if (!packageId) return null;
-  const pkg = await withTenant(organizationId, (tx) => tx.package.findUnique({ where: { id: packageId } }));
-  if (!pkg || pkg.organizationId !== organizationId) return null;
-  const priceText = pkg.priceAmount != null ? formatMoney(pkg.priceAmount, pkg.priceCurrency) : null;
-  const lines = [`*${pkg.name}* — ${pkg.destination}`, `${pkg.days}D / ${pkg.nights}N${priceText ? ` · ${priceText}` : ''}`];
-  if (pkg.whatsappDescription) lines.push('', pkg.whatsappDescription);
-  lines.push('', `${env.CORS_ORIGIN}/p/${pkg.id}`);
-  return lines.join('\n');
 }
 
 /**
@@ -401,35 +297,6 @@ async function pickPackageForLead(organizationId: string, packageIds: string[], 
     return !!d && (d === wanted || d.includes(wanted) || wanted.includes(d));
   });
   return match?.id ?? packageIds[0];
-}
-
-/**
- * CAROUSEL's content — a WhatsApp Interactive List of up to 10 packages.
- * Each row's `id` is the packageId itself, so the customer's tap comes back
- * as Message.interactiveSelectionId and `decide()` above can match it
- * directly — no free-text guessing needed.
- */
-async function buildCarouselContent(
-  organizationId: string,
-  packageIds: string[] | undefined,
-): Promise<{ bodyText: string; buttonLabel: string; rows: WhatsAppListRow[]; summaryText: string } | null> {
-  if (!packageIds || packageIds.length === 0) return null;
-  const found = await withTenant(organizationId, (tx) => tx.package.findMany({ where: { id: { in: packageIds }, organizationId } }));
-  // Preserve the order configured in the step, not whatever order the DB returns.
-  const ordered = packageIds.map((id) => found.find((p) => p.id === id)).filter((p): p is (typeof found)[number] => !!p);
-  if (ordered.length === 0) return null;
-
-  const rows: WhatsAppListRow[] = ordered.map((pkg) => ({
-    id: pkg.id,
-    title: pkg.name.slice(0, 24),
-    description: [pkg.destination, pkg.priceAmount != null ? formatMoney(pkg.priceAmount, pkg.priceCurrency) : null]
-      .filter(Boolean)
-      .join(' · ')
-      .slice(0, 72),
-  }));
-  const bodyText = 'Take a look at these packages:';
-  const summaryText = [bodyText, ...ordered.map((pkg) => `• ${pkg.name} — ${pkg.destination}`)].join('\n');
-  return { bodyText, buttonLabel: 'View packages', rows, summaryText };
 }
 
 // --- Phase 3: commit — fast, DB-only transactions ----------------------------
@@ -504,9 +371,13 @@ export async function advanceBotFlow(
   if (action.leadField) {
     await writeLeadField(organizationId, state.conversation.leadId, action.leadField, action.leadValue);
   }
-  for (const reply of action.reply === undefined ? [] : [action.reply].flat()) {
-    const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, reply);
-    await recordOutbound(organizationId, conversationId, reply, result);
+  const { channel, externalContactId } = state.conversation;
+  if (action.reply) {
+    const result = await attemptSend(organizationId, channel, externalContactId, action.reply);
+    await recordOutbound(organizationId, conversationId, action.reply, result);
+  }
+  for (const packageId of action.packages ?? []) {
+    await sendPackage(organizationId, channel, externalContactId, conversationId, packageId);
   }
 
   // Walk forward through any run of non-interactive steps (MESSAGE, SEND_PACKAGE),
@@ -548,13 +419,8 @@ export async function advanceBotFlow(
 
     if (cursor.type === 'CAROUSEL') {
       const config = (cursor.config ?? {}) as { packageIds?: string[] };
-      const content = await buildCarouselContent(organizationId, config.packageIds);
-      if (content) {
-        const result = await attemptSendList(organizationId, state.conversation.channel, state.conversation.externalContactId, content);
-        await recordOutbound(organizationId, conversationId, content.summaryText, result);
-      }
-      // Interactive — stop here and wait for the customer's tap, same as
-      // COLLECT/CONFIRM/AI_OPEN below, just with its own send mechanism.
+      await sendPackageCarousel(organizationId, channel, externalContactId, conversationId, config.packageIds ?? []);
+      // Interactive — stop here and wait for the traveller's reply, same as COLLECT/CONFIRM/AI_OPEN below.
       break;
     }
 
@@ -562,10 +428,8 @@ export async function advanceBotFlow(
       const config = (cursor.config ?? {}) as { packageId?: string; packageIds?: string[] };
       const candidateIds = config.packageIds?.length ? config.packageIds : config.packageId ? [config.packageId] : [];
       const chosenId = await pickPackageForLead(organizationId, candidateIds, state.conversation.leadId);
-      const text = chosenId && adPackageIds.has(chosenId) ? null : await buildPackageContent(organizationId, chosenId);
-      if (text) {
-        const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, text);
-        await recordOutbound(organizationId, conversationId, text, result);
+      if (chosenId && !adPackageIds.has(chosenId)) {
+        await sendPackage(organizationId, channel, externalContactId, conversationId, chosenId);
       }
       cursor = cursor.nextStepId ? state.steps.find((s) => s.id === cursor!.nextStepId) ?? null : null;
       continue;

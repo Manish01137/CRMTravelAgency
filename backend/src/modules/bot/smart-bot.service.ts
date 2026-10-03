@@ -1,5 +1,5 @@
 import { withTenant } from '../../lib/prisma';
-import { attemptSend, recordOutbound, buildPackageContent } from '../bot-flow/bot-flow.engine';
+import { attemptSend, recordOutbound, sendPackage, sendPackageCarousel } from '../bot-flow/bot-send';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
 import { classifyBotIntent, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
 import { TOOL_DECLARATIONS, runBotTool } from './tools';
@@ -147,24 +147,17 @@ async function handleExistingLead(
       tx.package.findMany({ where: { organizationId, isActive: true }, select: { id: true, name: true, destination: true }, take: 50 }),
     );
 
+    // Named one of our packages → send it (photo + details); several → carousel.
     const matched = matchPackagesInText(msg.text, packages);
-    if (matched.length === 1) {
-      const content = await buildPackageContent(organizationId, matched[0].id);
-      if (content) {
-        await reply(organizationId, conv, leadId, msg.phone, content, 'keyword_match');
+    if (matched.length > 0) {
+      const result =
+        matched.length === 1
+          ? await sendPackage(organizationId, 'WHATSAPP', msg.phone, conv.conversationId, matched[0].id)
+          : await sendPackageCarousel(organizationId, 'WHATSAPP', msg.phone, conv.conversationId, matched.map((p) => p.id), 'I found a few matching packages 👇');
+      if (result) {
+        await logInteraction(organizationId, leadId, 'outbound', matched.map((p) => p.name).join(', '), 'keyword_match');
         return;
       }
-    } else if (matched.length > 1) {
-      const list = matched.map((p) => `• ${p.name} — ${p.destination}`).join('\n');
-      await reply(
-        organizationId,
-        conv,
-        leadId,
-        msg.phone,
-        `I found a few matching packages:\n${list}\n\nWhich one would you like?`,
-        'keyword_match',
-      );
-      return;
     }
 
     const agent = await loadAgentContext(organizationId);

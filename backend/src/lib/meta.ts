@@ -307,42 +307,47 @@ export async function sendWhatsAppDocument(
   return { externalMessageId: data.messages[0].id };
 }
 
-export interface WhatsAppListRow {
-  /** Sent back verbatim as interactive.list_reply.id when the customer taps this row — keep it short and parseable. */
-  id: string;
-  title: string; // max 24 chars — Meta truncates/rejects longer
-  description?: string; // max 72 chars
+export interface WhatsAppCarouselCard {
+  imageUrl: string;
+  /** Up to 160 characters and 2 line breaks (WhatsApp's own limits). */
+  text: string;
+  /** Up to 20 characters. */
+  buttonText: string;
+  url: string;
 }
 
 /**
- * Sends a WhatsApp "Interactive List" message — a free-form message (no
- * template/approval needed, works inside the 24h session window like a plain
- * text message) that shows a tappable list of options. This is what the Bot
- * Flow CAROUSEL step uses to show multiple packages in one message; Meta's
- * actual swipeable image-card "Carousel Template" is a different, separate
- * feature that requires a pre-approved message template — not this.
+ * WhatsApp interactive media carousel: 2–10 horizontally scrollable cards,
+ * each with an image, short text and a button that opens a URL. Free-form
+ * (no template/approval), so it only works inside the 24h customer window.
+ * Every card must have an image header and the same button type.
  */
-export async function sendWhatsAppList(
+export async function sendWhatsAppCarousel(
   phoneNumberId: string,
   accessToken: string,
   to: string,
   bodyText: string,
-  buttonLabel: string,
-  rows: WhatsAppListRow[],
+  cards: WhatsAppCarouselCard[],
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
+      recipient_type: 'individual',
       to,
       type: 'interactive',
       interactive: {
-        type: 'list',
-        body: { text: bodyText },
+        type: 'carousel',
+        body: { text: bodyText.slice(0, 1024) },
         action: {
-          button: buttonLabel.slice(0, 20),
-          sections: [{ rows: rows.slice(0, 10) }], // Meta caps at 10 rows total across all sections
+          cards: cards.slice(0, 10).map((c, i) => ({
+            card_index: i,
+            type: 'cta_url',
+            header: { type: 'image', image: { link: c.imageUrl } },
+            body: { text: c.text },
+            action: { name: 'cta_url', parameters: { display_text: c.buttonText.slice(0, 20), url: c.url } },
+          })),
         },
       },
     }),

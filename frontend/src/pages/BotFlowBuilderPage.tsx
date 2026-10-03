@@ -89,7 +89,7 @@ const ADD_STEP_MENU: { type: BotFlowStepType; blurb: string }[] = [
   { type: 'CONFIRM', blurb: 'Yes/no or multiple-choice, branches by answer' },
   { type: 'MESSAGE', blurb: 'Send info, no reply needed — continues right away' },
   { type: 'SEND_PACKAGE', blurb: 'Share a package, then continue right away' },
-  { type: 'CAROUSEL', blurb: 'Show up to 10 packages as a tappable list (WhatsApp only)' },
+  { type: 'CAROUSEL', blurb: 'Show up to 10 packages as swipeable cards with a View package button' },
   { type: 'AI_OPEN', blurb: 'Let the AI Agent converse freely until it moves on' },
   { type: 'HANDOFF', blurb: 'End the bot\'s turn, flag the lead for your team' },
   { type: 'CLOSING', blurb: 'Final message — ends the flow' },
@@ -230,7 +230,7 @@ function StepEditor({
             {step.type === 'HANDOFF' && 'End the bot\'s turn and flag this lead for a human — same as a "Needs Review" keyword match.'}
             {step.type === 'SEND_PACKAGE' &&
               "Select every package that could apply — the bot sends whichever one matches the traveller's destination, then continues on to the next step right away."}
-            {step.type === 'CAROUSEL' && 'Send up to 10 packages as a tappable WhatsApp list — the flow waits for the traveller to pick one, then continues.'}
+            {step.type === 'CAROUSEL' && 'Send up to 10 packages as swipeable WhatsApp cards — each with its photo and a View package button. If they reply with a package name, that package is sent with its details; any other reply moves the flow on.'}
             {step.type === 'AI_OPEN' && "Let the AI Agent converse freely here, guided by your instructions, until it decides to move the flow on."}
           </DialogDescription>
         </DialogHeader>
@@ -244,7 +244,7 @@ function StepEditor({
               hint={
                 step.type === 'SEND_PACKAGE'
                   ? `The bot auto-picks whichever matches the traveller's destination, or the first one if none match. ${packageIds.length}/10 selected.`
-                  : `Up to 10, shown in this order as a tappable list. ${packageIds.length}/10 selected.`
+                  : `Up to 10, shown in this order. Each card uses the package's banner photo (or your logo). ${packageIds.length}/10 selected.`
               }
             >
               <div id="stepPackages" className="max-h-56 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1.5">
