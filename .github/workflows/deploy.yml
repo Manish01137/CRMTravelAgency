@@ -16,6 +16,14 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # Stop at the first failure so a failed pull, build or migration
+            # leaves the current version running instead of half-deploying.
+            set -e
             cd ${{ secrets.VPS_PROJECT_PATH }}
             git pull origin main
-            docker compose -f docker-compose.prod.yml up -d --build
+            docker compose -f docker-compose.prod.yml build
+            # Apply database migrations with the NEW image before switching
+            # over, so new code never runs against an old schema. Pinned to the
+            # project's Prisma version (the runtime image omits the CLI).
+            docker compose -f docker-compose.prod.yml run --rm --no-deps backend npx --yes prisma@5.22.0 migrate deploy
+            docker compose -f docker-compose.prod.yml up -d
