@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
-import { attemptSend, recordOutbound, sendChoices, sendPackage, sendPackageCarousel } from './bot-send';
+import { attemptSend, recordOutbound, sendChoices, sendMediaMessage, sendPackage, sendPackageCarousel, type StepMedia } from './bot-send';
 import { defaultAnswerType, validateAnswer, parseTravelDate, DEFAULT_ERROR_MESSAGES, type AnswerType } from '../../lib/answerValidation';
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
@@ -55,7 +55,7 @@ type ConfirmOption = { label: string; description?: string; nextStepId: string |
 /** COLLECT: what a valid answer looks like, how many tries, what to say on a bad one. */
 type CollectConfig = { validation?: AnswerType; maxAttempts?: number; errorMessage?: string };
 /** CONFIRM: the label on the button that opens a WhatsApp list menu (4+ options). */
-type ConfirmConfig = { buttonLabel?: string };
+type ConfirmConfig = { buttonLabel?: string; media?: StepMedia };
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 
@@ -453,7 +453,13 @@ async function sendConfirm(organizationId: string, state: LoadedState, step: Ste
     step.question?.trim() || 'Please choose an option:',
     options.map((o, i) => ({ id: `${step.id}:${i}`, label: o.label, description: o.description })),
     config.buttonLabel?.trim() || undefined,
+    validMedia(config.media),
   );
+}
+
+/** A step's attached photo / video / PDF, if it has a usable one. */
+function validMedia(media: StepMedia | undefined): StepMedia | undefined {
+  return media && ['image', 'video', 'document'].includes(media.type) && /^https?:\/\//.test(media.url ?? '') ? media : undefined;
 }
 
 /**
@@ -587,8 +593,11 @@ export async function advanceBotFlow(
     }
 
     if (NON_INTERACTIVE_TYPES.includes(cursor.type)) {
-      // MESSAGE
-      if (cursor.question) {
+      // MESSAGE — with its photo / video / PDF when one is attached
+      const media = validMedia((cursor.config as { media?: StepMedia } | null)?.media);
+      if (media) {
+        await sendMediaMessage(organizationId, channel, externalContactId, conversationId, media, cursor.question ?? '');
+      } else if (cursor.question) {
         const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, cursor.question);
         await recordOutbound(organizationId, conversationId, cursor.question, result);
       }

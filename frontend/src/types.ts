@@ -885,6 +885,15 @@ export interface BotFlowStepConfig {
   tags?: string[];
   /** UPDATE_STAGE only. */
   status?: LeadStatus;
+  /** MESSAGE / CONFIRM — an optional photo, video (MP4) or PDF sent with the text. */
+  media?: BotFlowStepMedia | null;
+}
+
+export interface BotFlowStepMedia {
+  type: 'image' | 'video' | 'document';
+  url: string;
+  /** PDFs: the file name the traveller sees. */
+  filename?: string;
 }
 
 export interface BotFlowStep {

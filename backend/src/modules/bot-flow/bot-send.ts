@@ -8,6 +8,9 @@ import {
   sendWhatsAppCarousel,
   sendWhatsAppButtons,
   sendWhatsAppList,
+  sendWhatsAppVideo,
+  sendWhatsAppDocument,
+  sendInstagramImage,
   type WhatsAppCarouselCard,
   type WhatsAppChoice,
 } from '../../lib/meta';
@@ -87,6 +90,76 @@ export async function recordOutbound(
   });
 }
 
+// --- Media (photo / video / PDF) -------------------------------------------------
+
+export interface StepMedia {
+  type: 'image' | 'video' | 'document';
+  url: string;
+  /** PDFs: the file name the traveller sees. */
+  filename?: string;
+}
+
+const MEDIA_LABEL: Record<StepMedia['type'], string> = { image: 'Photo', video: 'Video', document: 'PDF' };
+
+function pdfName(media: StepMedia): string {
+  const name = (media.filename || media.url.split('/').pop()?.split(/[?#]/)[0] || 'document.pdf').replace(/^\d+-[0-9a-f]+-/, '');
+  return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
+}
+
+/** WhatsApp: the media with `caption` under it (one message). */
+async function sendWhatsAppMedia(organizationId: string, to: string, media: StepMedia, caption: string): Promise<SendResult | null> {
+  const credentials = await credentialsFor(organizationId, 'WHATSAPP');
+  if (!credentials) return null;
+  const creds = decryptJson<WhatsAppCredentials>(credentials);
+  const cap = caption ? caption.slice(0, 1024) : undefined;
+  return trySend(() =>
+    media.type === 'image'
+      ? sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, to, media.url, cap)
+      : media.type === 'video'
+        ? sendWhatsAppVideo(creds.phoneNumberId, creds.accessToken, to, media.url, cap)
+        : sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, media.url, pdfName(media), cap),
+  );
+}
+
+/**
+ * Sends a message with a photo, video or PDF. WhatsApp: one media message
+ * with the text as its caption. Instagram: the photo, then the text (videos
+ * and PDFs go as a link). Falls back to text + link if the media is refused.
+ */
+export async function sendMediaMessage(
+  organizationId: string,
+  channel: BotChannel,
+  to: string,
+  conversationId: string,
+  media: StepMedia,
+  text: string,
+): Promise<SendResult | null> {
+  if (channel === 'WHATSAPP') {
+    const result = await sendWhatsAppMedia(organizationId, to, media, text);
+    if (result?.ok) {
+      await recordOutbound(organizationId, conversationId, text, result, media.url);
+      return result;
+    }
+    if (result) console.warn('[bot-send] media send failed, sending text + link:', result.errorMessage);
+  } else if (media.type === 'image') {
+    const credentials = await credentialsFor(organizationId, channel);
+    if (!credentials) return null;
+    const creds = decryptJson<InstagramCredentials>(credentials);
+    const photo = await trySend(() => sendInstagramImage(creds.igUserId, creds.accessToken, to, media.url));
+    if (photo.ok) {
+      await recordOutbound(organizationId, conversationId, '', photo, media.url);
+      if (!text) return photo;
+      const result = await attemptSend(organizationId, channel, to, text);
+      await recordOutbound(organizationId, conversationId, text, result);
+      return result;
+    }
+  }
+  const withLink = [text, `${MEDIA_LABEL[media.type]}: ${media.url}`].filter(Boolean).join('\n\n');
+  const result = await attemptSend(organizationId, channel, to, withLink);
+  await recordOutbound(organizationId, conversationId, withLink, result);
+  return result;
+}
+
 // --- Questions with tappable options -------------------------------------------
 
 export interface Choice {
@@ -115,6 +188,7 @@ export async function sendChoices(
   question: string,
   choices: Choice[],
   listButtonLabel = 'Choose an option',
+  media?: StepMedia,
 ): Promise<SendResult | null> {
   const asText = numberedChoices(question, choices);
   if (channel === 'WHATSAPP' && choices.length > 0 && choices.length <= 10) {
@@ -122,9 +196,23 @@ export async function sendChoices(
     if (!credentials) return null;
     const creds = decryptJson<WhatsAppCredentials>(credentials);
     const useButtons = choices.length <= 3 && choices.every((c) => c.label.length <= 20);
+    // A list can't carry media — the photo/video/PDF goes just before it.
+    let mediaSent = false;
+    if (media && !useButtons) {
+      const sent = await sendWhatsAppMedia(organizationId, to, media, '');
+      if (sent?.ok) {
+        await recordOutbound(organizationId, conversationId, '', sent, media.url);
+        mediaSent = true;
+      }
+    }
     const result = await trySend(() => {
       if (useButtons) {
-        return sendWhatsAppButtons(creds.phoneNumberId, creds.accessToken, to, question, choices.map((c) => ({ id: c.id, title: c.label })));
+        const header = media
+          ? media.type === 'document'
+            ? ({ type: 'document', link: media.url, filename: pdfName(media) } as const)
+            : ({ type: media.type, link: media.url } as const)
+          : undefined;
+        return sendWhatsAppButtons(creds.phoneNumberId, creds.accessToken, to, question, choices.map((c) => ({ id: c.id, title: c.label })), header);
       }
       const rows: WhatsAppChoice[] = choices.map((c) => ({
         id: c.id,
@@ -134,10 +222,13 @@ export async function sendChoices(
       return sendWhatsAppList(creds.phoneNumberId, creds.accessToken, to, question, listButtonLabel, rows);
     });
     if (result.ok) {
-      await recordOutbound(organizationId, conversationId, asText, result);
+      await recordOutbound(organizationId, conversationId, asText, result, useButtons ? media?.url : undefined);
       return result;
     }
     console.warn('[bot-send] interactive question failed, sending numbered text:', result.errorMessage);
+    if (media && !mediaSent) return sendMediaMessage(organizationId, channel, to, conversationId, media, asText);
+  } else if (media) {
+    return sendMediaMessage(organizationId, channel, to, conversationId, media, asText);
   }
   const result = await attemptSend(organizationId, channel, to, asText);
   await recordOutbound(organizationId, conversationId, asText, result);

@@ -24,6 +24,7 @@ import {
   ChevronDown,
   HelpCircle,
   Headset,
+  ImagePlus,
   LayoutList,
   ListChecks,
   Megaphone,
@@ -47,6 +48,7 @@ import type {
   BotFlowLeadField,
   BotFlowSettableField,
   BotFlowStep,
+  BotFlowStepMedia,
   BotFlowStepType,
   CustomerType,
   LeadStatus,
@@ -54,6 +56,8 @@ import type {
   User,
 } from '@/types';
 import { TagInput } from '@/components/ui/tag-input';
+import { WhatsAppPreview } from '@/components/bot-flow/WhatsAppPreview';
+import { StepMediaPicker } from '@/components/bot-flow/StepMediaPicker';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -144,10 +148,13 @@ const NON_INTERACTIVE_TYPES: BotFlowStepType[] = ['MESSAGE', 'SEND_PACKAGE', ...
 const TERMINAL_TYPES: BotFlowStepType[] = ['CLOSING', 'HANDOFF'];
 
 /** "Add step" menu order + one-line descriptions — the whole roster, in the order they're most likely to be reached for. */
-const ADD_STEP_MENU: { type: BotFlowStepType; blurb: string }[] = [
+type AddStepKind = BotFlowStepType | 'MEDIA_BUTTONS';
+
+const ADD_STEP_MENU: { type: AddStepKind; blurb: string }[] = [
   { type: 'COLLECT', blurb: 'Ask a question, save the answer to a Lead field' },
-  { type: 'CONFIRM', blurb: 'Yes/no or multiple-choice, branches by answer' },
-  { type: 'MESSAGE', blurb: 'Send info, no reply needed — continues right away' },
+  { type: 'CONFIRM', blurb: 'Tappable buttons or a list menu, branches by answer' },
+  { type: 'MEDIA_BUTTONS', blurb: 'A photo, video or PDF with up to 3 buttons under it' },
+  { type: 'MESSAGE', blurb: 'Send text or a photo / video / PDF — continues right away' },
   { type: 'SEND_PACKAGE', blurb: 'Share a package, then continue right away' },
   { type: 'CAROUSEL', blurb: 'Show up to 10 packages as swipeable cards with a View package button' },
   { type: 'AI_OPEN', blurb: 'Let the AI Agent converse freely until it moves on' },
@@ -217,6 +224,11 @@ function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
           ))}
         </div>
       )}
+      {step.config.media && (
+        <p className="mt-1 inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          {step.config.media.type === 'image' ? '📷 Photo' : step.config.media.type === 'video' ? '🎬 Video' : '📄 PDF'} attached
+        </p>
+      )}
       {step.type === 'AI_OPEN' && step.config.instructions && (
         <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">AI: {step.config.instructions}</p>
       )}
@@ -260,6 +272,7 @@ function StepEditor({
   const [attrValue, setAttrValue] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [stageStatus, setStageStatus] = useState<LeadStatus | ''>('');
+  const [media, setMedia] = useState<BotFlowStepMedia | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const packagesQuery = useQuery({
@@ -287,6 +300,7 @@ function StepEditor({
     setAttrValue(step.config.value ?? '');
     setTags(step.config.tags ?? []);
     setStageStatus(step.config.status ?? '');
+    setMedia(step.config.media ?? null);
   }, [step]);
 
   const usersQuery = useQuery({
@@ -304,7 +318,7 @@ function StepEditor({
       onSave({
         question,
         options: options.map((o) => ({ ...o, label: o.label.trim(), description: o.description?.trim() || undefined })),
-        config: { buttonLabel: buttonLabel.trim() || undefined },
+        config: { buttonLabel: buttonLabel.trim() || undefined, media },
       });
     } else if (step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL') {
       onSave({ question: question || undefined, nextStepId, config: { packageIds } });
@@ -327,7 +341,7 @@ function StepEditor({
       });
     } else {
       // MESSAGE, CLOSING
-      onSave({ question, leadField: leadField || undefined, nextStepId });
+      onSave({ question, leadField: leadField || undefined, nextStepId, ...(step.type === 'MESSAGE' && { config: { media } }) });
     }
   };
 
@@ -350,14 +364,16 @@ function StepEditor({
           ? !!question.trim() && !!instructions.trim()
           : step.type === 'CONFIRM'
             ? !!question.trim() && options.every((o) => o.label.trim())
-            : !!question.trim();
+            : step.type === 'MESSAGE'
+              ? !!question.trim() || !!media
+              : !!question.trim();
   const effectiveAnswerType = validation || defaultAnswerType(leadField);
   // WhatsApp's own limits decide how the options are shown.
   const asButtons = options.length <= 3 && options.every((o) => o.label.trim().length <= 20);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md md:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <style.icon className="size-4" /> {style.label} step
@@ -379,7 +395,8 @@ function StepEditor({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[60vh] space-y-4 overflow-y-auto py-2">
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="max-h-[62vh] min-w-0 space-y-4 overflow-y-auto py-2 pr-1">
           {step.type === 'SET_ATTRIBUTE' ? (
             <>
               <Field label="Field" htmlFor="attrField" required>
@@ -676,6 +693,57 @@ function StepEditor({
               <Input id="stepButtonLabel" maxLength={20} value={buttonLabel} onChange={(e) => setButtonLabel(e.target.value)} placeholder="Choose an option" />
             </Field>
           )}
+
+          {(step.type === 'MESSAGE' || step.type === 'CONFIRM') && (
+            <Field
+              label="Photo, video or PDF"
+              htmlFor="stepMedia"
+              hint={
+                step.type === 'CONFIRM'
+                  ? asButtons
+                    ? 'Optional — shown above the question, in the same message as the buttons.'
+                    : 'Optional — a list menu can’t carry media, so it’s sent just before the list.'
+                  : 'Optional — the message text becomes its caption.'
+              }
+            >
+              <StepMediaPicker value={media} onChange={setMedia} />
+            </Field>
+          )}
+        </div>
+
+        <aside className="hidden py-2 md:block" aria-label="WhatsApp preview">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Live preview</p>
+          <WhatsAppPreview
+            type={step.type}
+            text={
+              step.type === 'COLLECT' || step.type === 'CONFIRM' || step.type === 'MESSAGE' || step.type === 'CLOSING' ||
+              step.type === 'HANDOFF' || step.type === 'AI_OPEN'
+                ? question
+                : ''
+            }
+            options={step.type === 'CONFIRM' ? options : undefined}
+            listButtonLabel={buttonLabel}
+            media={step.type === 'MESSAGE' || step.type === 'CONFIRM' ? media : null}
+            packages={
+              step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL'
+                ? packageIds.map((pid) => packages.find((p) => p.id === pid)).filter((p): p is TravelPackage => !!p)
+                : undefined
+            }
+            errorMessage={
+              step.type === 'COLLECT' && effectiveAnswerType !== 'text' ? errorMessage.trim() || DEFAULT_ERROR_MESSAGES[effectiveAnswerType] : undefined
+            }
+            silentNote={
+              LEAD_UPDATE_TYPES.includes(step.type)
+                ? 'Nothing is sent to the traveller — this step only updates the lead, then the flow continues.'
+                : step.type === 'HANDOFF' && !question.trim()
+                  ? 'Nothing is sent — the chat is handed to your team.'
+                  : undefined
+            }
+          />
+          {step.type === 'SEND_PACKAGE' && packageIds.length > 1 && (
+            <p className="mt-2 text-[11px] text-muted-foreground">Shows the first package — the bot sends whichever matches the traveller’s destination.</p>
+          )}
+        </aside>
         </div>
 
         <DialogFooter className="flex-row justify-between sm:justify-between">
@@ -881,23 +949,31 @@ export function BotFlowBuilderPage() {
   });
 
   const createStepMutation = useMutation({
-    mutationFn: (type: BotFlowStepType) =>
-      api.post<BotFlowStep>(`/bot-flows/${id}/steps`, {
+    mutationFn: (kind: AddStepKind) => {
+      const type: BotFlowStepType = kind === 'MEDIA_BUTTONS' ? 'CONFIRM' : kind;
+      return api.post<BotFlowStep>(`/bot-flows/${id}/steps`, {
         type,
         order: steps.length,
         question:
-          type === 'CLOSING' ? "Thank you! Our team will reach out shortly."
+          kind === 'MEDIA_BUTTONS' ? 'Have a look 👇 What would you like to do next?'
+            : type === 'CLOSING' ? "Thank you! Our team will reach out shortly."
             : type === 'HANDOFF' ? "Let me connect you with our team."
             : type === 'AI_OPEN' ? "Sure, happy to help — what would you like to know?"
             : type === 'SEND_PACKAGE' ? undefined // unused for this type — the package's own details are the message
             : type === 'CAROUSEL' ? undefined // unused — the list's own body text is fixed, set in bot-flow.engine.ts
             : 'New question',
         ...(type === 'COLLECT' && { leadField: 'notes' }),
-        ...(type === 'CONFIRM' && { options: [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }] }),
+        ...(type === 'CONFIRM' && {
+          options:
+            kind === 'MEDIA_BUTTONS'
+              ? [{ label: 'Know more', nextStepId: null }, { label: 'See prices', nextStepId: null }, { label: 'Talk to an expert', nextStepId: null }]
+              : [{ label: 'Yes', nextStepId: null }, { label: 'No', nextStepId: null }],
+        }),
         ...(type === 'AI_OPEN' && { config: { instructions: 'Answer the traveller naturally and helpfully.' } }),
         canvasX: 40 + (steps.length % 3) * GRID_X,
         canvasY: 40 + Math.floor(steps.length / 3) * GRID_Y,
-      }),
+      });
+    },
     onSuccess: (step) => {
       queryClient.invalidateQueries({ queryKey: ['bot-flow', id] });
       setSelectedStepId(step.id);
@@ -993,7 +1069,7 @@ export function BotFlowBuilderPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               {ADD_STEP_MENU.map(({ type, blurb }) => {
-                const style = STEP_STYLES[type];
+                const style = type === 'MEDIA_BUTTONS' ? { icon: ImagePlus, label: 'Media + buttons' } : STEP_STYLES[type];
                 return (
                   <DropdownMenuItem key={type} onClick={() => createStepMutation.mutate(type)} className="items-start py-2">
                     <style.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

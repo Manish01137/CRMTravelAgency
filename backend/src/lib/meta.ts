@@ -307,6 +307,33 @@ export async function sendWhatsAppDocument(
   return { externalMessageId: data.messages[0].id };
 }
 
+/** A WhatsApp video message (MP4, ≤ 16 MB) from a publicly reachable URL — same pattern as sendWhatsAppImage. */
+export async function sendWhatsAppVideo(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  videoUrl: string,
+  caption?: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'video',
+      video: caption ? { link: videoUrl, caption } : { link: videoUrl },
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
+/** Optional photo / video / PDF shown above a reply-button message's text. */
+export type WhatsAppMediaHeader =
+  | { type: 'image'; link: string }
+  | { type: 'video'; link: string }
+  | { type: 'document'; link: string; filename?: string };
+
 export interface WhatsAppChoice {
   /** Comes back verbatim as interactive.button_reply.id / list_reply.id when tapped. */
   id: string;
@@ -321,6 +348,7 @@ export async function sendWhatsAppButtons(
   to: string,
   bodyText: string,
   buttons: WhatsAppChoice[],
+  header?: WhatsAppMediaHeader,
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
@@ -332,6 +360,12 @@ export async function sendWhatsAppButtons(
       type: 'interactive',
       interactive: {
         type: 'button',
+        ...(header && {
+          header:
+            header.type === 'document'
+              ? { type: 'document', document: { link: header.link, ...(header.filename ? { filename: header.filename } : {}) } }
+              : { type: header.type, [header.type]: { link: header.link } },
+        }),
         body: { text: bodyText.slice(0, 1024) },
         action: { buttons: buttons.slice(0, 3).map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title.slice(0, 20) } })) },
       },

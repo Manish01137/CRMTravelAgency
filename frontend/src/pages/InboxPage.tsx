@@ -75,6 +75,7 @@ const WA_WALLPAPER_STYLE: React.CSSProperties = {
 /** No separate "media kind" column — a document is just a mediaUrl ending in
  *  .pdf, same convention the backend uses (see inbox.service.ts). */
 const isPdfUrl = (url: string) => /\.pdf(?:[?#]|$)/i.test(url);
+const isVideoUrl = (url: string) => /\.(mp4|mov|webm|3gp)(?:[?#]|$)/i.test(url);
 
 /** Recovers the human filename embedded in a document upload's storage key
  *  (see backend storage.ts) — works for both a just-sent and a re-fetched
@@ -615,6 +616,8 @@ export function InboxPage() {
                                 </span>
                                 <span className="min-w-0 truncate text-xs font-medium">{documentNameFromUrl(m.mediaUrl)}</span>
                               </a>
+                            ) : m.mediaUrl && isVideoUrl(m.mediaUrl) ? (
+                              <video src={m.mediaUrl} controls preload="metadata" className="-mx-1 -mt-1 mb-1 block max-h-64 w-[calc(100%+0.5rem)] rounded-lg bg-black" />
                             ) : (
                               m.mediaUrl && (
                                 <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="-mx-1 -mt-1 mb-1 block">

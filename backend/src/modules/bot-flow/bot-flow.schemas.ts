@@ -66,6 +66,14 @@ const stepConfigSchema = z.object({
   // SET_ATTRIBUTE: which Lead field and the value to write.
   field: z.preprocess(emptyToUndefined, z.enum(SETTABLE_LEAD_FIELDS).optional()),
   value: z.preprocess(emptyToUndefined, z.string().trim().max(1000).optional()),
+  // MESSAGE / CONFIRM: an optional photo, video (MP4) or PDF sent with the text.
+  media: z
+    .object({
+      type: z.enum(['image', 'video', 'document']),
+      url: z.string().trim().url().max(2000).refine((u) => /^https?:\/\//.test(u), 'Must be a web link'),
+      filename: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
+    })
+    .nullish(),
   // ADD_TAG
   tags: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
   // UPDATE_STAGE
@@ -110,7 +118,8 @@ export const upsertStepSchema = z
     if (v.type === 'CONFIRM' && (!v.options || v.options.length < 2)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'A CONFIRM step needs at least 2 options', path: ['options'] });
     }
-    if (['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'AI_OPEN'].includes(v.type) && !v.question) {
+    const mediaOnlyMessage = v.type === 'MESSAGE' && !!v.config.media;
+    if (['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'AI_OPEN'].includes(v.type) && !v.question && !mediaOnlyMessage) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Message text is required', path: ['question'] });
     }
     // config.packageId (SEND_PACKAGE) / config.instructions (AI_OPEN) /
