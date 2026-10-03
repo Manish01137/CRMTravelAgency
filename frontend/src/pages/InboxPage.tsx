@@ -224,6 +224,7 @@ export function InboxPage() {
   const selected = listed ?? fromThread;
   const selectedStatus = (fromThread ?? listed)?.lead?.status ?? null;
   const selectedLeadId = (fromThread ?? listed)?.lead?.id ?? selected?.leadId ?? null;
+  const selectedTags = (fromThread ?? listed)?.lead?.tags ?? [];
 
   const stageMutation = useMutation({
     mutationFn: (status: LeadStatus) => api.patch(`/leads/${selectedLeadId}`, { status }),
@@ -490,6 +491,24 @@ export function InboxPage() {
                     </p>
                     {selected.contactPhone && selected.contactName && (
                       <p className={cn('truncate text-xs', channel === 'WHATSAPP' ? 'text-white/70' : 'text-muted-foreground')}>{selected.contactPhone}</p>
+                    )}
+                    {selectedTags.length > 0 && (
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {selectedTags.slice(0, 4).map((t) => (
+                          <span
+                            key={t}
+                            className={cn(
+                              'rounded-full px-1.5 py-px text-[10px] font-medium',
+                              channel === 'WHATSAPP' ? 'bg-white/15 text-white' : 'bg-primary/10 text-primary',
+                            )}
+                          >
+                            {t}
+                          </span>
+                        ))}
+                        {selectedTags.length > 4 && (
+                          <span className={cn('text-[10px]', channel === 'WHATSAPP' ? 'text-white/70' : 'text-muted-foreground')}>+{selectedTags.length - 4}</span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

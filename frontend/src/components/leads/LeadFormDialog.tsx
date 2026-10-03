@@ -1,4 +1,5 @@
 import { Controller, useForm } from 'react-hook-form';
+import { TagInput } from '@/components/ui/tag-input';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -72,6 +73,7 @@ const schema = z.object({
   budgetCurrency: z.string().max(3),
   notes: z.string().max(5000),
   assignedToId: z.string(),
+  tags: z.array(z.string().max(40)).max(30),
 });
 type Values = z.infer<typeof schema>;
 
@@ -104,6 +106,7 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
       budgetCurrency: lead?.budgetCurrency ?? 'USD',
       notes: lead?.notes ?? '',
       assignedToId: lead?.assignedToId ?? UNASSIGNED,
+      tags: lead?.tags ?? [],
     },
   });
 
@@ -139,6 +142,7 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
       budgetCurrency: (values.budgetCurrency || 'USD').toUpperCase(),
       notes: values.notes.trim() || null,
       assignedToId,
+      tags: values.tags,
     });
   };
 
@@ -284,6 +288,14 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
               </SelectContent>
             </Select>
           )}
+        />
+      </Field>
+
+      <Field label="Tags" htmlFor="tags" hint="Press Enter after each — e.g. honeymoon, hot lead.">
+        <Controller
+          control={control}
+          name="tags"
+          render={({ field }) => <TagInput id="tags" value={field.value} onChange={field.onChange} maxLength={40} placeholder="Add a tag" />}
         />
       </Field>
 

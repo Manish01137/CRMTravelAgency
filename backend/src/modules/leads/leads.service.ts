@@ -66,6 +66,7 @@ export async function listLeads(organizationId: string, query: ListLeadsQuery) {
     if (query.source) where.source = query.source;
     if (query.assignedToId === 'unassigned') where.assignedToId = null;
     else if (query.assignedToId) where.assignedToId = query.assignedToId;
+    if (query.tag) where.tags = { has: query.tag };
 
     if (query.search) {
       where.OR = [

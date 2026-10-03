@@ -5,6 +5,7 @@ import { uploadBufferToStorage } from '../../lib/storage';
 import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { sendPackage } from '../bot-flow/bot-send';
+import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
 import { describeWhatsAppMessage } from '../../lib/whatsappInbound';
 import { env } from '../../env';
@@ -308,13 +309,15 @@ async function sendAdPackagesIfNotFlowHandled(
   organizationId: string,
   inbound: { conversationId: string; adPackageIds: string[]; adTaggedNewLead: boolean },
   phone: string,
+  message: { text: string; adId: string | null },
 ): Promise<boolean> {
   if (inbound.adPackageIds.length === 0) return false;
   if (inbound.adTaggedNewLead) {
-    const flowAssigned = await withTenant(organizationId, (tx) =>
-      tx.botFlowAssignment.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } } }),
+    // A flow that will start for this new chat opens with the ad's packages itself.
+    const flowWillStart = await withTenant(organizationId, async (tx) =>
+      chooseFlowForNewChat(await loadFlowRouting(tx, organizationId, 'WHATSAPP'), message.text, message.adId),
     );
-    if (flowAssigned) return false;
+    if (flowWillStart) return false;
   }
   let anySent = false;
   for (const packageId of inbound.adPackageIds) {
@@ -411,7 +414,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       let adPackageSent = false;
       if (inbound.adPackageIds.length > 0) {
         try {
-          adPackageSent = await sendAdPackagesIfNotFlowHandled(organizationId, inbound, from);
+          adPackageSent = await sendAdPackagesIfNotFlowHandled(organizationId, inbound, from, { text, adId });
         } catch (err) {
           console.error('[ad-package] send failed:', err instanceof Error ? err.message : err);
         }

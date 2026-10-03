@@ -7,6 +7,10 @@ import { defaultAnswerType, validateAnswer, parseTravelDate, DEFAULT_ERROR_MESSA
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
+import { chooseFlowForNewChat, chooseFlowForRestart, loadFlowRouting } from './bot-flow.triggers';
+import { updateLead } from '../leads/leads.service';
+import { updateLeadSchema } from '../leads/leads.schemas';
+import { SETTABLE_LEAD_FIELDS } from './bot-flow.schemas';
 
 /**
  * Bot Flow's execution engine — advances ONE conversation's BotFlowSession by
@@ -35,7 +39,18 @@ import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.servi
  * the traveller needing to reply to each one individually.
  */
 
-type StepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN' | 'CAROUSEL';
+type StepType =
+  | 'COLLECT'
+  | 'CONFIRM'
+  | 'CLOSING'
+  | 'MESSAGE'
+  | 'HANDOFF'
+  | 'SEND_PACKAGE'
+  | 'AI_OPEN'
+  | 'CAROUSEL'
+  | 'SET_ATTRIBUTE'
+  | 'ADD_TAG'
+  | 'UPDATE_STAGE';
 type ConfirmOption = { label: string; description?: string; nextStepId: string | null };
 /** COLLECT: what a valid answer looks like, how many tries, what to say on a bad one. */
 type CollectConfig = { validation?: AnswerType; maxAttempts?: number; errorMessage?: string };
@@ -80,6 +95,8 @@ type Action =
 const LEAD_DATE_FIELD = 'travelDate';
 const LEAD_INT_FIELD = 'travelerCount';
 const NON_INTERACTIVE_TYPES: StepType[] = ['MESSAGE', 'SEND_PACKAGE'];
+/** Steps that change the lead and move straight on — nothing is sent. */
+const LEAD_UPDATE_TYPES: StepType[] = ['SET_ATTRIBUTE', 'ADD_TAG', 'UPDATE_STAGE'];
 
 function matchesKeyword(message: string, keywords: string[]): string | null {
   const lower = message.toLowerCase();
@@ -119,29 +136,46 @@ async function openingAdPackages(state: LoadedState, organizationId: string): Pr
 
 // --- Phase 1: load everything needed to decide, in one fast transaction -----
 
-async function loadState(organizationId: string, conversationId: string): Promise<LoadedState | null> {
+async function loadState(
+  organizationId: string,
+  conversationId: string,
+  messageBody: string,
+  messageCreatedAt: Date,
+): Promise<LoadedState | null> {
   return withTenant(organizationId, async (tx) => {
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
 
-    const assignment = await tx.botFlowAssignment.findUnique({
-      where: { organizationId_channel: { organizationId, channel: conversation.channel } },
-    });
-    if (!assignment) return null; // no bot flow live on this org's connection for this channel
-
-    // upsert, not findUnique-then-create: the scheduled poller (every 10s) and
-    // a manually/concurrently triggered scan can both reach this for the same
-    // brand-new conversation at once — a plain check-then-act loses that race
-    // with a unique constraint violation (found during Phase 4's own testing).
+    // Which flow — see bot-flow.triggers.ts. A finished chat restarts only on a keyword.
+    const routing = await loadFlowRouting(tx, organizationId, conversation.channel);
     let session = await tx.botFlowSession.findUnique({ where: { conversationId } });
+    if (session?.status === 'NEEDS_REVIEW') return null; // a human owns this thread now
+    if (session?.status === 'COMPLETED') {
+      const restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt);
+      if (!restartFlowId) {
+        await tx.botFlowSession.update({ where: { id: session.id }, data: { lastProcessedMessageAt: messageCreatedAt } });
+        return null;
+      }
+      session = await tx.botFlowSession.update({
+        where: { id: session.id },
+        data: { flowId: restartFlowId, status: 'ACTIVE', currentStepId: null, collectedData: {} },
+      });
+    }
     if (!session) {
+      const sourceAdId = conversation.leadId
+        ? (await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { sourceAdId: true } }))?.sourceAdId
+        : null;
+      const flowId = chooseFlowForNewChat(routing, messageBody, sourceAdId, messageCreatedAt);
+      if (!flowId) return null; // no flow applies to this chat
+      // upsert, not create: the scheduled poller (every 10s) and a manually
+      // triggered scan can both reach this for the same brand-new conversation.
       session = await tx.botFlowSession.upsert({
         where: { conversationId },
-        create: { organizationId, conversationId, flowId: assignment.flowId, status: 'ACTIVE' },
+        create: { organizationId, conversationId, flowId, status: 'ACTIVE' },
         update: {},
       });
     }
-    if (session.status !== 'ACTIVE') return null; // NEEDS_REVIEW or COMPLETED — a human owns this thread now
+    if (session.status !== 'ACTIVE') return null;
 
     const flow = await tx.botFlow.findUnique({ where: { id: session.flowId }, include: { steps: { orderBy: { order: 'asc' } } } });
     if (!flow) return null;
@@ -366,6 +400,47 @@ async function writeLeadField(organizationId: string, leadId: string | null, fie
   });
 }
 
+type LeadUpdateConfig = { field?: string; value?: string; tags?: string[]; status?: string };
+
+/** SET_ATTRIBUTE / ADD_TAG / UPDATE_STAGE — change the lead through the normal lead update (validation, timeline, auto-booking on Won). */
+async function applyLeadUpdate(organizationId: string, leadId: string | null, step: StepRow): Promise<void> {
+  if (!leadId) return;
+  const config = (step.config ?? {}) as LeadUpdateConfig;
+
+  if (step.type === 'ADD_TAG') {
+    const tags = (config.tags ?? []).map((t) => t.trim()).filter(Boolean);
+    if (tags.length === 0) return;
+    await withTenant(organizationId, async (tx) => {
+      const lead = await tx.lead.findUnique({ where: { id: leadId }, select: { tags: true } });
+      if (!lead) return;
+      const merged = [...lead.tags];
+      for (const t of tags) if (!merged.some((x) => x.toLowerCase() === t.toLowerCase())) merged.push(t);
+      if (merged.length !== lead.tags.length) await tx.lead.update({ where: { id: leadId }, data: { tags: merged } });
+    });
+    return;
+  }
+
+  let patch: Record<string, unknown>;
+  if (step.type === 'UPDATE_STAGE') {
+    patch = { status: config.status };
+  } else {
+    const field = config.field as (typeof SETTABLE_LEAD_FIELDS)[number] | undefined;
+    if (!field || !SETTABLE_LEAD_FIELDS.includes(field) || config.value == null) return;
+    let value: unknown = config.value;
+    if (field === 'notes') {
+      const lead = await withTenant(organizationId, (tx) => tx.lead.findUnique({ where: { id: leadId }, select: { notes: true } }));
+      value = [lead?.notes?.trim(), config.value.trim()].filter(Boolean).join('\n').slice(0, 5000);
+    }
+    patch = { [field]: value };
+  }
+  const parsed = updateLeadSchema.safeParse(patch);
+  if (!parsed.success) {
+    console.warn('[bot-flow] skipping invalid lead update in step', step.id, parsed.error.issues[0]?.message);
+    return;
+  }
+  await updateLead(organizationId, leadId, parsed.data);
+}
+
 /** A CONFIRM question with its options as WhatsApp buttons / a list menu (numbered text on Instagram). */
 async function sendConfirm(organizationId: string, state: LoadedState, step: StepRow): Promise<void> {
   const options = (Array.isArray(step.options) ? step.options : []) as ConfirmOption[];
@@ -392,7 +467,7 @@ export async function advanceBotFlow(
   messageCreatedAt: Date,
   interactiveSelectionId: string | null = null,
 ): Promise<void> {
-  const state = await loadState(organizationId, conversationId);
+  const state = await loadState(organizationId, conversationId, messageBody, messageCreatedAt);
   if (!state) return;
 
   const action = await decide(state, messageBody, organizationId, interactiveSelectionId);
@@ -490,6 +565,14 @@ export async function advanceBotFlow(
       await sendPackageCarousel(organizationId, channel, externalContactId, conversationId, config.packageIds ?? []);
       // Interactive — stop here and wait for the traveller's reply, same as COLLECT/CONFIRM/AI_OPEN below.
       break;
+    }
+
+    if (LEAD_UPDATE_TYPES.includes(cursor.type)) {
+      await applyLeadUpdate(organizationId, state.conversation.leadId, cursor).catch((err) =>
+        console.error('[bot-flow] lead update step failed:', cursor!.id, err instanceof Error ? err.message : err),
+      );
+      cursor = nextOf(cursor);
+      continue;
     }
 
     if (cursor.type === 'SEND_PACKAGE') {

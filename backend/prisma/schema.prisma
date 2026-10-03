@@ -184,88 +184,88 @@ enum CommStatus {
 
 /// A travel agency (tenant). Every other client-data row is scoped to one of these.
 model Organization {
-  id                  String             @id @default(uuid()) @db.Uuid
-  name                String
-  slug                String             @unique
+  id                        String             @id @default(uuid()) @db.Uuid
+  name                      String
+  slug                      String             @unique
   // Platform-owner control (Super Admin panel) — a SUSPENDED org's users can no
   // longer log in or refresh their session; their data is untouched. Set only
   // via the platform-admin surface, never by an org's own admin.
-  status              OrganizationStatus @default(ACTIVE)
-  suspendedAt         DateTime?          @map("suspended_at")
-  suspendedReason     String?            @map("suspended_reason")
-  logoUrl             String?
-  brandPrimaryColor   String   @default("#4F46E5") @map("brand_primary_color")
-  brandSecondaryColor String   @default("#0D9488") @map("brand_secondary_color")
-  bio                 String?
-  hostLinks           Json     @default("[]") @map("host_links")
+  status                    OrganizationStatus @default(ACTIVE)
+  suspendedAt               DateTime?          @map("suspended_at")
+  suspendedReason           String?            @map("suspended_reason")
+  logoUrl                   String?
+  brandPrimaryColor         String             @default("#4F46E5") @map("brand_primary_color")
+  brandSecondaryColor       String             @default("#0D9488") @map("brand_secondary_color")
+  bio                       String?
+  hostLinks                 Json               @default("[]") @map("host_links")
   // --- Host Page mini-website ---
-  bannerImageUrl      String?  @map("banner_image_url")
-  aboutText           String?  @map("about_text")
-  contactPhone        String?  @map("contact_phone")
-  contactEmail        String?  @map("contact_email")
-  address             String?
-  linktreeCoverUrl    String?  @map("linktree_cover_url")
+  bannerImageUrl            String?            @map("banner_image_url")
+  aboutText                 String?            @map("about_text")
+  contactPhone              String?            @map("contact_phone")
+  contactEmail              String?            @map("contact_email")
+  address                   String?
+  linktreeCoverUrl          String?            @map("linktree_cover_url")
   /// LinkTree module theme (logo, bio, contacts, background, fonts) — separate
   /// from Host Page branding by design.
-  linktreeTheme       Json     @default("{}") @map("linktree_theme")
-  hostGallery         Json     @default("[]") @map("host_gallery") // Host Page gallery image URLs
+  linktreeTheme             Json               @default("{}") @map("linktree_theme")
+  hostGallery               Json               @default("[]") @map("host_gallery") // Host Page gallery image URLs
   // Default policy text — auto-filled into a package's Policies step when
   // creating a NEW package, so an agent doesn't retype the same boilerplate
   // every time. Purely a convenience default; each package's own fields are
   // independent afterward.
-  defaultCancellationPolicy String? @map("default_cancellation_policy")
-  defaultPaymentTerms       String? @map("default_payment_terms")
-  defaultTermsConditions    String? @map("default_terms_conditions")
+  defaultCancellationPolicy String?            @map("default_cancellation_policy")
+  defaultPaymentTerms       String?            @map("default_payment_terms")
+  defaultTermsConditions    String?            @map("default_terms_conditions")
   // --- Tax invoice details — printed on every invoice's header/footer.
   // All optional: a blank field simply doesn't render on the invoice. ---
-  secondaryPhone          String? @map("secondary_phone")
-  secondaryEmail          String? @map("secondary_email")
-  stateName               String? @map("state_name")
-  stateCode               String? @map("state_code")
-  bankName                String? @map("bank_name")
-  bankAccountNumber       String? @map("bank_account_number")
-  ifscCode                String? @map("ifsc_code")
-  gstin                   String?
-  pan                     String?
-  hsnCode                 String? @map("hsn_code")
-  signatureImageUrl       String? @map("signature_image_url")
-  signatoryTitle          String? @map("signatory_title")
-  invoiceTermsConditions  String? @map("invoice_terms_conditions")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  secondaryPhone            String?            @map("secondary_phone")
+  secondaryEmail            String?            @map("secondary_email")
+  stateName                 String?            @map("state_name")
+  stateCode                 String?            @map("state_code")
+  bankName                  String?            @map("bank_name")
+  bankAccountNumber         String?            @map("bank_account_number")
+  ifscCode                  String?            @map("ifsc_code")
+  gstin                     String?
+  pan                       String?
+  hsnCode                   String?            @map("hsn_code")
+  signatureImageUrl         String?            @map("signature_image_url")
+  signatoryTitle            String?            @map("signatory_title")
+  invoiceTermsConditions    String?            @map("invoice_terms_conditions")
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  updatedAt                 DateTime           @updatedAt @map("updated_at")
 
-  users       User[]
-  leads       Lead[]
-  invitations Invitation[]
-  hotels      Hotel[]
-  packages    Package[]
-  bookings    Booking[]
-  itineraryItems ItineraryItem[]
-  tasks       Task[]
-  events      Event[]
-  invoices    Invoice[]
-  bills       Bill[]
-  leadActivities LeadActivity[]
-  sightseeing Sightseeing[]
-  batches     Batch[]
-  linktreeCategories LinktreeCategory[]
+  users                     User[]
+  leads                     Lead[]
+  invitations               Invitation[]
+  hotels                    Hotel[]
+  packages                  Package[]
+  bookings                  Booking[]
+  itineraryItems            ItineraryItem[]
+  tasks                     Task[]
+  events                    Event[]
+  invoices                  Invoice[]
+  bills                     Bill[]
+  leadActivities            LeadActivity[]
+  sightseeing               Sightseeing[]
+  batches                   Batch[]
+  linktreeCategories        LinktreeCategory[]
   packageLinktreeCategories PackageLinktreeCategory[]
-  hostReviews HostReview[]
-  channelConnections ChannelConnection[]
-  conversations      Conversation[]
-  messages           Message[]
-  messageTemplates   MessageTemplate[]
-  communicationLogs  CommunicationLog[]
-  botFlows           BotFlow[]
-  botFlowSteps       BotFlowStep[]
-  botFlowAssignments BotFlowAssignment[]
-  botFlowSessions    BotFlowSession[]
-  aiAgentSettings    AiAgentSettings?
-  automationSettings AutomationSettings?
-  followUpAttempts   FollowUpAttempt[]
-  smartBotSettings   SmartBotSettings?
-  adPackageMappings  AdPackageMapping[]
-  botInteractionLogs BotInteractionLog[]
+  hostReviews               HostReview[]
+  channelConnections        ChannelConnection[]
+  conversations             Conversation[]
+  messages                  Message[]
+  messageTemplates          MessageTemplate[]
+  communicationLogs         CommunicationLog[]
+  botFlows                  BotFlow[]
+  botFlowSteps              BotFlowStep[]
+  botFlowAssignments        BotFlowAssignment[]
+  botFlowSessions           BotFlowSession[]
+  aiAgentSettings           AiAgentSettings?
+  automationSettings        AutomationSettings?
+  followUpAttempts          FollowUpAttempt[]
+  smartBotSettings          SmartBotSettings?
+  adPackageMappings         AdPackageMapping[]
+  botInteractionLogs        BotInteractionLog[]
 
   @@map("organizations")
 }
@@ -345,28 +345,28 @@ model PackageLinktreeCategory {
 
 /// A member of an organization. ADMINs manage the org + team; AGENTs work leads.
 model User {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
-  email          String     @unique
-  name           String
-  passwordHash   String     @map("password_hash")
-  role           Role       @default(AGENT)
-  status         UserStatus @default(ACTIVE)
-  lastLoginAt    DateTime?  @map("last_login_at")
+  id                String     @id @default(uuid()) @db.Uuid
+  organizationId    String     @map("organization_id") @db.Uuid
+  email             String     @unique
+  name              String
+  passwordHash      String     @map("password_hash")
+  role              Role       @default(AGENT)
+  status            UserStatus @default(ACTIVE)
+  lastLoginAt       DateTime?  @map("last_login_at")
   // Optional public profile, shown on the Host Page only when featured.
-  featureOnHostpage Boolean @default(false) @map("feature_on_hostpage")
-  publicPhotoUrl String?    @map("public_photo_url")
-  publicTitle    String?    @map("public_title")
-  publicBio      String?    @map("public_bio")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  featureOnHostpage Boolean    @default(false) @map("feature_on_hostpage")
+  publicPhotoUrl    String?    @map("public_photo_url")
+  publicTitle       String?    @map("public_title")
+  publicBio         String?    @map("public_bio")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
 
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignedLeads   Lead[]       @relation("AssignedAgent")
-  invitationsSent Invitation[] @relation("Inviter")
-  bookings        Booking[]    @relation("BookingAgent")
-  tasks           Task[]       @relation("TaskAssignee")
-  leadActivities  LeadActivity[] @relation("ActivityAuthor")
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedLeads      Lead[]             @relation("AssignedAgent")
+  invitationsSent    Invitation[]       @relation("Inviter")
+  bookings           Booking[]          @relation("BookingAgent")
+  tasks              Task[]             @relation("TaskAssignee")
+  leadActivities     LeadActivity[]     @relation("ActivityAuthor")
   sentMessages       Message[]          @relation("MessageSender")
   sentCommunications CommunicationLog[] @relation("CommSender")
 
@@ -376,35 +376,35 @@ model User {
 
 /// An enquiry / prospective customer for a travel agency.
 model Lead {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
-  name           String
-  email          String?
-  phone          String?
-  source         LeadSource @default(MANUAL)
-  status         LeadStatus @default(NEW)
-  customerType   CustomerType @default(B2C) @map("customer_type")
-  destination    String?
-  travelDate     DateTime?  @map("travel_date") @db.Date
-  travelerCount  Int?       @map("traveler_count")
-  budgetAmount   Int?       @map("budget_amount") // whole units of budgetCurrency
-  budgetCurrency String?    @default("USD") @map("budget_currency")
-  notes          String?
-  assignedToId   String?    @map("assigned_to_id") @db.Uuid
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  name              String
+  email             String?
+  phone             String?
+  source            LeadSource   @default(MANUAL)
+  status            LeadStatus   @default(NEW)
+  customerType      CustomerType @default(B2C) @map("customer_type")
+  destination       String?
+  travelDate        DateTime?    @map("travel_date") @db.Date
+  travelerCount     Int?         @map("traveler_count")
+  budgetAmount      Int?         @map("budget_amount") // whole units of budgetCurrency
+  budgetCurrency    String?      @default("USD") @map("budget_currency")
+  notes             String?
+  assignedToId      String?      @map("assigned_to_id") @db.Uuid
   // Package the lead is interested in, if known at entry time — purely
   // informational (no cascading effect on booking/itinerary creation).
-  packageId      String?    @map("package_id") @db.Uuid
+  packageId         String?      @map("package_id") @db.Uuid
   // Phase 4 (Bot Flow) — set when an inbound message matches a flow's
   // "Needs Review" keyword list; the bot stops and hands off to a human.
-  needsReview       Boolean  @default(false) @map("needs_review")
-  needsReviewReason String?  @map("needs_review_reason")
+  needsReview       Boolean      @default(false) @map("needs_review")
+  needsReviewReason String?      @map("needs_review_reason")
   // Set at creation time if this lead's phone/email matches an existing
   // Booking in the org — surfaces repeat customers immediately instead of
   // treating them as a stranger (checked once, at creation; not re-checked
   // if a booking is added later, since the lead's own thread already has
   // the agent's attention by then).
-  isRepeatCustomer Boolean @default(false) @map("is_repeat_customer")
-  repeatBookingId  String? @map("repeat_booking_id") @db.Uuid
+  isRepeatCustomer  Boolean      @default(false) @map("is_repeat_customer")
+  repeatBookingId   String?      @map("repeat_booking_id") @db.Uuid
   // Smart Bot (webhook-inline WhatsApp bot, separate from Bot Flow) — the
   // one-time greeting on a brand-new lead's first message, and Click-to-
   // WhatsApp ad attribution captured from that same first message's
@@ -412,20 +412,22 @@ model Lead {
   // reuse of packageId above — that one means "an agent noted interest";
   // this one means "auto-attributed from an ad click," a different
   // provenance worth keeping distinguishable.
-  hasGreeted      Boolean @default(false) @map("has_greeted")
-  sourceAdId      String? @map("source_ad_id")
-  sourcePackageId String? @map("source_package_id") @db.Uuid
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  hasGreeted        Boolean      @default(false) @map("has_greeted")
+  sourceAdId        String?      @map("source_ad_id")
+  sourcePackageId   String?      @map("source_package_id") @db.Uuid
+  /// Free-form labels (Bot Flow "Add tag" steps, or set by hand).
+  tags              String[]     @default([])
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignedTo   User?        @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
-  repeatBooking Booking?    @relation("RepeatCustomerLead", fields: [repeatBookingId], references: [id], onDelete: SetNull)
-  package      Package?     @relation(fields: [packageId], references: [id], onDelete: SetNull)
-  sourcePackage Package?    @relation("LeadSourcePackage", fields: [sourcePackageId], references: [id], onDelete: SetNull)
-  bookings     Booking[]
-  tasks        Task[]
-  activities   LeadActivity[]
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTo        User?               @relation("AssignedAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  repeatBooking     Booking?            @relation("RepeatCustomerLead", fields: [repeatBookingId], references: [id], onDelete: SetNull)
+  package           Package?            @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  sourcePackage     Package?            @relation("LeadSourcePackage", fields: [sourcePackageId], references: [id], onDelete: SetNull)
+  bookings          Booking[]
+  tasks             Task[]
+  activities        LeadActivity[]
   // Phase 3 (Communication) — inbound channel messages/sends land against a lead.
   // Purely additive back-relations; no column added to `leads` itself.
   conversations     Conversation[]
@@ -446,16 +448,16 @@ model Lead {
 /// Interaction timeline for a lead: logged calls/notes/WhatsApp touches plus
 /// automatic stage-change entries. Powers the Lead Activity Board.
 model LeadActivity {
-  id             String   @id @default(uuid()) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  leadId         String   @map("lead_id") @db.Uuid
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  leadId         String           @map("lead_id") @db.Uuid
   type           LeadActivityType @default(NOTE)
   outcome        String? // e.g. "Answered", "Call not picked"
   message        String?
-  fromStatus     LeadStatus? @map("from_status")
-  toStatus       LeadStatus? @map("to_status")
-  createdById    String?  @map("created_by_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at")
+  fromStatus     LeadStatus?      @map("from_status")
+  toStatus       LeadStatus?      @map("to_status")
+  createdById    String?          @map("created_by_id") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -576,14 +578,14 @@ model Package {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  bookings     Booking[]
-  batches      Batch[]
-  leads        Lead[]
+  organization          Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bookings              Booking[]
+  batches               Batch[]
+  leads                 Lead[]
   // Ad-attributed leads (Smart Bot) — see Lead.sourcePackageId's comment.
   // Named explicitly since it's a second, distinct relation to Lead.
-  adAttributedLeads Lead[] @relation("LeadSourcePackage")
-  adPackageMappings AdPackageMapping[]
+  adAttributedLeads     Lead[]                    @relation("LeadSourcePackage")
+  adPackageMappings     AdPackageMapping[]
   linktreeCategoryLinks PackageLinktreeCategory[]
 
   @@unique([organizationId, slug])
@@ -595,21 +597,21 @@ model Package {
 /// customers book onto. One package can have unlimited departures. Powers the
 /// Events board and the Manage Departure page.
 model Batch {
-  id                String      @id @default(uuid()) @db.Uuid
-  organizationId    String      @map("organization_id") @db.Uuid
-  packageId         String      @map("package_id") @db.Uuid
-  name              String? // optional event/batch label e.g. "Independence Day Special"
-  departureDate     DateTime    @map("departure_date") @db.Date
-  returnDate        DateTime?   @map("return_date") @db.Date
-  bookingCloseDate  DateTime?   @map("booking_close_date") @db.Date
-  capacity          Int         @default(20) // total seats
-  pricePerPerson    Int?        @map("price_per_person") // defaults to package price when null
-  pickupCity        String?     @map("pickup_city")
-  coverImageOverride String?    @map("cover_image_override")
-  status            EventStatus @default(DRAFT)
-  notes             String?
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+  id                 String      @id @default(uuid()) @db.Uuid
+  organizationId     String      @map("organization_id") @db.Uuid
+  packageId          String      @map("package_id") @db.Uuid
+  name               String? // optional event/batch label e.g. "Independence Day Special"
+  departureDate      DateTime    @map("departure_date") @db.Date
+  returnDate         DateTime?   @map("return_date") @db.Date
+  bookingCloseDate   DateTime?   @map("booking_close_date") @db.Date
+  capacity           Int         @default(20) // total seats
+  pricePerPerson     Int?        @map("price_per_person") // defaults to package price when null
+  pickupCity         String?     @map("pickup_city")
+  coverImageOverride String?     @map("cover_image_override")
+  status             EventStatus @default(DRAFT)
+  notes              String?
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
@@ -655,18 +657,18 @@ model Booking {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  package        Package?        @relation(fields: [packageId], references: [id], onDelete: SetNull)
-  batch          Batch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
-  assignedTo     User?           @relation("BookingAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
-  itineraryItems ItineraryItem[]
-  tasks          Task[]
-  invoices       Invoice[]
-  bills          Bill[]
+  organization        Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead                Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  package             Package?        @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  batch               Batch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  assignedTo          User?           @relation("BookingAgent", fields: [assignedToId], references: [id], onDelete: SetNull)
+  itineraryItems      ItineraryItem[]
+  tasks               Task[]
+  invoices            Invoice[]
+  bills               Bill[]
   // Additive back-relation for Lead.repeatBookingId — same pattern already
   // used throughout (Phase 3/4 relations onto Lead).
-  repeatCustomerLeads Lead[] @relation("RepeatCustomerLead")
+  repeatCustomerLeads Lead[]          @relation("RepeatCustomerLead")
 
   @@unique([organizationId, bookingNumber])
   @@index([organizationId])
@@ -743,31 +745,31 @@ model Event {
 
 /// Customer invoice for a booking. INV-#### per organization; line items as JSON.
 model Invoice {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  invoiceNumber  Int           @map("invoice_number")
-  bookingId      String?       @map("booking_id") @db.Uuid
-  customerName   String        @map("customer_name")
-  customerEmail  String?       @map("customer_email")
-  customerPhone  String?       @map("customer_phone")
+  id                  String        @id @default(uuid()) @db.Uuid
+  organizationId      String        @map("organization_id") @db.Uuid
+  invoiceNumber       Int           @map("invoice_number")
+  bookingId           String?       @map("booking_id") @db.Uuid
+  customerName        String        @map("customer_name")
+  customerEmail       String?       @map("customer_email")
+  customerPhone       String?       @map("customer_phone")
   // Bill-to extras for the tax-invoice layout — optional, blank if unset.
-  customerCompanyName String?  @map("customer_company_name")
-  customerAddress     String?  @map("customer_address")
-  status         InvoiceStatus @default(DRAFT)
-  issueDate      DateTime      @default(now()) @map("issue_date") @db.Date
-  dueDate        DateTime?     @map("due_date") @db.Date
-  items          Json          @default("[]")
-  subtotal       Int           @default(0)
+  customerCompanyName String?       @map("customer_company_name")
+  customerAddress     String?       @map("customer_address")
+  status              InvoiceStatus @default(DRAFT)
+  issueDate           DateTime      @default(now()) @map("issue_date") @db.Date
+  dueDate             DateTime?     @map("due_date") @db.Date
+  items               Json          @default("[]")
+  subtotal            Int           @default(0)
   // Advance/down-payment already collected — shown in the invoice summary as
   // "Remaining Payable Value" (total - advanceAmount). Independent of tax.
-  advanceAmount  Int           @default(0) @map("advance_amount")
-  taxPercent     Float         @default(0) @map("tax_percent")
-  taxAmount      Int           @default(0) @map("tax_amount")
-  total          Int           @default(0)
-  currency       String        @default("INR")
-  notes          String?
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+  advanceAmount       Int           @default(0) @map("advance_amount")
+  taxPercent          Float         @default(0) @map("tax_percent")
+  taxAmount           Int           @default(0) @map("tax_amount")
+  total               Int           @default(0)
+  currency            String        @default("INR")
+  notes               String?
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
@@ -816,22 +818,22 @@ model Bill {
 /// `credentials` is always encrypted at rest (see src/lib/encryption.ts) and is
 /// never serialized back to the client.
 model ChannelConnection {
-  id             String                  @id @default(uuid()) @db.Uuid
-  organizationId String                  @map("organization_id") @db.Uuid
-  channel        ChannelType
-  status         ChannelConnectionStatus @default(NOT_CONNECTED)
-  displayName    String?                 @map("display_name") // phone number / IG handle / from-address / sender id shown in Settings
-  externalId     String?                 @map("external_id") // WABA id / IG-scoped account id — routes inbound webhooks to this org
+  id                  String                  @id @default(uuid()) @db.Uuid
+  organizationId      String                  @map("organization_id") @db.Uuid
+  channel             ChannelType
+  status              ChannelConnectionStatus @default(NOT_CONNECTED)
+  displayName         String?                 @map("display_name") // phone number / IG handle / from-address / sender id shown in Settings
+  externalId          String?                 @map("external_id") // WABA id / IG-scoped account id — routes inbound webhooks to this org
   // Instagram only: the linked Facebook Page's id. Real inbound Instagram DMs
   // (for an account connected via a Page, which is how this app's Instagram
   // connect flow works) arrive as a webhook with object:"page", identified by
   // Page id — NOT the IG-scoped account id above — so routing needs both.
-  secondaryExternalId String?            @map("secondary_external_id")
-  credentials    String?                 // AES-256-GCM encrypted JSON blob
-  lastError      String?                 @map("last_error")
-  connectedAt    DateTime?               @map("connected_at")
-  createdAt      DateTime                @default(now()) @map("created_at")
-  updatedAt      DateTime                @updatedAt @map("updated_at")
+  secondaryExternalId String?                 @map("secondary_external_id")
+  credentials         String? // AES-256-GCM encrypted JSON blob
+  lastError           String?                 @map("last_error")
+  connectedAt         DateTime?               @map("connected_at")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -863,9 +865,9 @@ model Conversation {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  messages     Message[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages       Message[]
   // Phase 4 (Bot Flow) — additive back-relation, same pattern Phase 3 used on Lead.
   botFlowSession BotFlowSession?
 
@@ -878,24 +880,24 @@ model Conversation {
 
 /// One inbound or outbound message within a conversation.
 model Message {
-  id                String           @id @default(uuid()) @db.Uuid
-  organizationId    String           @map("organization_id") @db.Uuid
-  conversationId     String          @map("conversation_id") @db.Uuid
-  direction         MessageDirection
-  externalMessageId String?          @map("external_message_id")
-  body              String?
+  id                     String           @id @default(uuid()) @db.Uuid
+  organizationId         String           @map("organization_id") @db.Uuid
+  conversationId         String           @map("conversation_id") @db.Uuid
+  direction              MessageDirection
+  externalMessageId      String?          @map("external_message_id")
+  body                   String?
   // Set on an INBOUND message when it's a tap on a WhatsApp interactive list/
   // button message (interactive.list_reply.id / button_reply.id) — the id we
   // originally set when sending it, e.g. a packageId for a Bot Flow CAROUSEL
   // step, matched back against it to decide what to do next. Null for a
   // plain text reply.
-  interactiveSelectionId String?     @map("interactive_selection_id")
-  mediaUrl          String?          @map("media_url")
-  templateName      String?          @map("template_name") // set when sent as a WhatsApp template (outside the 24h window)
-  status            MessageStatus    @default(SENT)
-  errorMessage      String?          @map("error_message")
-  sentById          String?          @map("sent_by_id") @db.Uuid // agent who sent it (outbound only)
-  createdAt         DateTime         @default(now()) @map("created_at")
+  interactiveSelectionId String?          @map("interactive_selection_id")
+  mediaUrl               String?          @map("media_url")
+  templateName           String?          @map("template_name") // set when sent as a WhatsApp template (outside the 24h window)
+  status                 MessageStatus    @default(SENT)
+  errorMessage           String?          @map("error_message")
+  sentById               String?          @map("sent_by_id") @db.Uuid // agent who sent it (outbound only)
+  createdAt              DateTime         @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -990,6 +992,12 @@ enum BotFlowStepType {
   /// (that needs an approved message template) — this is a free-form list
   /// message, sendable within the normal 24h session window like plain text.
   CAROUSEL
+  /// Sets a Lead field to a fixed value (config.field / config.value), then auto-chains.
+  SET_ATTRIBUTE
+  /// Adds config.tags to Lead.tags, then auto-chains.
+  ADD_TAG
+  /// Moves the lead to config.status (logged like a manual stage change), then auto-chains.
+  UPDATE_STAGE
 }
 
 enum BotFlowSessionStatus {
@@ -1018,6 +1026,13 @@ model BotFlow {
   fallbackMessage     String   @default("Sorry, I didn't quite get that — let me get a team member to help you.") @map("fallback_message")
   needsReviewKeywords Json     @default("[]") @map("needs_review_keywords") // string[]
   isActive            Boolean  @default(true) @map("is_active")
+  /// Starts this flow for a chat whose message contains one of these words
+  /// (string[]); also restarts a chat whose earlier flow has finished.
+  triggerKeywords     Json     @default("[]") @map("trigger_keywords")
+  /// "contains" (whole word anywhere in the message) or "exact" (the whole message).
+  keywordMatch        String   @default("contains") @map("keyword_match")
+  /// Starts this flow for new leads from these Click-to-WhatsApp ads (string[] of Meta ad ids).
+  triggerAdIds        Json     @default("[]") @map("trigger_ad_ids")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -1218,7 +1233,7 @@ model BotInteractionLog {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   leadId         String   @map("lead_id") @db.Uuid
-  direction      String   // "inbound" | "outbound"
+  direction      String // "inbound" | "outbound"
   rawMessage     String   @map("raw_message")
   matchedTool    String?  @map("matched_tool")
   createdAt      DateTime @default(now()) @map("created_at")

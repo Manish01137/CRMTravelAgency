@@ -5,6 +5,7 @@ import { classifyBotIntent, DEFAULT_GEMINI_MODEL } from '../../lib/gemini';
 import { TOOL_DECLARATIONS, runBotTool } from './tools';
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
+import { botFlowInUse, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
 
 /**
  * Smart Bot — webhook-inline WhatsApp bot (POC), feature-flagged per
@@ -43,12 +44,10 @@ export async function runSmartBotForWhatsApp(
   if (!settings?.enabled) return;
 
   // Mutually exclusive with Bot Flow for this org+channel — see file comment.
-  const botFlowAssigned = await withTenant(organizationId, (tx) =>
-    tx.botFlowAssignment.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } } }),
-  );
-  if (botFlowAssigned) {
+  const botFlowActive = await withTenant(organizationId, async (tx) => botFlowInUse(await loadFlowRouting(tx, organizationId, 'WHATSAPP')));
+  if (botFlowActive) {
     console.warn(
-      `[smart-bot] org ${organizationId} has Smart Bot enabled AND a Bot Flow assigned to WhatsApp — deferring to Bot Flow, skipping this message to avoid a double reply.`,
+      `[smart-bot] org ${organizationId} has Smart Bot enabled AND Bot Flow in use on WhatsApp — deferring to Bot Flow, skipping this message to avoid a double reply.`,
     );
     return;
   }

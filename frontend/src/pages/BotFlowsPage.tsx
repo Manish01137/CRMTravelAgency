@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, FileText, Instagram, Megaphone, MessageCircle, Plus, Sparkles, Trash2, Workflow } from 'lucide-react';
+import { ArrowLeft, FileText, Instagram, Megaphone, MessageCircle, Plus, Sparkles, Star, Trash2, Workflow, Zap } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { AdPackageLink, BotFlow, BotFlowAssignment, BotFlowTemplate, ChannelStatus, TravelPackage } from '@/types';
@@ -194,8 +194,10 @@ function AssignmentsCard() {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle>Live on each channel</CardTitle>
-        <CardDescription>Pick which flow runs automatically on each connected WhatsApp number / Instagram handle.</CardDescription>
+        <CardTitle>Default flow on each channel</CardTitle>
+        <CardDescription>
+          Runs for new chats that don't match any flow's keyword or ad trigger. Leave it empty to only reply when a trigger matches. Set triggers in each flow's settings.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {channels.length === 0 ? (
@@ -226,9 +228,9 @@ function AssignmentsCard() {
                         assignMutation.mutate({ channel: c.channel, flowId: v });
                       }}
                     >
-                      <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="No flow assigned" /></SelectTrigger>
+                      <SelectTrigger className="w-full sm:w-56"><SelectValue placeholder="No default flow" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none">No flow assigned</SelectItem>
+                        <SelectItem value="__none">No default flow</SelectItem>
                         {flows.map((f) => (
                           <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
                         ))}
@@ -501,6 +503,9 @@ export function BotFlowsPage() {
 
   const flowsQuery = useQuery({ queryKey: ['bot-flows'], queryFn: () => api.get<BotFlow[]>('/bot-flows') });
   const flows = flowsQuery.data ?? [];
+  const assignmentsQuery = useQuery({ queryKey: ['bot-flow-assignments'], queryFn: () => api.get<BotFlowAssignment[]>('/bot-flows/assignments/all') });
+  const defaultOn = (flowId: string) =>
+    (assignmentsQuery.data ?? []).filter((a) => a.flowId === flowId).map((a) => (a.channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'));
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/bot-flows/${id}`),
@@ -533,7 +538,7 @@ export function BotFlowsPage() {
         <EmptyState
           icon={<Workflow />}
           title="No flows yet"
-          description="Create a flow, then assign it to a connected WhatsApp number or Instagram handle."
+          description="Create a flow, then start it with keywords, a Meta ad, or as a channel's default."
           action={<Button onClick={() => setNewOpen(true)}><Plus /> New flow</Button>}
         />
       ) : (
@@ -545,9 +550,30 @@ export function BotFlowsPage() {
                   <CardTitle className="text-base">{f.name}</CardTitle>
                   <Badge variant={f.isActive ? 'success' : 'muted'}>{f.isActive ? 'Active' : 'Inactive'}</Badge>
                 </div>
-                <CardDescription>{f._count?.steps ?? 0} steps · {f._count?.assignments ?? 0} channel{(f._count?.assignments ?? 0) === 1 ? '' : 's'}</CardDescription>
+                <CardDescription>{f._count?.steps ?? 0} steps</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap gap-1.5 text-[11px]">
+                  {defaultOn(f.id).map((ch) => (
+                    <span key={ch} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                      <Star className="size-3" /> Default on {ch}
+                    </span>
+                  ))}
+                  {(f.triggerKeywords ?? []).slice(0, 6).map((k) => (
+                    <span key={k} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                      <Zap className="size-3" /> {k}
+                    </span>
+                  ))}
+                  {(f.triggerKeywords?.length ?? 0) > 6 && <span className="px-1 py-0.5 text-muted-foreground">+{f.triggerKeywords.length - 6} more</span>}
+                  {(f.triggerAdIds?.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700 ring-1 ring-inset ring-sky-200">
+                      <Megaphone className="size-3" /> {f.triggerAdIds.length} ad{f.triggerAdIds.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {defaultOn(f.id).length === 0 && !f.triggerKeywords?.length && !f.triggerAdIds?.length && (
+                    <span className="text-muted-foreground">Not started by anything yet — add triggers in its settings or make it a default.</span>
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="icon-sm"

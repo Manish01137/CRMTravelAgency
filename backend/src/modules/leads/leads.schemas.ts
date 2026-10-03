@@ -57,6 +57,7 @@ export const createLeadSchema = z.object({
   budgetCurrency: z.string().trim().length(3).toUpperCase().optional().default('USD'),
   notes: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
   assignedToId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
 });
 
 export const updateLeadSchema = z
@@ -75,6 +76,7 @@ export const updateLeadSchema = z
     budgetCurrency: z.preprocess(emptyToNull, z.string().trim().length(3).toUpperCase().nullable()).optional(),
     notes: z.preprocess(emptyToNull, z.string().max(5000).nullable()).optional(),
     assignedToId: z.preprocess(emptyToNull, z.string().uuid().nullable()).optional(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, { message: 'No fields to update' });
 
@@ -90,6 +92,7 @@ export const listLeadsQuerySchema = z.object({
     .optional(),
   source: LeadSourceEnum.optional(),
   assignedToId: z.union([z.literal('unassigned'), z.string().uuid()]).optional(),
+  tag: z.string().trim().min(1).max(40).optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   sort: z.enum(['createdAt', 'updatedAt', 'name']).default('createdAt'),

@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
-import { BadRequest, NotFound } from '../../lib/errors';
+import { BadRequest, Conflict, NotFound } from '../../lib/errors';
+import type { TenantTx } from '../../lib/prisma';
+import { toTriggerFlow } from './bot-flow.triggers';
 import { BOT_FLOW_TEMPLATES, instantiateTemplate } from './bot-flow.templates';
 import type { AssignFlowInput, CreateFlowInput, CreateFromTemplateInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
 
@@ -41,25 +43,67 @@ export async function getFlow(organizationId: string, flowId: string) {
   });
 }
 
+/** Case-insensitive de-duplication, keeping the first spelling. */
+function uniqueWords(words: string[]): string[] {
+  const seen = new Set<string>();
+  return words.filter((w) => {
+    const k = w.trim().toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** One ad or keyword starts one flow — refuse a trigger another active flow already uses. */
+async function assertTriggersFree(tx: TenantTx, organizationId: string, flowId: string | null, keywords: string[], adIds: string[]) {
+  if (keywords.length === 0 && adIds.length === 0) return;
+  const others = await tx.botFlow.findMany({
+    where: { organizationId, isActive: true, ...(flowId ? { id: { not: flowId } } : {}) },
+    select: { id: true, name: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true },
+  });
+  for (const other of others) {
+    const t = toTriggerFlow(other);
+    const ad = adIds.find((a) => t.triggerAdIds.includes(a));
+    if (ad) throw Conflict(`Ad ${ad} already starts the flow "${other.name}"`);
+    const kw = keywords.find((k) => t.triggerKeywords.some((o) => o.trim().toLowerCase() === k.trim().toLowerCase()));
+    if (kw) throw Conflict(`"${kw}" already starts the flow "${other.name}"`);
+  }
+}
+
 export async function createFlow(organizationId: string, input: CreateFlowInput) {
-  return withTenant(organizationId, (tx) =>
-    tx.botFlow.create({
+  return withTenant(organizationId, async (tx) => {
+    const triggerKeywords = uniqueWords(input.triggerKeywords);
+    const triggerAdIds = [...new Set(input.triggerAdIds)];
+    if (input.isActive) await assertTriggersFree(tx, organizationId, null, triggerKeywords, triggerAdIds);
+    return tx.botFlow.create({
       data: {
         organizationId,
         name: input.name,
         ...(input.fallbackMessage !== undefined && { fallbackMessage: input.fallbackMessage }),
         needsReviewKeywords: input.needsReviewKeywords,
         isActive: input.isActive,
+        triggerKeywords,
+        keywordMatch: input.keywordMatch,
+        triggerAdIds,
       },
-    }),
-  );
+    });
+  });
 }
 
 export async function updateFlow(organizationId: string, flowId: string, input: UpdateFlowInput) {
   return withTenant(organizationId, async (tx) => {
     const existing = await tx.botFlow.findUnique({ where: { id: flowId } });
     if (!existing || existing.organizationId !== organizationId) throw NotFound('Flow not found');
-    return tx.botFlow.update({ where: { id: flowId }, data: input });
+    const data = {
+      ...input,
+      ...(input.triggerKeywords && { triggerKeywords: uniqueWords(input.triggerKeywords) }),
+      ...(input.triggerAdIds && { triggerAdIds: [...new Set(input.triggerAdIds)] }),
+    };
+    const current = toTriggerFlow(existing);
+    if (data.isActive ?? existing.isActive) {
+      await assertTriggersFree(tx, organizationId, flowId, data.triggerKeywords ?? current.triggerKeywords, data.triggerAdIds ?? current.triggerAdIds);
+    }
+    return tx.botFlow.update({ where: { id: flowId }, data });
   });
 }
 

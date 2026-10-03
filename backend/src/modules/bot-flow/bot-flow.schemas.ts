@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { ANSWER_TYPES } from '../../lib/answerValidation';
+import { LeadStatusEnum } from '../leads/leads.schemas';
+
+// Lead fields a Set Attribute step may write (mirrors bot-flow.engine.ts).
+export const SETTABLE_LEAD_FIELDS = ['destination', 'travelerCount', 'budgetAmount', 'customerType', 'assignedToId', 'notes'] as const;
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 
@@ -11,11 +15,19 @@ export const LEAD_FIELDS = ['name', 'email', 'phone', 'destination', 'travelDate
 export const flowIdParam = z.object({ id: z.string().uuid('Invalid flow id') });
 export const stepIdParam = z.object({ id: z.string().uuid('Invalid flow id'), stepId: z.string().uuid('Invalid step id') });
 
+// Triggers: words that start this flow, and Meta ads whose new leads it greets.
+const triggerKeywordsSchema = z.array(z.string().trim().min(1).max(60)).max(30);
+const triggerAdIdsSchema = z.array(z.string().trim().regex(/^\d{6,30}$/, 'Ad ID should be the numeric ID from Meta Ads Manager')).max(30);
+const keywordMatchSchema = z.enum(['contains', 'exact']);
+
 export const createFlowSchema = z.object({
   name: z.string().trim().min(1, 'Flow name is required').max(150),
   fallbackMessage: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
   needsReviewKeywords: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
   isActive: z.coerce.boolean().default(true),
+  triggerKeywords: triggerKeywordsSchema.default([]),
+  keywordMatch: keywordMatchSchema.default('contains'),
+  triggerAdIds: triggerAdIdsSchema.default([]),
 });
 
 export const updateFlowSchema = z
@@ -24,6 +36,9 @@ export const updateFlowSchema = z
     fallbackMessage: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
     needsReviewKeywords: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
     isActive: z.coerce.boolean().optional(),
+    triggerKeywords: triggerKeywordsSchema.optional(),
+    keywordMatch: keywordMatchSchema.optional(),
+    triggerAdIds: triggerAdIdsSchema.optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });
 
@@ -48,11 +63,30 @@ const stepConfigSchema = z.object({
   errorMessage: z.preprocess(emptyToUndefined, z.string().trim().max(500).optional()),
   // CONFIRM with 4+ options: the label on the button that opens the WhatsApp list.
   buttonLabel: z.preprocess(emptyToUndefined, z.string().trim().max(20).optional()),
+  // SET_ATTRIBUTE: which Lead field and the value to write.
+  field: z.preprocess(emptyToUndefined, z.enum(SETTABLE_LEAD_FIELDS).optional()),
+  value: z.preprocess(emptyToUndefined, z.string().trim().max(1000).optional()),
+  // ADD_TAG
+  tags: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
+  // UPDATE_STAGE
+  status: z.preprocess(emptyToUndefined, LeadStatusEnum.optional()),
 });
 
 export const upsertStepSchema = z
   .object({
-    type: z.enum(['COLLECT', 'CONFIRM', 'CLOSING', 'MESSAGE', 'HANDOFF', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL']),
+    type: z.enum([
+      'COLLECT',
+      'CONFIRM',
+      'CLOSING',
+      'MESSAGE',
+      'HANDOFF',
+      'SEND_PACKAGE',
+      'AI_OPEN',
+      'CAROUSEL',
+      'SET_ATTRIBUTE',
+      'ADD_TAG',
+      'UPDATE_STAGE',
+    ]),
     order: z.coerce.number().int().min(0).max(1000).default(0),
     question: z.preprocess(emptyToUndefined, z.string().max(1000).optional()),
     leadField: z.preprocess(emptyToUndefined, z.enum(LEAD_FIELDS).optional()),

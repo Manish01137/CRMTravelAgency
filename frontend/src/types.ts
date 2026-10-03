@@ -192,6 +192,8 @@ export interface Lead {
   package: { id: string; name: string; destination: string } | null;
   /** The package whose Click-to-WhatsApp ad this lead came from (Ad → Package link). */
   sourcePackage: { id: string; name: string } | null;
+  /** Free-form labels — set by hand or by a Bot Flow "Add tag" step. */
+  tags: string[];
   // Phase 4 (Bot Flow) — set when an inbound message matched a "Needs Review"
   // keyword; the bot stopped and handed off to a human.
   needsReview: boolean;
@@ -756,7 +758,7 @@ export interface Conversation {
   unreadCount: number;
   isFavorite: boolean;
   /** The linked lead's pipeline stage (Inbox stage chips / badge). */
-  lead?: { id: string; status: LeadStatus } | null;
+  lead?: { id: string; status: LeadStatus; tags: string[] } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -831,7 +833,21 @@ export interface CallLogEntry {
 
 // --- Phase 4: Automation & AI -------------------------------------------------
 
-export type BotFlowStepType = 'COLLECT' | 'CONFIRM' | 'CLOSING' | 'MESSAGE' | 'HANDOFF' | 'SEND_PACKAGE' | 'AI_OPEN' | 'CAROUSEL';
+export type BotFlowStepType =
+  | 'COLLECT'
+  | 'CONFIRM'
+  | 'CLOSING'
+  | 'MESSAGE'
+  | 'HANDOFF'
+  | 'SEND_PACKAGE'
+  | 'AI_OPEN'
+  | 'CAROUSEL'
+  | 'SET_ATTRIBUTE'
+  | 'ADD_TAG'
+  | 'UPDATE_STAGE';
+
+/** Lead fields a Set Attribute step can write. */
+export type BotFlowSettableField = 'destination' | 'travelerCount' | 'budgetAmount' | 'customerType' | 'assignedToId' | 'notes';
 export type BotFlowSessionStatus = 'ACTIVE' | 'COMPLETED' | 'NEEDS_REVIEW';
 export type FollowUpStatus = 'PENDING' | 'SENT' | 'SKIPPED' | 'FAILED';
 
@@ -862,6 +878,13 @@ export interface BotFlowStepConfig {
   errorMessage?: string;
   /** CONFIRM only — label on the button that opens the list menu (4+ options). */
   buttonLabel?: string;
+  /** SET_ATTRIBUTE only — the Lead field and the value written to it. */
+  field?: BotFlowSettableField;
+  value?: string;
+  /** ADD_TAG only. */
+  tags?: string[];
+  /** UPDATE_STAGE only. */
+  status?: LeadStatus;
 }
 
 export interface BotFlowStep {
@@ -885,6 +908,11 @@ export interface BotFlow {
   fallbackMessage: string;
   needsReviewKeywords: string[];
   isActive: boolean;
+  /** Words that start this flow (and restart a finished chat). */
+  triggerKeywords: string[];
+  keywordMatch: 'contains' | 'exact';
+  /** Meta ad ids whose new leads start this flow. */
+  triggerAdIds: string[];
   createdAt: string;
   updatedAt: string;
   _count?: { steps: number; assignments: number };

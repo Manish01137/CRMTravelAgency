@@ -30,13 +30,31 @@ import {
   MessageSquareText,
   Package as PackageIcon,
   Plus,
+  Flag,
+  PenLine,
   Settings2,
   Sparkles,
+  Tag,
   Trash2,
+  Zap,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { BotFlowAnswerType, BotFlowConfirmOption, BotFlowDetail, BotFlowLeadField, BotFlowStep, BotFlowStepType, TravelPackage } from '@/types';
+import type {
+  BotFlowAnswerType,
+  BotFlowConfirmOption,
+  BotFlowDetail,
+  BotFlowLeadField,
+  BotFlowSettableField,
+  BotFlowStep,
+  BotFlowStepType,
+  CustomerType,
+  LeadStatus,
+  TravelPackage,
+  User,
+} from '@/types';
+import { TagInput } from '@/components/ui/tag-input';
+import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -101,10 +119,27 @@ const STEP_STYLES: Record<BotFlowStepType, { icon: typeof MessageSquareText; lab
   SEND_PACKAGE: { icon: PackageIcon, label: 'Send package', accent: 'border-teal-400', bg: 'bg-teal-50' },
   AI_OPEN: { icon: Sparkles, label: 'AI conversation', accent: 'border-fuchsia-400', bg: 'bg-fuchsia-50' },
   CAROUSEL: { icon: LayoutList, label: 'Carousel', accent: 'border-cyan-400', bg: 'bg-cyan-50' },
+  SET_ATTRIBUTE: { icon: PenLine, label: 'Set attribute', accent: 'border-indigo-400', bg: 'bg-indigo-50' },
+  ADD_TAG: { icon: Tag, label: 'Add tag', accent: 'border-lime-500', bg: 'bg-lime-50' },
+  UPDATE_STAGE: { icon: Flag, label: 'Update stage', accent: 'border-orange-400', bg: 'bg-orange-50' },
 };
 
+const SETTABLE_FIELD_LABELS: Record<BotFlowSettableField, string> = {
+  destination: 'Destination',
+  travelerCount: 'Traveller count',
+  budgetAmount: 'Budget',
+  customerType: 'Customer type',
+  assignedToId: 'Assigned agent',
+  notes: 'Notes (adds a line)',
+};
+
+const CUSTOMER_TYPE_LABELS: Record<CustomerType, string> = { B2C: 'B2C', B2B: 'B2B', CORPORATE: 'Corporate', VIP: 'VIP' };
+
+/** Steps that change the lead and continue — nothing is sent to the traveller. */
+const LEAD_UPDATE_TYPES: BotFlowStepType[] = ['SET_ATTRIBUTE', 'ADD_TAG', 'UPDATE_STAGE'];
+
 /** Step types that auto-chain to the next step without waiting for a reply — shown as a hint on the node. */
-const NON_INTERACTIVE_TYPES: BotFlowStepType[] = ['MESSAGE', 'SEND_PACKAGE'];
+const NON_INTERACTIVE_TYPES: BotFlowStepType[] = ['MESSAGE', 'SEND_PACKAGE', ...LEAD_UPDATE_TYPES];
 /** Step types with no outgoing connection at all. */
 const TERMINAL_TYPES: BotFlowStepType[] = ['CLOSING', 'HANDOFF'];
 
@@ -116,9 +151,27 @@ const ADD_STEP_MENU: { type: BotFlowStepType; blurb: string }[] = [
   { type: 'SEND_PACKAGE', blurb: 'Share a package, then continue right away' },
   { type: 'CAROUSEL', blurb: 'Show up to 10 packages as swipeable cards with a View package button' },
   { type: 'AI_OPEN', blurb: 'Let the AI Agent converse freely until it moves on' },
+  { type: 'SET_ATTRIBUTE', blurb: 'Fill in a lead field — destination, budget, agent…' },
+  { type: 'ADD_TAG', blurb: 'Label the lead (e.g. honeymoon, hot lead)' },
+  { type: 'UPDATE_STAGE', blurb: 'Move the lead to a pipeline stage' },
   { type: 'HANDOFF', blurb: 'End the bot\'s turn, flag the lead for your team' },
   { type: 'CLOSING', blurb: 'Final message — ends the flow' },
 ];
+
+function leadUpdateSummary(step: BotFlowStep): string | null {
+  const c = step.config;
+  if (step.type === 'ADD_TAG') return c.tags?.length ? `Tag: ${c.tags.join(', ')}` : null;
+  if (step.type === 'UPDATE_STAGE') return c.status ? `Stage → ${LEAD_STATUS_STYLES[c.status].label}` : null;
+  if (!c.field || !c.value) return null;
+  if (c.field === 'assignedToId') return 'Assign to an agent';
+  const value = c.field === 'customerType' ? CUSTOMER_TYPE_LABELS[c.value as CustomerType] ?? c.value : c.value;
+  return `${SETTABLE_FIELD_LABELS[c.field].replace(' (adds a line)', '')} → ${value}`;
+}
+
+/** How a step is named in "go to" pickers. */
+function stepLabel(step: BotFlowStep): string {
+  return step.question || leadUpdateSummary(step) || `${STEP_STYLES[step.type].label} step`;
+}
 
 /** Custom node — a labeled card matching the step's type, with connection handles. */
 function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
@@ -147,6 +200,8 @@ function StepNode({ data, selected }: NodeProps<{ step: BotFlowStep }>) {
             ? `Sends a list of ${step.config.packageIds.length} package${step.config.packageIds.length === 1 ? '' : 's'}`
             : <span className="italic text-muted-foreground">No packages chosen yet</span>}
         </p>
+      ) : LEAD_UPDATE_TYPES.includes(step.type) ? (
+        <p className="line-clamp-3 text-sm font-medium text-foreground">{leadUpdateSummary(step) ?? <span className="italic text-muted-foreground">Not set up yet</span>}</p>
       ) : (
         <p className="line-clamp-3 text-sm font-medium text-foreground">{step.question || <span className="italic text-muted-foreground">No text yet</span>}</p>
       )}
@@ -201,6 +256,10 @@ function StepEditor({
   const [maxAttempts, setMaxAttempts] = useState(3);
   const [errorMessage, setErrorMessage] = useState('');
   const [buttonLabel, setButtonLabel] = useState('');
+  const [attrField, setAttrField] = useState<BotFlowSettableField>('destination');
+  const [attrValue, setAttrValue] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [stageStatus, setStageStatus] = useState<LeadStatus | ''>('');
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const packagesQuery = useQuery({
@@ -224,7 +283,17 @@ function StepEditor({
     setMaxAttempts(step.config.maxAttempts ?? 3);
     setErrorMessage(step.config.errorMessage ?? '');
     setButtonLabel(step.config.buttonLabel ?? '');
+    setAttrField(step.config.field ?? 'destination');
+    setAttrValue(step.config.value ?? '');
+    setTags(step.config.tags ?? []);
+    setStageStatus(step.config.status ?? '');
   }, [step]);
+
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get<User[]>('/users'),
+    enabled: step?.type === 'SET_ATTRIBUTE',
+  });
 
   if (!step) return null;
   const style = STEP_STYLES[step.type];
@@ -243,6 +312,12 @@ function StepEditor({
       onSave({ question, nextStepId, config: { instructions } });
     } else if (step.type === 'HANDOFF') {
       onSave({ question: question || undefined });
+    } else if (step.type === 'SET_ATTRIBUTE') {
+      onSave({ nextStepId, config: { field: attrField, value: attrValue.trim() } });
+    } else if (step.type === 'ADD_TAG') {
+      onSave({ nextStepId, config: { tags } });
+    } else if (step.type === 'UPDATE_STAGE') {
+      onSave({ nextStepId, config: { status: stageStatus || undefined } });
     } else if (step.type === 'COLLECT') {
       onSave({
         question,
@@ -256,9 +331,19 @@ function StepEditor({
     }
   };
 
+  const attrValueValid =
+    attrField === 'travelerCount' ? /^[1-9]\d{0,5}$/.test(attrValue.trim())
+      : attrField === 'budgetAmount' ? /^\d{1,10}$/.test(attrValue.trim())
+      : !!attrValue.trim();
   const canSave =
     step.type === 'HANDOFF' // the only type with no required text
       ? true
+      : step.type === 'SET_ATTRIBUTE'
+        ? attrValueValid
+      : step.type === 'ADD_TAG'
+        ? tags.length > 0
+      : step.type === 'UPDATE_STAGE'
+        ? !!stageStatus
       : step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL'
         ? packageIds.length > 0
         : step.type === 'AI_OPEN'
@@ -288,11 +373,90 @@ function StepEditor({
               "Select every package that could apply — the bot sends whichever one matches the traveller's destination, then continues on to the next step right away."}
             {step.type === 'CAROUSEL' && 'Send up to 10 packages as swipeable WhatsApp cards — each with its photo and a View package button. If they reply with a package name, that package is sent with its details; any other reply moves the flow on.'}
             {step.type === 'AI_OPEN' && "Let the AI Agent converse freely here, guided by your instructions, until it decides to move the flow on."}
+            {step.type === 'SET_ATTRIBUTE' && 'Fill in a field on the lead, then continue right away. Nothing is sent to the traveller.'}
+            {step.type === 'ADD_TAG' && 'Label the lead so you can filter and follow up later, then continue right away.'}
+            {step.type === 'UPDATE_STAGE' && 'Move the lead along your pipeline (logged on its timeline), then continue right away. Moving to Won creates the booking, same as doing it by hand.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-4 overflow-y-auto py-2">
-          {step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL' ? (
+          {step.type === 'SET_ATTRIBUTE' ? (
+            <>
+              <Field label="Field" htmlFor="attrField" required>
+                <Select
+                  value={attrField}
+                  onValueChange={(v) => {
+                    setAttrField(v as BotFlowSettableField);
+                    setAttrValue('');
+                  }}
+                >
+                  <SelectTrigger id="attrField"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(SETTABLE_FIELD_LABELS) as BotFlowSettableField[]).map((f) => (
+                      <SelectItem key={f} value={f}>{SETTABLE_FIELD_LABELS[f]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field
+                label="Value"
+                htmlFor="attrValue"
+                required
+                error={attrValue.trim() && !attrValueValid ? 'Enter a whole number.' : undefined}
+              >
+                {attrField === 'customerType' ? (
+                  <Select value={attrValue} onValueChange={setAttrValue}>
+                    <SelectTrigger id="attrValue"><SelectValue placeholder="Choose a type" /></SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(CUSTOMER_TYPE_LABELS) as CustomerType[]).map((t) => (
+                        <SelectItem key={t} value={t}>{CUSTOMER_TYPE_LABELS[t]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : attrField === 'assignedToId' ? (
+                  <Select value={attrValue} onValueChange={setAttrValue}>
+                    <SelectTrigger id="attrValue"><SelectValue placeholder={usersQuery.isLoading ? 'Loading team…' : 'Choose an agent'} /></SelectTrigger>
+                    <SelectContent>
+                      {(usersQuery.data ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : attrField === 'notes' ? (
+                  <Textarea id="attrValue" rows={2} maxLength={1000} value={attrValue} onChange={(e) => setAttrValue(e.target.value)} placeholder="e.g. Came from the Manali flow" />
+                ) : (
+                  <Input
+                    id="attrValue"
+                    value={attrValue}
+                    inputMode={attrField === 'destination' ? undefined : 'numeric'}
+                    maxLength={attrField === 'destination' ? 120 : 10}
+                    onChange={(e) => setAttrValue(e.target.value)}
+                    placeholder={attrField === 'destination' ? 'e.g. Manali' : attrField === 'budgetAmount' ? 'e.g. 50000' : 'e.g. 2'}
+                  />
+                )}
+              </Field>
+            </>
+          ) : step.type === 'ADD_TAG' ? (
+            <Field label="Tags" htmlFor="stepTags" required hint="Press Enter after each. Leads can be filtered by tag on the Leads page.">
+              <TagInput id="stepTags" value={tags} onChange={setTags} max={10} maxLength={40} placeholder="e.g. honeymoon" />
+            </Field>
+          ) : step.type === 'UPDATE_STAGE' ? (
+            <Field label="Move the lead to" htmlFor="stepStage" required>
+              <Select value={stageStatus} onValueChange={(v) => setStageStatus(v as LeadStatus)}>
+                <SelectTrigger id="stepStage"><SelectValue placeholder="Choose a stage" /></SelectTrigger>
+                <SelectContent>
+                  {LEAD_STATUSES.map(({ value }) => (
+                    <SelectItem key={value} value={value}>
+                      <span className="flex items-center gap-2">
+                        <span className={cn('size-2 rounded-full', LEAD_STATUS_STYLES[value].dot)} />
+                        {LEAD_STATUS_STYLES[value].label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : step.type === 'SEND_PACKAGE' || step.type === 'CAROUSEL' ? (
             <Field
               label={step.type === 'SEND_PACKAGE' ? 'Packages to choose from' : 'Packages to show'}
               htmlFor="stepPackages"
@@ -420,14 +584,14 @@ function StepEditor({
             </div>
           )}
 
-          {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL'] as BotFlowStepType[]).includes(step.type) && (
+          {(['COLLECT', 'MESSAGE', 'SEND_PACKAGE', 'AI_OPEN', 'CAROUSEL', ...LEAD_UPDATE_TYPES] as BotFlowStepType[]).includes(step.type) && (
             <Field label="Then go to" htmlFor="stepNext" hint="Or drag a connection on the canvas instead.">
               <Select value={nextStepId ?? '__end'} onValueChange={(v) => setNextStepId(v === '__end' ? null : v)}>
                 <SelectTrigger id="stepNext"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__end">End flow here</SelectItem>
                   {otherSteps.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
+                    <SelectItem key={s.id} value={s.id}>{stepLabel(s)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -476,7 +640,7 @@ function StepEditor({
                           <SelectContent>
                             <SelectItem value="__end">End flow</SelectItem>
                             {otherSteps.map((s) => (
-                              <SelectItem key={s.id} value={s.id}>{s.question || `${s.type} step`}</SelectItem>
+                              <SelectItem key={s.id} value={s.id}>{stepLabel(s)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -547,12 +711,18 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
   const [fallbackMessage, setFallbackMessage] = useState(flow.fallbackMessage);
   const [keywordsText, setKeywordsText] = useState(flow.needsReviewKeywords.join(', '));
   const [isActive, setIsActive] = useState(flow.isActive);
+  const [triggerKeywords, setTriggerKeywords] = useState(flow.triggerKeywords ?? []);
+  const [keywordMatch, setKeywordMatch] = useState(flow.keywordMatch ?? 'contains');
+  const [triggerAdIds, setTriggerAdIds] = useState(flow.triggerAdIds ?? []);
 
   useEffect(() => {
     setName(flow.name);
     setFallbackMessage(flow.fallbackMessage);
     setKeywordsText(flow.needsReviewKeywords.join(', '));
     setIsActive(flow.isActive);
+    setTriggerKeywords(flow.triggerKeywords ?? []);
+    setKeywordMatch(flow.keywordMatch ?? 'contains');
+    setTriggerAdIds(flow.triggerAdIds ?? []);
   }, [flow]);
 
   const mutation = useMutation({
@@ -562,6 +732,9 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
         fallbackMessage: fallbackMessage.trim(),
         needsReviewKeywords: keywordsText.split(',').map((k) => k.trim()).filter(Boolean),
         isActive,
+        triggerKeywords,
+        keywordMatch,
+        triggerAdIds,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bot-flow', flow.id] });
@@ -577,12 +750,55 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Flow settings</DialogTitle>
-          <DialogDescription>Fallback message and the keywords that hand a conversation off to a human.</DialogDescription>
+          <DialogDescription>What starts this flow, what it says when it's unsure, and when it hands over to your team.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
           <Field label="Flow name" htmlFor="fsName" required>
             <Input id="fsName" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
+          <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/[0.03] p-3">
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-foreground"><Zap className="size-3.5 text-primary" /> Start this flow when…</p>
+              <p className="text-xs text-muted-foreground">
+                Works on WhatsApp and Instagram. A chat whose flow has finished starts again when it sends a keyword. Chats that match nothing go to the channel's default flow.
+              </p>
+            </div>
+            <Field label="The message has a keyword" htmlFor="fsTriggers" hint="Press Enter after each one — e.g. manali, kashmir, honeymoon, price.">
+              <TagInput id="fsTriggers" value={triggerKeywords} onChange={setTriggerKeywords} placeholder="Type a keyword and press Enter" />
+            </Field>
+            <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs" role="radiogroup" aria-label="Keyword match">
+              {(
+                [
+                  { key: 'contains', label: 'Anywhere in the message' },
+                  { key: 'exact', label: 'Whole message only' },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={keywordMatch === m.key}
+                  onClick={() => setKeywordMatch(m.key)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 font-medium transition-colors',
+                    keywordMatch === m.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <Field label="…or the lead came from these Meta ads" htmlFor="fsAds" hint="The Ad ID from Meta Ads Manager. New leads from these ads start here first.">
+              <TagInput
+                id="fsAds"
+                value={triggerAdIds}
+                onChange={setTriggerAdIds}
+                inputMode="numeric"
+                placeholder="Paste an Ad ID and press Enter"
+                validate={(v) => (/^\d{6,30}$/.test(v) ? null : 'Digits only — the long number from Meta Ads Manager.')}
+              />
+            </Field>
+          </div>
           <Field label="Fallback message" htmlFor="fsFallback" hint="Shown when the bot doesn't understand a reply.">
             <Textarea id="fsFallback" rows={2} value={fallbackMessage} onChange={(e) => setFallbackMessage(e.target.value)} />
           </Field>
@@ -592,7 +808,7 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
           <div className="flex items-center justify-between rounded-lg border border-border p-3">
             <div>
               <p className="text-sm font-medium text-foreground">Active</p>
-              <p className="text-xs text-muted-foreground">Inactive flows can't be assigned to a channel.</p>
+              <p className="text-xs text-muted-foreground">Inactive flows don't start for new chats.</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>

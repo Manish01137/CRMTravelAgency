@@ -34,6 +34,7 @@ import {
   Wallet,
   X,
   MessageSquareText,
+  Tag as TagIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -418,7 +419,7 @@ function RowActions({
   );
 }
 
-function LeadIdentityCell({ lead, onEdit }: { lead: Lead; onEdit: () => void }) {
+function LeadIdentityCell({ lead, onEdit, onTag }: { lead: Lead; onEdit: () => void; onTag: (tag: string) => void }) {
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="flex items-center gap-2">
@@ -438,6 +439,21 @@ function LeadIdentityCell({ lead, onEdit }: { lead: Lead; onEdit: () => void }) 
         <RepeatCustomerBadge lead={lead} />
         <span className="text-[11px] text-muted-foreground">ID: {shortId(lead.id)}</span>
       </div>
+      {(lead.tags?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {lead.tags.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => onTag(t)}
+              title={`Show leads tagged "${t}"`}
+              className="inline-flex items-center gap-0.5 rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary hover:bg-primary/15"
+            >
+              <TagIcon className="size-2.5" /> {t}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
         <Clock3 className="size-3" /> {formatSmartTime(lead.createdAt)}
       </p>
@@ -543,6 +559,7 @@ export function LeadsPage() {
   const [statuses, setStatuses] = useState<LeadStatus[]>([]);
   const [source, setSource] = useState<string>(ALL);
   const [assignee, setAssignee] = useState<string>(ALL);
+  const [tag, setTag] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<'createdAt' | 'name'>('createdAt');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
@@ -559,7 +576,7 @@ export function LeadsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statuses, source, assignee]);
+  }, [search, statuses, source, assignee, tag]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -567,12 +584,13 @@ export function LeadsPage() {
     if (statuses.length > 0) params.set('status', statuses.join(','));
     if (source !== ALL) params.set('source', source);
     if (assignee !== ALL) params.set('assignedToId', assignee);
+    if (tag) params.set('tag', tag);
     params.set('sort', sort);
     params.set('order', order);
     params.set('page', String(page));
     params.set('pageSize', String(PAGE_SIZE));
     return params.toString();
-  }, [search, statuses, source, assignee, sort, order, page]);
+  }, [search, statuses, source, assignee, tag, sort, order, page]);
 
   // Selection only makes sense within the current result set.
   useEffect(() => {
@@ -665,7 +683,7 @@ export function LeadsPage() {
   const leads = data?.items ?? [];
   const stats = statsQuery.data;
   const hasActiveFilters =
-    Boolean(search) || statuses.length > 0 || source !== ALL || assignee !== ALL;
+    Boolean(search) || statuses.length > 0 || source !== ALL || assignee !== ALL || !!tag;
   const secondaryFiltersActive = source !== ALL || assignee !== ALL;
   const busy = updateMutation.isPending || bulkUpdateMutation.isPending || bulkDeleteMutation.isPending;
 
@@ -683,6 +701,7 @@ export function LeadsPage() {
     setStatuses([]);
     setSource(ALL);
     setAssignee(ALL);
+    setTag(null);
   };
 
   const toggleStage = (status: LeadStatus) =>
@@ -849,6 +868,18 @@ export function LeadsPage() {
         </div>
       )}
 
+      {tag && (
+        <div className="mb-3 flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Tagged</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-0.5 pl-2.5 pr-1 text-xs font-medium text-primary">
+            <TagIcon className="size-3" /> {tag}
+            <button type="button" onClick={() => setTag(null)} className="rounded-full p-0.5 hover:bg-primary/15" aria-label="Clear tag filter">
+              <X className="size-3" />
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Pipeline stage arrows */}
       <StageArrowBar statuses={statuses} onToggle={toggleStage} />
 
@@ -1011,7 +1042,7 @@ export function LeadsPage() {
                           {(page - 1) * PAGE_SIZE + i + 1}
                         </td>
                         <td className="px-3 py-4">
-                          <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} />
+                          <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} onTag={setTag} />
                         </td>
                         {rowCells(lead)}
                       </tr>
@@ -1029,7 +1060,7 @@ export function LeadsPage() {
               return (
                 <Card key={lead.id} className={cn('p-4', temp?.cardClass)}>
                   <div className="flex items-start justify-between gap-3">
-                    <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} />
+                    <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} onTag={setTag} />
                     <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />
                   </div>
                   <div className="mt-3">
