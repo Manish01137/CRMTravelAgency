@@ -394,7 +394,9 @@ export function PackageBrochurePage() {
         .pbx-brand-name { font-family:${DISPLAY_FONT}; font-weight:700; font-size:13px; color:var(--blue-dark); text-align:center; line-height:1.3; }
 
         .pbx-banner-wrap { text-align:center; margin:14px 0 22px; }
-        .pbx-banner { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:22px; letter-spacing:.02em; padding:11px 26px; border-radius:14px; }
+        .pbx-banner { display:inline-flex; align-items:center; justify-content:center; min-height:48px; box-sizing:border-box; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:22px; line-height:1.15; letter-spacing:.02em; padding:6px 26px; border-radius:14px; }
+        /* Emoji get their own box: emoji fonts are taller than the text font and otherwise push the words off-centre (most visibly on Mac/iPhone). */
+        .pbx-ico { display:inline-flex; align-items:center; justify-content:center; line-height:1; flex-shrink:0; }
         .pbx-banner--yellow { background:var(--yellow); color:${INK}; }
 
         .pbx-bullets { list-style:none; margin:0; padding:0; }
@@ -409,14 +411,14 @@ export function PackageBrochurePage() {
 
         .pbx-footer-contact { position:absolute; left:24px; right:24px; bottom:20px; z-index:3; }
         .pbx-fc-top { background:#fff; border-radius:999px; padding:11px 20px; display:flex; justify-content:center; gap:26px; font-size:13.5px; font-weight:600; color:${INK}; box-shadow:0 6px 18px rgba(0,0,0,.12); flex-wrap:wrap; }
-        .pbx-fc-bottom { margin-top:8px; background:var(--blue); color:#fff; border-radius:999px; padding:11px 20px; text-align:center; font-weight:700; font-size:15px; letter-spacing:.02em; }
-        .pbx-fc-item { display:flex; align-items:center; gap:7px; }
+        .pbx-fc-bottom { margin-top:8px; background:var(--blue); color:#fff; border-radius:999px; height:44px; padding:0 20px; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; font-size:15px; line-height:1; letter-spacing:.02em; }
+        .pbx-fc-item { display:flex; align-items:center; gap:7px; line-height:1; }
 
         .pbx-cover-title { text-align:center; margin:2px 0 14px; }
         .pbx-cover-title .main { font-family:${DISPLAY_FONT}; font-weight:800; font-size:56px; line-height:1; color:var(--blue-dark); text-transform:uppercase; letter-spacing:.01em; }
         .pbx-cover-title .accent { font-family:${SCRIPT_FONT}; font-weight:700; font-size:38px; color:var(--orange); margin-top:-6px; display:block; }
         .pbx-pill-row { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
-        .pbx-pill { display:flex; align-items:center; gap:8px; border-radius:999px; padding:9px 18px; font-weight:700; font-size:14px; }
+        .pbx-pill { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; box-sizing:border-box; border-radius:999px; padding:0 18px; font-weight:700; font-size:14px; line-height:1; white-space:nowrap; }
         .pbx-pill--yellow { background:var(--yellow); color:${INK}; }
         .pbx-pill--blue { background:var(--blue); color:#fff; }
         .pbx-cover-photo { height:520px; margin-top:6px; }
@@ -425,15 +427,15 @@ export function PackageBrochurePage() {
         .pbx-tl-icon { font-size:26px; }
         .pbx-tl-line { width:2px; flex:1; background:repeating-linear-gradient(to bottom, var(--blue) 0 6px, transparent 6px 12px); min-height:210px; position:relative; margin:6px 0; }
         .pbx-tl-rows { position:absolute; left:50%; transform:translateX(-50%); top:0; width:560px; }
-        .pbx-tl-row { display:flex; align-items:center; gap:16px; padding:14px 0; }
+        .pbx-tl-row { display:flex; align-items:center; gap:16px; padding:14px 0; line-height:1.2; }
         .pbx-tl-dot { width:12px; height:12px; border-radius:50%; background:#fff; border:3px solid var(--blue); flex-shrink:0; }
         .pbx-tl-day { font-family:${DISPLAY_FONT}; font-weight:700; color:${INK}; font-size:15px; width:70px; flex-shrink:0; }
         .pbx-tl-label { font-weight:600; font-size:15px; color:${INK}; }
         .pbx-pickup-box { background:var(--yellow); border-radius:16px; padding:16px 24px; text-align:center; margin:18px 40px 0; }
-        .pbx-pickup-box .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:19px; margin-bottom:8px; }
+        .pbx-pickup-box .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:19px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; gap:6px; }
         .pbx-pickup-box .item { color:var(--blue-dark); font-family:${DISPLAY_FONT}; font-weight:700; font-size:17px; }
 
-        .pbx-day-badge { display:inline-block; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:20px; padding:8px 26px; border-radius:12px; }
+        .pbx-day-badge { display:inline-flex; align-items:center; justify-content:center; height:44px; box-sizing:border-box; background:var(--blue); color:#fff; font-family:${DISPLAY_FONT}; font-weight:700; font-size:20px; line-height:1; padding:0 26px; border-radius:12px; white-space:nowrap; }
         .pbx-day-title { font-family:${DISPLAY_FONT}; font-weight:800; font-size:27px; margin:16px 0 16px; text-transform:uppercase; color:${INK}; }
         .pbx-day-photo { height:400px; margin-top:16px; }
         .pbx-sights { margin-top:8px; }
@@ -454,8 +456,8 @@ export function PackageBrochurePage() {
         .pbx-bank-lines { font-size:13.5px; line-height:2; }
         .pbx-bank-lines b { display:inline-block; width:90px; color:${MUTED}; font-weight:600; }
 
-        .pbx-contact-row { border:1.5px solid var(--yellow); border-radius:14px; padding:14px 20px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:16px; margin-bottom:14px; color:${INK}; text-decoration:none; }
-        .pbx-contact-row .ic { font-size:20px; }
+        .pbx-contact-row { border:1.5px solid var(--yellow); border-radius:14px; padding:14px 20px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:16px; line-height:1.2; margin-bottom:14px; color:${INK}; text-decoration:none; }
+        .pbx-contact-row .ic { font-size:20px; line-height:1; display:inline-flex; }
         .pbx-ig-block { text-align:center; margin-top:30px; }
         .pbx-ig-block .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:17px; margin-bottom:2px; }
         .pbx-ig-block .sub { font-size:11px; color:${MUTED}; letter-spacing:.08em; margin-bottom:16px; }
@@ -497,24 +499,37 @@ export function PackageBrochurePage() {
           {accentWord && <span className="accent">{accentWord}</span>}
         </div>
         <div className="pbx-pill-row">
-          <span className="pbx-pill pbx-pill--yellow">🌙 {pkg.nights} NIGHTS</span>
-          <span className="pbx-pill pbx-pill--blue">☀️ {pkg.days} DAYS</span>
+          <span className="pbx-pill pbx-pill--yellow">
+            <span className="pbx-ico">🌙</span>
+            <span>{pkg.nights} NIGHTS</span>
+          </span>
+          <span className="pbx-pill pbx-pill--blue">
+            <span className="pbx-ico">☀️</span>
+            <span>{pkg.days} DAYS</span>
+          </span>
         </div>
         <Photo url={heroPhoto} className="pbx-cover-photo" />
         <div className="pbx-footer-contact">
+          {(instagramUrl || pkg.contactEmail) && (
           <div className="pbx-fc-top">
             {instagramUrl && (
               <span className="pbx-fc-item">
-                📷 <b>{instagramHandle(instagramUrl)}</b>
+                <span className="pbx-ico">📷</span> <b>{instagramHandle(instagramUrl)}</b>
               </span>
             )}
             {pkg.contactEmail && (
               <span className="pbx-fc-item">
-                ✉️ <b>{pkg.contactEmail}</b>
+                <span className="pbx-ico">✉️</span> <b>{pkg.contactEmail}</b>
               </span>
             )}
           </div>
-          {(phone || whatsappNumber) && <div className="pbx-fc-bottom">📞 {phone ?? `+${whatsappNumber}`}</div>}
+          )}
+          {(phone || whatsappNumber) && (
+            <div className="pbx-fc-bottom">
+              <span className="pbx-ico">📞</span>
+              <span>{phone ?? `+${whatsappNumber}`}</span>
+            </div>
+          )}
         </div>
       </Page>
 
@@ -540,7 +555,10 @@ export function PackageBrochurePage() {
           </div>
           {pickupPoints.length > 0 && (
             <div className="pbx-pickup-box">
-              <div className="title">📍 PICKUP POINTS</div>
+              <div className="title">
+                <span className="pbx-ico">📍</span>
+                <span>PICKUP POINTS</span>
+              </div>
               {pickupPoints.map((p, i) => (
                 <div key={i} className="item">
                   {p}
