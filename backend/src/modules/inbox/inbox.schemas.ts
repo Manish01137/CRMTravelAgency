@@ -25,6 +25,10 @@ export const conversationIdParam = z.object({ id: z.string().uuid('Invalid conve
 
 export const setFavoriteSchema = z.object({ isFavorite: z.boolean() });
 
+// The chat's bot: start its flow again from the beginning, or pause it while the team handles the chat.
+export const botControlSchema = z.object({ action: z.enum(['restart', 'pause']) });
+export type BotControlInput = z.infer<typeof botControlSchema>;
+
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 
 export const sendMessageSchema = z

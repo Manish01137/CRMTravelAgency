@@ -10,6 +10,7 @@ import {
   sendMessageSchema,
   setFavoriteSchema,
   stageCountsQuerySchema,
+  botControlSchema,
 } from './inbox.schemas';
 
 // Unified WhatsApp + Instagram inbox — ONE screen, filtered by `channel`
@@ -31,6 +32,8 @@ router.post(
   asyncHandler(controller.sendMessage),
 );
 router.post('/conversations/:id/log-call', validate({ params: conversationIdParam }), asyncHandler(controller.logCall));
+router.get('/conversations/:id/bot', validate({ params: conversationIdParam }), asyncHandler(controller.getBot));
+router.post('/conversations/:id/bot', validate({ params: conversationIdParam, body: botControlSchema }), asyncHandler(controller.controlBot));
 
 router.get('/templates', asyncHandler(controller.listTemplates));
 router.post('/templates', validate({ body: createTemplateSchema }), asyncHandler(controller.createTemplate));

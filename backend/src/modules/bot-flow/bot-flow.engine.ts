@@ -160,31 +160,44 @@ async function loadState(
     if (session) {
       // A returning customer's keyword, or just "hi", starts a flow again:
       //   - finished chat: straight away;
-      //   - mid-flow: after 30 min of silence (sooner, "hi" may be an answer);
-      //   - handed to a teammate: after a day of silence, so the bot never
-      //     cuts into a conversation your team is having.
-      const quietFor = async () => {
-        const previous = await tx.message.findFirst({
-          where: { conversationId, createdAt: { lt: messageCreatedAt } },
+      //   - mid-flow: 30 min after the bot's last message (sooner, "hi" may
+      //     be the answer to its question);
+      //   - handed to a teammate: once no teammate has replied for a day — or
+      //     30 min after the hand-off if nobody on the team ever replied, so a
+      //     customer is never left unanswered.
+      // Only OUR messages count as activity: a customer's own repeated "hi"s
+      // must never hold the bot back.
+      const sinceLastOutbound = async (byTeammate: boolean) => {
+        const last = await tx.message.findFirst({
+          where: { conversationId, direction: 'OUTBOUND', createdAt: { lt: messageCreatedAt }, ...(byTeammate ? { sentById: { not: null } } : {}) },
           orderBy: { createdAt: 'desc' },
           select: { createdAt: true },
         });
-        return previous ? messageCreatedAt.getTime() - previous.createdAt.getTime() : Infinity;
+        return last ? messageCreatedAt.getTime() - last.createdAt.getTime() : null;
       };
       let restartFlowId: string | null = null;
       if (session.status === 'COMPLETED') {
         restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt) ?? chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
       } else {
         const greetingFlowId = chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
-        const minQuiet = session.status === 'NEEDS_REVIEW' ? HANDOFF_RESTART_QUIET_MS : ACTIVE_RESTART_QUIET_MS;
-        const midFlow = session.status === 'NEEDS_REVIEW' || session.currentStepId !== null;
-        if (greetingFlowId && midFlow && (await quietFor()) >= minQuiet) restartFlowId = greetingFlowId;
+        if (greetingFlowId && session.status === 'NEEDS_REVIEW') {
+          const teammate = await sinceLastOutbound(true);
+          const ok = teammate !== null ? teammate >= HANDOFF_RESTART_QUIET_MS : ((await sinceLastOutbound(false)) ?? Infinity) >= ACTIVE_RESTART_QUIET_MS;
+          if (ok) restartFlowId = greetingFlowId;
+        } else if (greetingFlowId && session.currentStepId !== null) {
+          if (((await sinceLastOutbound(false)) ?? Infinity) >= ACTIVE_RESTART_QUIET_MS) restartFlowId = greetingFlowId;
+        }
       }
       if (restartFlowId) {
+        const wasHandedOff = session.status === 'NEEDS_REVIEW';
         session = await tx.botFlowSession.update({
           where: { id: session.id },
           data: { flowId: restartFlowId, status: 'ACTIVE', currentStepId: null, collectedData: {} },
         });
+        // The bot is looking after this chat again.
+        if (wasHandedOff && conversation.leadId) {
+          await tx.lead.updateMany({ where: { id: conversation.leadId, organizationId }, data: { needsReview: false, needsReviewReason: null } });
+        }
       } else if (session.status !== 'ACTIVE') {
         // Finished, or a teammate's chat — the bot stays out of it.
         await tx.botFlowSession.update({ where: { id: session.id }, data: { lastProcessedMessageAt: messageCreatedAt } });

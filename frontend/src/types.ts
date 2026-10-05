@@ -769,6 +769,11 @@ export interface Conversation {
   updatedAt: string;
 }
 
+/** The bot on one Inbox chat (GET /inbox/conversations/:id/bot). */
+export type ChatBotState =
+  | { state: 'off' }
+  | { state: 'waiting' | 'running' | 'finished' | 'paused'; flowId: string; flowName: string; question: string | null };
+
 export type ConversationFilter = 'all' | 'unread' | 'favorites' | 'mine' | 'unassigned';
 
 /** Inbox stage chip: a lead stage, or chats with no lead. */

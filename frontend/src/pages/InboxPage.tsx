@@ -15,7 +15,10 @@ import {
   MessageCircle,
   MailOpen,
   Paperclip,
+  Pause,
   Phone,
+  RotateCcw,
+  Bot,
   Search,
   Send,
   Sparkles,
@@ -34,6 +37,7 @@ import type {
   LeadStatus,
   MessageTemplate,
   User,
+  ChatBotState,
 } from '@/types';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { useAuth } from '@/context/AuthContext';
@@ -242,6 +246,25 @@ export function InboxPage() {
 
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
   const teammates = usersQuery.data ?? [];
+
+  // The bot on this chat — why it's quiet, and restart / pause.
+  const botQuery = useQuery({
+    queryKey: ['chat-bot', selectedId],
+    queryFn: () => api.get<ChatBotState>(`/inbox/conversations/${selectedId}/bot`),
+    enabled: !!selectedId,
+    refetchInterval: 8000,
+  });
+  const bot = botQuery.data;
+  const botMutation = useMutation({
+    mutationFn: (action: 'restart' | 'pause') => api.post<ChatBotState>(`/inbox/conversations/${selectedId}/bot`, { action }),
+    onSuccess: (state, action) => {
+      queryClient.setQueryData(['chat-bot', selectedId], state);
+      toast.success(action === 'restart' ? 'Bot restarted — it starts from the first step' : 'Bot paused — your team is handling this chat');
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not change the bot'),
+  });
 
   // Hands the chat to a teammate: assigns its lead (same as on the Leads page).
   const assignMutation = useMutation({
@@ -553,6 +576,66 @@ export function InboxPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  {bot && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={botMutation.isPending}
+                          aria-label="Bot on this chat"
+                          title={
+                            bot.state === 'off'
+                              ? 'The bot hasn’t run on this chat'
+                              : bot.state === 'waiting'
+                                ? `Flow “${bot.flowName}” — waiting for an answer to: ${bot.question ?? ''}`
+                                : bot.state === 'paused'
+                                  ? `Flow “${bot.flowName}” — paused, your team is handling this chat`
+                                  : bot.state === 'finished'
+                                    ? `Flow “${bot.flowName}” — finished`
+                                    : `Flow “${bot.flowName}” — running`
+                          }
+                          className={cn(
+                            'inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-60',
+                            channel === 'WHATSAPP' ? 'bg-white/10 text-white hover:bg-white/20' : 'border border-border text-foreground hover:bg-muted',
+                          )}
+                        >
+                          {botMutation.isPending ? <Spinner className="size-3.5" /> : <Bot className="size-3.5" />}
+                          <span className="hidden xl:inline">
+                            {bot.state === 'off' ? 'Bot off' : bot.state === 'waiting' ? 'Bot: waiting' : bot.state === 'paused' ? 'Bot paused' : bot.state === 'finished' ? 'Bot finished' : 'Bot on'}
+                          </span>
+                          <span
+                            className={cn(
+                              'size-1.5 rounded-full',
+                              bot.state === 'waiting' || bot.state === 'running' ? 'bg-emerald-400' : bot.state === 'paused' ? 'bg-amber-400' : 'bg-slate-400',
+                            )}
+                          />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-72">
+                        <DropdownMenuLabel className="font-normal">
+                          <span className="block text-sm font-medium text-foreground">
+                            {bot.state === 'off' ? 'Bot hasn’t run here' : `Flow: ${bot.flowName}`}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {bot.state === 'waiting' && `Waiting for an answer to “${bot.question ?? ''}” — whatever they type next is taken as the answer.`}
+                            {bot.state === 'running' && 'Running.'}
+                            {bot.state === 'finished' && 'Finished. It starts again when they say hi or send a keyword.'}
+                            {bot.state === 'paused' && 'Paused — your team is handling this chat. It comes back on “hi” once nobody from the team has replied for a day.'}
+                            {bot.state === 'off' && 'No flow has started on this chat yet.'}
+                          </span>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => botMutation.mutate('restart')}>
+                          <RotateCcw className="size-4" /> Restart bot from the first step
+                        </DropdownMenuItem>
+                        {(bot.state === 'waiting' || bot.state === 'running' || bot.state === 'finished') && (
+                          <DropdownMenuItem onSelect={() => botMutation.mutate('pause')}>
+                            <Pause className="size-4" /> Pause bot — my team will reply
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   {selectedLeadId && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>

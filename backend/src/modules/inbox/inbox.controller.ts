@@ -1,10 +1,20 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery } from './inbox.schemas';
+import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery } from './inbox.schemas';
+import { controlChatBot, getChatBotState } from '../bot-flow/bot-flow.control';
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
   const query = req.query as unknown as ListConversationsQuery;
   res.json(await service.listConversations(req.auth!.organizationId, query, req.auth!.userId));
+}
+
+export async function getBot(req: Request, res: Response): Promise<void> {
+  res.json(await getChatBotState(req.auth!.organizationId, req.params.id));
+}
+
+export async function controlBot(req: Request, res: Response): Promise<void> {
+  const { action } = req.body as BotControlInput;
+  res.json(await controlChatBot(req.auth!.organizationId, req.params.id, action));
 }
 
 export async function stageCounts(req: Request, res: Response): Promise<void> {
