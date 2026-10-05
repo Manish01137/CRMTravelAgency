@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
+  UserPlus,
   CheckCheck,
   Clock,
   FileText,
@@ -32,8 +33,10 @@ import type {
   ConversationStageCounts,
   LeadStatus,
   MessageTemplate,
+  User,
 } from '@/types';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
+import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -139,7 +142,15 @@ function ConversationRow({
             {c.lastMessageAt && <span className="shrink-0 text-[11px] text-muted-foreground">{formatSmartTime(c.lastMessageAt)}</span>}
           </div>
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
+            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
+            {c.lead?.assignedTo && (
+              <span
+                title={`Assigned to ${c.lead.assignedTo.name}`}
+                className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-700"
+              >
+                {initials(c.lead.assignedTo.name)}
+              </span>
+            )}
             {c.lead && <StagePill status={c.lead.status} className="shrink-0" />}
             {c.unreadCount > 0 && (
               <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -226,6 +237,24 @@ export function InboxPage() {
   const selectedStatus = (fromThread ?? listed)?.lead?.status ?? null;
   const selectedLeadId = (fromThread ?? listed)?.lead?.id ?? selected?.leadId ?? null;
   const selectedTags = (fromThread ?? listed)?.lead?.tags ?? [];
+  const selectedAssignee = (fromThread ?? listed)?.lead?.assignedTo ?? null;
+  const { user: me } = useAuth();
+
+  const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
+  const teammates = usersQuery.data ?? [];
+
+  // Hands the chat to a teammate: assigns its lead (same as on the Leads page).
+  const assignMutation = useMutation({
+    mutationFn: (assignedToId: string | null) => api.patch(`/leads/${selectedLeadId}`, { assignedToId }),
+    onSuccess: (_d, assignedToId) => {
+      const who = teammates.find((u) => u.id === assignedToId);
+      toast.success(assignedToId ? `Assigned to ${assignedToId === me?.id ? 'you' : who?.name ?? 'teammate'}` : 'Unassigned');
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not assign this chat'),
+  });
 
   const stageMutation = useMutation({
     mutationFn: (status: LeadStatus) => api.patch(`/leads/${selectedLeadId}`, { status }),
@@ -360,12 +389,14 @@ export function InboxPage() {
                 aria-label="Search conversations"
               />
             </div>
-            <div className="mt-2.5 flex gap-1.5">
+            <div className="mt-2.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
               {(
                 [
                   { key: 'all', label: 'All' },
                   { key: 'unread', label: 'Unread' },
                   { key: 'favorites', label: 'Favorites' },
+                  { key: 'mine', label: 'Mine' },
+                  { key: 'unassigned', label: 'Unassigned' },
                 ] as const
               ).map((f) => (
                 <button
@@ -436,6 +467,10 @@ export function InboxPage() {
                 title={
                   stage
                     ? `No chats in ${stage === 'none' ? 'No lead' : LEAD_STATUS_STYLES[stage].label}`
+                    : filter === 'mine'
+                      ? 'No chats assigned to you'
+                    : filter === 'unassigned'
+                      ? 'Every chat is assigned'
                     : filter === 'favorites'
                       ? 'No favorites yet'
                       : filter === 'unread'
@@ -445,6 +480,10 @@ export function InboxPage() {
                 description={
                   stage
                     ? 'Try another stage, or All stages.'
+                    : filter === 'mine'
+                    ? 'Chats your team assigns to you show up here.'
+                    : filter === 'unassigned'
+                    ? 'Nothing waiting for an owner.'
                     : filter === 'favorites'
                     ? 'Star a conversation to pin it here.'
                     : filter === 'unread'
@@ -542,6 +581,62 @@ export function InboxPage() {
                             {value === selectedStatus && <Check className="ml-auto size-3.5" />}
                           </DropdownMenuItem>
                         ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  {selectedLeadId && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={assignMutation.isPending}
+                          aria-label="Assign chat"
+                          title={selectedAssignee ? `Assigned to ${selectedAssignee.name} — change` : 'Assign to a teammate'}
+                          className={cn(
+                            'inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-60',
+                            channel === 'WHATSAPP' ? 'text-white/90 hover:bg-white/10' : 'border border-border text-foreground hover:bg-muted',
+                          )}
+                        >
+                          {assignMutation.isPending ? (
+                            <Spinner className="size-4" />
+                          ) : selectedAssignee ? (
+                            <span
+                              className={cn(
+                                'flex size-6 items-center justify-center rounded-full text-[10px] font-bold',
+                                channel === 'WHATSAPP' ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary',
+                              )}
+                            >
+                              {initials(selectedAssignee.name)}
+                            </span>
+                          ) : (
+                            <UserPlus className="size-4" />
+                          )}
+                          <span className="hidden max-w-[7rem] truncate lg:inline">
+                            {selectedAssignee ? (selectedAssignee.id === me?.id ? 'You' : selectedAssignee.name.split(' ')[0]) : 'Assign'}
+                          </span>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>Assign this chat to</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {teammates.map((u) => (
+                          <DropdownMenuItem key={u.id} disabled={u.id === selectedAssignee?.id} onSelect={() => assignMutation.mutate(u.id)}>
+                            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold">{initials(u.name)}</span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {u.name}
+                              {u.id === me?.id && <span className="text-muted-foreground"> (you)</span>}
+                            </span>
+                            {u.id === selectedAssignee?.id && <Check className="size-3.5" />}
+                          </DropdownMenuItem>
+                        ))}
+                        {selectedAssignee && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => assignMutation.mutate(null)}>
+                              <X className="size-4" /> Unassign
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}

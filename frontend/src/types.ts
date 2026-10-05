@@ -758,12 +758,18 @@ export interface Conversation {
   unreadCount: number;
   isFavorite: boolean;
   /** The linked lead's pipeline stage (Inbox stage chips / badge). */
-  lead?: { id: string; status: LeadStatus; tags: string[] } | null;
+  lead?: {
+    id: string;
+    status: LeadStatus;
+    tags: string[];
+    assignedToId: string | null;
+    assignedTo: { id: string; name: string } | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type ConversationFilter = 'all' | 'unread' | 'favorites';
+export type ConversationFilter = 'all' | 'unread' | 'favorites' | 'mine' | 'unassigned';
 
 /** Inbox stage chip: a lead stage, or chats with no lead. */
 export type ConversationStage = LeadStatus | 'none';

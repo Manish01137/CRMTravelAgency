@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowLeft, Download, Loader2 } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { domToCanvas } from 'modern-screenshot';
 import { jsPDF } from 'jspdf';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -93,10 +93,7 @@ function BrandRow({ orgName, logoUrl }: { orgName: string; logoUrl: string | nul
     <div className="pbx-brand-row">
       <span className="pbx-brand-mark">
         {logoUrl ? (
-          // A background-image div, not <img>: html2canvas (PDF export)
-          // ignores object-fit and can drop a cached non-CORS <img> entirely,
-          // which is why the logo was missing/distorted in downloaded PDFs.
-          // Photo below uses the same approach and exports fine.
+          // A background-image div (contain-fit) — the Photo below uses the same approach.
           <span role="img" aria-label={orgName} className="pbx-brand-logo" style={{ backgroundImage: `url('${logoUrl}')` }} />
         ) : (
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="1.8">
@@ -144,6 +141,75 @@ function Page({ children, className, label, flow }: { children: ReactNode; class
   );
 }
 
+/**
+ * Cross-origin images (logo, photos) for the PDF capture, fetched through our
+ * own same-origin proxy — a logo pasted from an agency's website rarely sends
+ * CORS headers, and would otherwise come out blank. Cached, since the logo
+ * repeats on every page. Same-origin URLs, data URLs and fonts load directly.
+ */
+const proxiedImages = new Map<string, Promise<string | false>>();
+function fetchViaProxy(url: string): Promise<string | false> {
+  if (!/^https?:\/\//i.test(url) || url.startsWith(window.location.origin) || /fonts\.(googleapis|gstatic)\.com/.test(url)) {
+    return Promise.resolve(false);
+  }
+  let pending = proxiedImages.get(url);
+  if (!pending) {
+    pending = fetch(`/api/public/image-proxy?url=${encodeURIComponent(url)}`)
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`proxy ${res.status}`))))
+      .then(blobToDataUrl)
+      .catch(() => false as const);
+    proxiedImages.set(url, pending);
+  }
+  return pending;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** The brochure's fonts (see signatureTheme + SCRIPT_FONT). */
+const BROCHURE_FONTS = ['Poppins', 'Baloo 2', 'Caveat', 'Figtree'];
+
+/**
+ * The brochure's web fonts as self-contained CSS for the PDF capture. The
+ * page loads them from Google Fonts, whose stylesheet the capture can't read
+ * (cross-origin) — without this the text falls back to a wider font and
+ * labels like "3 NIGHTS" wrap. Latin + Latin Extended only (the latter has
+ * ₹); fetched once per visit.
+ */
+let brochureFontCss: Promise<string | undefined> | null = null;
+function loadBrochureFontCss(): Promise<string | undefined> {
+  brochureFontCss ??= (async () => {
+    const link = document.querySelector<HTMLLinkElement>('link[href*="fonts.googleapis.com/css"]');
+    if (!link) return undefined;
+    const css = await (await fetch(link.href)).text();
+    const faces = (css.match(/@font-face\s*{[^}]*}/g) ?? []).filter(
+      (face) =>
+        BROCHURE_FONTS.some((f) => face.includes(`font-family: '${f}'`)) &&
+        /unicode-range:[^;]*(U\+0000-00FF|U\+0100-02BA)/.test(face),
+    );
+    const embedded = await Promise.all(
+      faces.map(async (face) => {
+        const url = face.match(/url\(([^)]+)\)/)?.[1]?.replace(/['"]/g, '');
+        if (!url) return face;
+        const data = await blobToDataUrl(await (await fetch(url)).blob());
+        return face.replace(url, data);
+      }),
+    );
+    return embedded.join('\n');
+  })().catch((err) => {
+    console.warn('Brochure fonts could not be embedded for the PDF:', err);
+    brochureFontCss = null; // try again next time
+    return undefined;
+  });
+  return brochureFontCss;
+}
+
 /** Turns "Nagpur Getaway ✈ 2026" into a safe download filename. */
 function toFileName(name: string): string {
   const safe = name.replace(/[^\w\- ]+/g, '').trim();
@@ -172,9 +238,15 @@ export function PackageBrochurePage() {
    * the user manually choosing "Save as PDF" as the destination. That dialog
    * is also unsupported inside most in-app browsers (e.g. a link opened from
    * inside WhatsApp/Instagram itself), where clicking it used to do nothing
-   * at all. Captures each .pbx-page as a canvas (at 2x scale for crisp text)
-   * and stacks them into one multi-page PDF sized to match each page's own
-   * rendered dimensions (terms pages auto-paginate to a variable height).
+   * at all. Captures each .pbx-page and stacks them into one multi-page PDF
+   * sized to match each page's own rendered dimensions (terms pages
+   * auto-paginate to a variable height).
+   *
+   * The capture is drawn by the browser itself (modern-screenshot renders the
+   * page through an SVG foreignObject), so the PDF matches the screen exactly.
+   * html2canvas, used before, re-implements layout on its own and got it
+   * wrong — text sat low inside the pills and banners, the timeline's dashed
+   * line vanished and bullet dots drifted off their lines.
    */
   /**
    * Each PDF page is an image of the rendered page, so resolution is what
@@ -197,6 +269,7 @@ export function PackageBrochurePage() {
     setProgress({ done: 0, total: pages.length });
     const skipped: string[] = [];
     try {
+      const fontCss = await loadBrochureFontCss();
       let doc: jsPDF | null = null;
       for (let i = 0; i < pages.length; i += 1) {
         const page = pages[i];
@@ -204,15 +277,18 @@ export function PackageBrochurePage() {
         const width = page.offsetWidth;
         const height = page.offsetHeight;
         try {
-          const canvas = await html2canvas(page, {
+          const canvas = await domToCanvas(page, {
             scale: exportScale(width, height),
-            // Every cross-origin image (logo, photos) goes through our own
-            // same-origin proxy rather than relying on the image host sending
-            // CORS headers — a logo pasted from an agency's website usually
-            // doesn't, and came out blank in the PDF.
-            useCORS: false,
-            proxy: '/api/public/image-proxy',
+            width,
+            height,
             backgroundColor: '#ffffff',
+            fetchFn: fetchViaProxy,
+            ...(fontCss ? { font: { cssText: fontCss } } : {}),
+            timeout: 20000,
+            // The on-screen page label above each page isn't part of the document.
+            filter: (node) => !(node instanceof HTMLElement && node.classList.contains('pbx-page-label')),
+            // The screen's drop shadow and outer margin aren't part of the page either.
+            style: { margin: '0', boxShadow: 'none' },
           });
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           if (!doc) {

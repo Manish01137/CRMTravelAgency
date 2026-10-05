@@ -757,6 +757,84 @@ export async function sendInstagramImage(
   return { externalMessageId: data.message_id };
 }
 
+/** Instagram DM with tappable quick-reply chips (up to 13, titles ≤ 20 chars). A tap comes back as message.quick_reply.payload. */
+export async function sendInstagramQuickReplies(
+  igUserId: string,
+  accessToken: string,
+  recipientId: string,
+  text: string,
+  replies: { title: string; payload: string }[],
+): Promise<{ externalMessageId: string }> {
+  const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: {
+        text: text.slice(0, 1000),
+        quick_replies: replies.slice(0, 13).map((r) => ({ content_type: 'text', title: r.title.slice(0, 20), payload: r.payload })),
+      },
+    }),
+  });
+  return { externalMessageId: data.message_id };
+}
+
+export interface InstagramCard {
+  title: string;
+  subtitle?: string;
+  imageUrl?: string;
+  /** Opens this link when the card or its button is tapped. */
+  url: string;
+  buttonTitle: string;
+}
+
+/** Instagram's swipeable cards ("generic template"): up to 10, each with a photo, title, subtitle and a link button. */
+export async function sendInstagramCards(
+  igUserId: string,
+  accessToken: string,
+  recipientId: string,
+  cards: InstagramCard[],
+): Promise<{ externalMessageId: string }> {
+  const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'generic',
+            elements: cards.slice(0, 10).map((c) => ({
+              title: c.title.slice(0, 80),
+              ...(c.subtitle ? { subtitle: c.subtitle.slice(0, 80) } : {}),
+              ...(c.imageUrl ? { image_url: c.imageUrl } : {}),
+              default_action: { type: 'web_url', url: c.url },
+              buttons: [{ type: 'web_url', url: c.url, title: c.buttonTitle.slice(0, 20) }],
+            })),
+          },
+        },
+      },
+    }),
+  });
+  return { externalMessageId: data.message_id };
+}
+
+/** Instagram DM video (MP4) from a publicly reachable URL. */
+export async function sendInstagramVideo(
+  igUserId: string,
+  accessToken: string,
+  recipientId: string,
+  videoUrl: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: { id: recipientId }, message: { attachment: { type: 'video', payload: { url: videoUrl } } } }),
+  });
+  return { externalMessageId: data.message_id };
+}
+
 // --- Instagram Login (Business Login for Instagram — the NEWER product,
 // required for SENDING DMs; classic Facebook Login above can still RECEIVE
 // via its Page webhook subscription, but cannot send). Confirmed via direct

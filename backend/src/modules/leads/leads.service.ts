@@ -177,6 +177,18 @@ export async function updateLead(
       });
       await autoCreateBookingIfWon(tx, organizationId, updated, existing.status);
     }
+    // Hand-overs show up on the timeline too ("Assigned to Neha").
+    if (input.assignedToId !== undefined && input.assignedToId !== existing.assignedToId) {
+      await tx.leadActivity.create({
+        data: {
+          organizationId,
+          leadId: id,
+          type: 'NOTE',
+          message: updated.assignedTo ? `Assigned to ${updated.assignedTo.name}` : 'Unassigned',
+          createdById: actorId ?? null,
+        },
+      });
+    }
     return updated;
   });
 }

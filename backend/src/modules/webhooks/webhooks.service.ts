@@ -451,6 +451,8 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
 type InstagramMessage = {
   mid?: string;
   text?: string;
+  /** A tapped quick-reply chip — its payload is the Bot Flow option id we sent. */
+  quick_reply?: { payload?: string };
   referral?: { source?: string; type?: string };
   attachments?: { type?: string; payload?: { url?: string } }[];
 };
@@ -488,6 +490,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
+      interactiveSelectionId: message?.quick_reply?.payload ?? null,
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
@@ -541,6 +544,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       contactPhone: null,
       body: message?.text ?? '',
       mediaUrl: attachmentUrl ? await downloadAndRehostImage(organizationId, attachmentUrl) : null,
+      interactiveSelectionId: message?.quick_reply?.payload ?? null,
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });

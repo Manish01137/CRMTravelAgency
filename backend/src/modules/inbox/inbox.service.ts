@@ -15,6 +15,15 @@ import { LEAD_STAGES, type CreateTemplateInput, type ListConversationsQuery, typ
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** The chat's lead as the Inbox shows it: stage, tags and who it's assigned to. */
+const CONVERSATION_LEAD_SELECT = {
+  id: true,
+  status: true,
+  tags: true,
+  assignedToId: true,
+  assignedTo: { select: { id: true, name: true } },
+} as const;
+
 /** There's no separate "media kind" column on Message — a document attachment
  *  is just a mediaUrl that happens to end in .pdf, same as everything else
  *  here trusting the URL (see PackageBrochurePage's own dayPhoto/heroPhoto). */
@@ -37,7 +46,7 @@ function documentFilenameFromUrl(url: string): string {
  * business-to-customer conversations only), so there would never be any
  * group conversations to show; a chip for it would just always be empty.
  */
-export async function listConversations(organizationId: string, query: ListConversationsQuery) {
+export async function listConversations(organizationId: string, query: ListConversationsQuery, userId: string) {
   return withTenant(organizationId, (tx) =>
     tx.conversation.findMany({
       where: {
@@ -45,6 +54,8 @@ export async function listConversations(organizationId: string, query: ListConve
         channel: query.channel,
         ...(query.filter === 'unread' ? { unreadCount: { gt: 0 } } : {}),
         ...(query.filter === 'favorites' ? { isFavorite: true } : {}),
+        ...(query.filter === 'mine' ? { lead: { assignedToId: userId } } : {}),
+        ...(query.filter === 'unassigned' ? { AND: [{ OR: [{ leadId: null }, { lead: { assignedToId: null } }] }] } : {}),
         ...(query.stage === 'none' ? { leadId: null } : query.stage ? { lead: { status: query.stage } } : {}),
         ...(query.search
           ? {
@@ -57,7 +68,7 @@ export async function listConversations(organizationId: string, query: ListConve
       },
       orderBy: { lastMessageAt: 'desc' },
       take: 200,
-      include: { lead: { select: { id: true, status: true, tags: true } } },
+      include: { lead: { select: CONVERSATION_LEAD_SELECT } },
     }),
   );
 }
@@ -92,7 +103,7 @@ export async function listMessages(organizationId: string, conversationId: strin
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation) throw NotFound('Conversation not found');
     const messages = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' }, take: 500 });
-    const lead = conversation.leadId ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { id: true, status: true, tags: true } }) : null;
+    const lead = conversation.leadId ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: CONVERSATION_LEAD_SELECT }) : null;
     if (conversation.unreadCount > 0) {
       await tx.conversation.update({ where: { id: conversationId }, data: { unreadCount: 0 } });
     }

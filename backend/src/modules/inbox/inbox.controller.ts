@@ -4,7 +4,7 @@ import type { CreateTemplateInput, ListConversationsQuery, SendMessageInput, Set
 
 export async function listConversations(req: Request, res: Response): Promise<void> {
   const query = req.query as unknown as ListConversationsQuery;
-  res.json(await service.listConversations(req.auth!.organizationId, query));
+  res.json(await service.listConversations(req.auth!.organizationId, query, req.auth!.userId));
 }
 
 export async function stageCounts(req: Request, res: Response): Promise<void> {

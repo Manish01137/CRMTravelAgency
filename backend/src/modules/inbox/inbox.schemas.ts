@@ -5,7 +5,8 @@ export const conversationChannelParam = z.enum(['WHATSAPP', 'INSTAGRAM']);
 // Inbox filter chips: All / Unread (unreadCount > 0) / Favorites (starred).
 // "Group" isn't offered here — see inbox.service.ts's listConversations doc
 // comment for why.
-export const conversationFilterParam = z.enum(['all', 'unread', 'favorites']).default('all');
+// Mine / Unassigned: by the agent the chat's lead is assigned to.
+export const conversationFilterParam = z.enum(['all', 'unread', 'favorites', 'mine', 'unassigned']).default('all');
 
 // Lead stage chips above the chat list — "none" is chats with no lead attached.
 export const LEAD_STAGES = ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL_SENT', 'NEGOTIATION', 'WON', 'LOST'] as const;

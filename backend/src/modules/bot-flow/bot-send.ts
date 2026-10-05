@@ -11,6 +11,10 @@ import {
   sendWhatsAppVideo,
   sendWhatsAppDocument,
   sendInstagramImage,
+  sendInstagramVideo,
+  sendInstagramQuickReplies,
+  sendInstagramCards,
+  type InstagramCard,
   type WhatsAppCarouselCard,
   type WhatsAppChoice,
 } from '../../lib/meta';
@@ -51,6 +55,18 @@ async function trySend(fn: () => Promise<{ externalMessageId: string }>): Promis
   }
 }
 
+/**
+ * Instagram shows WhatsApp's *bold* / _italic_ / ~strike~ markers literally —
+ * drop them so the same flow text reads cleanly on both channels.
+ */
+export function plainForInstagram(text: string): string {
+  return text
+    .replace(/```([^`]+)```/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,!?:;])/gm, '$1$2')
+    .replace(/(^|[\s(])~([^~\n]+)~(?=$|[\s).,!?:;])/gm, '$1$2');
+}
+
 export async function attemptSend(organizationId: string, channel: BotChannel, externalContactId: string, body: string): Promise<SendResult | null> {
   const credentials = await credentialsFor(organizationId, channel);
   if (!credentials) return null; // channel got disconnected — nothing safe to do
@@ -59,7 +75,12 @@ export async function attemptSend(organizationId: string, channel: BotChannel, e
     return trySend(() => sendWhatsAppText(creds.phoneNumberId, creds.accessToken, externalContactId, body));
   }
   const creds = decryptJson<InstagramCredentials>(credentials);
-  return trySend(() => sendInstagramText(creds.igUserId, creds.accessToken, externalContactId, body));
+  return trySend(() => sendInstagramText(creds.igUserId, creds.accessToken, externalContactId, plainForInstagram(body)));
+}
+
+async function instagramCreds(organizationId: string): Promise<InstagramCredentials | null> {
+  const credentials = await credentialsFor(organizationId, 'INSTAGRAM');
+  return credentials ? decryptJson<InstagramCredentials>(credentials) : null;
 }
 
 export async function recordOutbound(
@@ -70,6 +91,8 @@ export async function recordOutbound(
   mediaUrl?: string,
 ): Promise<void> {
   await withTenant(organizationId, async (tx) => {
+    const conv = await tx.conversation.findUnique({ where: { id: conversationId }, select: { channel: true } });
+    if (conv?.channel === 'INSTAGRAM') body = plainForInstagram(body);
     await tx.message.create({
       data: {
         organizationId,
@@ -141,11 +164,14 @@ export async function sendMediaMessage(
       return result;
     }
     if (result) console.warn('[bot-send] media send failed, sending text + link:', result.errorMessage);
-  } else if (media.type === 'image') {
-    const credentials = await credentialsFor(organizationId, channel);
-    if (!credentials) return null;
-    const creds = decryptJson<InstagramCredentials>(credentials);
-    const photo = await trySend(() => sendInstagramImage(creds.igUserId, creds.accessToken, to, media.url));
+  } else if (media.type !== 'document') {
+    const creds = await instagramCreds(organizationId);
+    if (!creds) return null;
+    const photo = await trySend(() =>
+      media.type === 'image'
+        ? sendInstagramImage(creds.igUserId, creds.accessToken, to, media.url)
+        : sendInstagramVideo(creds.igUserId, creds.accessToken, to, media.url),
+    );
     if (photo.ok) {
       await recordOutbound(organizationId, conversationId, '', photo, media.url);
       if (!text) return photo;
@@ -227,6 +253,25 @@ export async function sendChoices(
     }
     console.warn('[bot-send] interactive question failed, sending numbered text:', result.errorMessage);
     if (media && !mediaSent) return sendMediaMessage(organizationId, channel, to, conversationId, media, asText);
+  } else if (channel === 'INSTAGRAM' && choices.length > 0 && choices.length <= 13) {
+    // Instagram: the question with tappable quick-reply chips (media first, if any).
+    const creds = await instagramCreds(organizationId);
+    if (!creds) return null;
+    if (media) await sendMediaMessage(organizationId, channel, to, conversationId, media, '');
+    const result = await trySend(() =>
+      sendInstagramQuickReplies(
+        creds.igUserId,
+        creds.accessToken,
+        to,
+        plainForInstagram(question),
+        choices.map((c) => ({ title: c.label.length <= 20 ? c.label : clip(c.label, 20), payload: c.id })),
+      ),
+    );
+    if (result.ok) {
+      await recordOutbound(organizationId, conversationId, asText, result);
+      return result;
+    }
+    console.warn('[bot-send] Instagram quick replies failed, sending numbered text:', result.errorMessage);
   } else if (media) {
     return sendMediaMessage(organizationId, channel, to, conversationId, media, asText);
   }
@@ -316,7 +361,7 @@ export async function buildPackageContent(organizationId: string, packageId: str
 /**
  * Sends one package. WhatsApp: the package photo with the details as its
  * caption (falls back to text if there's no photo or WhatsApp can't fetch it).
- * Instagram: text (its link preview shows the page).
+ * Instagram: a card with the photo and a "View package" button, then the description.
  */
 export async function sendPackage(
   organizationId: string,
@@ -340,6 +385,19 @@ export async function sendPackage(
       return result;
     }
     console.warn('[bot-send] package photo send failed, sending as text:', result.errorMessage);
+  }
+  if (channel === 'INSTAGRAM') {
+    // A card (photo, name, duration & price, "View package"), then the description.
+    const sent = await sendInstagramPackageCards(organizationId, to, conversationId, [pkg]);
+    if (sent?.ok) {
+      const blurb = packageBlurb(pkg);
+      if (blurb) {
+        const text = clip(blurb, 900);
+        const r = await attemptSend(organizationId, channel, to, text);
+        await recordOutbound(organizationId, conversationId, text, r);
+      }
+      return sent;
+    }
   }
   const result = await attemptSend(organizationId, channel, to, caption);
   await recordOutbound(organizationId, conversationId, caption, result);
@@ -398,11 +456,46 @@ export async function sendPackageCarousel(
     }
   }
 
+  if (channel === 'INSTAGRAM') {
+    const introResult = await attemptSend(organizationId, channel, to, intro);
+    await recordOutbound(organizationId, conversationId, intro, introResult);
+    const sent = await sendInstagramPackageCards(organizationId, to, conversationId, packages);
+    if (sent?.ok) return sent;
+  }
+
   const text = [
-    intro,
+    ...(channel === 'INSTAGRAM' ? [] : [intro]),
     ...packages.map((p) => `*${packageTitle(p)}*\n${durationAndPrice(p)}\n${packageUrl(p.id)}`),
   ].join('\n\n');
   const result = await attemptSend(organizationId, channel, to, text);
   await recordOutbound(organizationId, conversationId, text, result);
+  return result;
+}
+
+/** Instagram: packages as swipeable cards — photo (or the agency logo), name, duration & price, and a "View package" button. */
+async function sendInstagramPackageCards(
+  organizationId: string,
+  to: string,
+  conversationId: string,
+  packages: PackageRow[],
+): Promise<SendResult | null> {
+  const creds = await instagramCreds(organizationId);
+  if (!creds) return null;
+  const org = await withTenant(organizationId, (tx) => tx.organization.findUnique({ where: { id: organizationId }, select: { logoUrl: true } }));
+  const logo = org?.logoUrl && /^https?:\/\//.test(org.logoUrl) ? org.logoUrl : undefined;
+  const cards: InstagramCard[] = packages.map((p) => ({
+    title: clip(packageTitle(p), 80),
+    subtitle: clip(durationAndPrice(p), 80),
+    imageUrl: packageImage(p) ?? logo,
+    url: packageUrl(p.id),
+    buttonTitle: 'View package',
+  }));
+  const result = await trySend(() => sendInstagramCards(creds.igUserId, creds.accessToken, to, cards));
+  if (!result.ok) {
+    console.warn('[bot-send] Instagram cards failed, sending text:', result.errorMessage);
+    return result;
+  }
+  const summary = packages.map((p) => `• ${packageTitle(p)} — ${durationAndPrice(p)} — ${packageUrl(p.id)}`).join('\n');
+  await recordOutbound(organizationId, conversationId, summary, result, cards[0]?.imageUrl);
   return result;
 }
