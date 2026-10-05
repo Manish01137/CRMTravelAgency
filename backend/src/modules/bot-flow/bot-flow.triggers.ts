@@ -16,6 +16,17 @@ export interface TriggerFlow {
   triggerKeywords: string[];
   keywordMatch: 'contains' | 'exact';
   triggerAdIds: string[];
+  /** Channels the triggers apply to. */
+  channels: BotChannelName[];
+}
+
+export type BotChannelName = 'WHATSAPP' | 'INSTAGRAM';
+export const ALL_CHANNELS: BotChannelName[] = ['WHATSAPP', 'INSTAGRAM'];
+
+/** A stored channel list, defaulting to both when empty or unreadable. */
+export function toChannels(v: unknown): BotChannelName[] {
+  const list = Array.isArray(v) ? v.filter((c): c is BotChannelName => c === 'WHATSAPP' || c === 'INSTAGRAM') : [];
+  return list.length > 0 ? [...new Set(list)] : ALL_CHANNELS;
 }
 
 export interface FlowRouting {
@@ -25,6 +36,21 @@ export interface FlowRouting {
   defaultFlowId: string | null;
   /** When the default flow was assigned — it only greets messages after that. */
   defaultSince: Date | null;
+  /** Active flows that start again when a returning customer says "hi". */
+  restartOnGreeting: Set<string>;
+}
+
+/** Mid-flow, "hi" restarts only after this much silence — otherwise it may be an answer. */
+export const ACTIVE_RESTART_QUIET_MS = 30 * 60 * 1000;
+/** A chat a teammate took over restarts only after a day of silence. */
+export const HANDOFF_RESTART_QUIET_MS = 24 * 60 * 60 * 1000;
+
+const GREETING =
+  /^(hi+|hey+|hello+|helo+|hlo+|hellow|hola|hai|namaste|namaskar|namaskaram|start|menu|restart|good (morning|afternoon|evening|day)|gm)( (there|sir|mam|maam|madam|team|bro|ji|all|everyone))?$/;
+
+/** The whole message is just a greeting ("Hi!", "hello 👋", "Good morning sir") — not "hi, I want Manali". */
+export function isGreeting(message: string): boolean {
+  return GREETING.test(normalize(message));
 }
 
 /** A flow never starts on an older message — WhatsApp wouldn't deliver a free-form reply after 24h anyway. */
@@ -90,14 +116,39 @@ export function chooseFlowForRestart(routing: FlowRouting, message: string, mess
   return matchKeywordFlow(routing.triggered, message);
 }
 
+/**
+ * The flow a returning customer's "hi" starts again: a flow that has the
+ * greeting as a keyword, else the channel's default flow, else the flow they
+ * were last in — each only if its "start again on hi" setting is on.
+ */
+export function chooseFlowForGreeting(
+  routing: FlowRouting,
+  message: string,
+  previousFlowId: string | null,
+  messageAt: Date = new Date(),
+): string | null {
+  if (Date.now() - messageAt.getTime() > START_WINDOW_MS || !isGreeting(message)) return null;
+  const keyword = matchKeywordFlow(routing.triggered, message);
+  if (keyword) return keyword;
+  if (routing.defaultFlowId && routing.restartOnGreeting.has(routing.defaultFlowId)) return routing.defaultFlowId;
+  return previousFlowId && routing.restartOnGreeting.has(previousFlowId) ? previousFlowId : null;
+}
+
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
-export function toTriggerFlow(row: { id: string; triggerKeywords: unknown; keywordMatch: string; triggerAdIds: unknown }): TriggerFlow {
+export function toTriggerFlow(row: {
+  id: string;
+  triggerKeywords: unknown;
+  keywordMatch: string;
+  triggerAdIds: unknown;
+  triggerChannels?: unknown;
+}): TriggerFlow {
   return {
     id: row.id,
     triggerKeywords: strings(row.triggerKeywords),
     keywordMatch: row.keywordMatch === 'exact' ? 'exact' : 'contains',
     triggerAdIds: strings(row.triggerAdIds),
+    channels: toChannels(row.triggerChannels),
   };
 }
 
@@ -109,7 +160,7 @@ export async function loadFlowRouting(tx: TenantTx, organizationId: string, chan
   // Sequential — an interactive transaction uses one connection.
   const flows = await tx.botFlow.findMany({
     where: { organizationId, isActive: true },
-    select: { id: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true },
+    select: { id: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true, triggerChannels: true, restartOnGreeting: true },
     orderBy: { createdAt: 'asc' },
   });
   const assignment = await tx.botFlowAssignment.findUnique({
@@ -117,9 +168,12 @@ export async function loadFlowRouting(tx: TenantTx, organizationId: string, chan
     include: { flow: { select: { isActive: true } } },
   });
   return {
-    triggered: flows.map(toTriggerFlow).filter((f) => f.triggerKeywords.length > 0 || f.triggerAdIds.length > 0),
+    triggered: flows
+      .map(toTriggerFlow)
+      .filter((f) => f.channels.includes(channel) && (f.triggerKeywords.length > 0 || f.triggerAdIds.length > 0)),
     defaultFlowId: assignment?.flow.isActive ? assignment.flowId : null,
     defaultSince: assignment?.flow.isActive ? assignment.updatedAt : null,
+    restartOnGreeting: new Set(flows.filter((f) => f.restartOnGreeting).map((f) => f.id)),
   };
 }
 

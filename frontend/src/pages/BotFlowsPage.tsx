@@ -559,6 +559,12 @@ export function BotFlowsPage() {
                       <Star className="size-3" /> Default on {ch}
                     </span>
                   ))}
+                  {(f.triggerKeywords?.length || f.triggerAdIds?.length) && f.triggerChannels?.length === 1 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground">
+                      {f.triggerChannels[0] === 'WHATSAPP' ? <MessageCircle className="size-3" /> : <Instagram className="size-3" />}
+                      {f.triggerChannels[0] === 'WHATSAPP' ? 'WhatsApp only' : 'Instagram only'}
+                    </span>
+                  ) : null}
                   {(f.triggerKeywords ?? []).slice(0, 6).map((k) => (
                     <span key={k} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
                       <Zap className="size-3" /> {k}

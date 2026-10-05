@@ -1033,6 +1033,10 @@ model BotFlow {
   keywordMatch        String   @default("contains") @map("keyword_match")
   /// Starts this flow for new leads from these Click-to-WhatsApp ads (string[] of Meta ad ids).
   triggerAdIds        Json     @default("[]") @map("trigger_ad_ids")
+  /// A returning customer who just says "hi" / "hello" gets this flow again.
+  restartOnGreeting   Boolean  @default(true) @map("restart_on_greeting")
+  /// Channels this flow's keyword / ad triggers apply to: ["WHATSAPP","INSTAGRAM"].
+  triggerChannels     Json     @default("[\"WHATSAPP\",\"INSTAGRAM\"]") @map("trigger_channels")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 

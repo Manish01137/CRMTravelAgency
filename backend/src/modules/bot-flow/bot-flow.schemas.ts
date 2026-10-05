@@ -19,6 +19,7 @@ export const stepIdParam = z.object({ id: z.string().uuid('Invalid flow id'), st
 const triggerKeywordsSchema = z.array(z.string().trim().min(1).max(60)).max(30);
 const triggerAdIdsSchema = z.array(z.string().trim().regex(/^\d{6,30}$/, 'Ad ID should be the numeric ID from Meta Ads Manager')).max(30);
 const keywordMatchSchema = z.enum(['contains', 'exact']);
+const triggerChannelsSchema = z.array(z.enum(['WHATSAPP', 'INSTAGRAM'])).min(1, 'Choose at least one channel').max(2);
 
 export const createFlowSchema = z.object({
   name: z.string().trim().min(1, 'Flow name is required').max(150),
@@ -28,6 +29,8 @@ export const createFlowSchema = z.object({
   triggerKeywords: triggerKeywordsSchema.default([]),
   keywordMatch: keywordMatchSchema.default('contains'),
   triggerAdIds: triggerAdIdsSchema.default([]),
+  restartOnGreeting: z.coerce.boolean().default(true),
+  triggerChannels: triggerChannelsSchema.default(['WHATSAPP', 'INSTAGRAM']),
 });
 
 export const updateFlowSchema = z
@@ -39,6 +42,8 @@ export const updateFlowSchema = z
     triggerKeywords: triggerKeywordsSchema.optional(),
     keywordMatch: keywordMatchSchema.optional(),
     triggerAdIds: triggerAdIdsSchema.optional(),
+    restartOnGreeting: z.boolean().optional(),
+    triggerChannels: triggerChannelsSchema.optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });
 

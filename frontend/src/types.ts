@@ -928,6 +928,10 @@ export interface BotFlow {
   keywordMatch: 'contains' | 'exact';
   /** Meta ad ids whose new leads start this flow. */
   triggerAdIds: string[];
+  /** A returning customer who just says "hi" gets this flow again. */
+  restartOnGreeting: boolean;
+  /** Channels the keyword / ad triggers apply to. */
+  triggerChannels: ('WHATSAPP' | 'INSTAGRAM')[];
   createdAt: string;
   updatedAt: string;
   _count?: { steps: number; assignments: number };

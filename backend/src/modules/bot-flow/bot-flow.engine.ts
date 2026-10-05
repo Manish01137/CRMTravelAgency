@@ -7,7 +7,14 @@ import { defaultAnswerType, validateAnswer, parseTravelDate, DEFAULT_ERROR_MESSA
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
 import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.service';
-import { chooseFlowForNewChat, chooseFlowForRestart, loadFlowRouting } from './bot-flow.triggers';
+import {
+  ACTIVE_RESTART_QUIET_MS,
+  HANDOFF_RESTART_QUIET_MS,
+  chooseFlowForGreeting,
+  chooseFlowForNewChat,
+  chooseFlowForRestart,
+  loadFlowRouting,
+} from './bot-flow.triggers';
 import { updateLead } from '../leads/leads.service';
 import { updateLeadSchema } from '../leads/leads.schemas';
 import { SETTABLE_LEAD_FIELDS } from './bot-flow.schemas';
@@ -146,20 +153,43 @@ async function loadState(
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
 
-    // Which flow — see bot-flow.triggers.ts. A finished chat restarts only on a keyword.
+    // Which flow — see bot-flow.triggers.ts.
     const routing = await loadFlowRouting(tx, organizationId, conversation.channel);
     let session = await tx.botFlowSession.findUnique({ where: { conversationId } });
-    if (session?.status === 'NEEDS_REVIEW') return null; // a human owns this thread now
-    if (session?.status === 'COMPLETED') {
-      const restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt);
-      if (!restartFlowId) {
+
+    if (session) {
+      // A returning customer's keyword, or just "hi", starts a flow again:
+      //   - finished chat: straight away;
+      //   - mid-flow: after 30 min of silence (sooner, "hi" may be an answer);
+      //   - handed to a teammate: after a day of silence, so the bot never
+      //     cuts into a conversation your team is having.
+      const quietFor = async () => {
+        const previous = await tx.message.findFirst({
+          where: { conversationId, createdAt: { lt: messageCreatedAt } },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        });
+        return previous ? messageCreatedAt.getTime() - previous.createdAt.getTime() : Infinity;
+      };
+      let restartFlowId: string | null = null;
+      if (session.status === 'COMPLETED') {
+        restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt) ?? chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
+      } else {
+        const greetingFlowId = chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
+        const minQuiet = session.status === 'NEEDS_REVIEW' ? HANDOFF_RESTART_QUIET_MS : ACTIVE_RESTART_QUIET_MS;
+        const midFlow = session.status === 'NEEDS_REVIEW' || session.currentStepId !== null;
+        if (greetingFlowId && midFlow && (await quietFor()) >= minQuiet) restartFlowId = greetingFlowId;
+      }
+      if (restartFlowId) {
+        session = await tx.botFlowSession.update({
+          where: { id: session.id },
+          data: { flowId: restartFlowId, status: 'ACTIVE', currentStepId: null, collectedData: {} },
+        });
+      } else if (session.status !== 'ACTIVE') {
+        // Finished, or a teammate's chat — the bot stays out of it.
         await tx.botFlowSession.update({ where: { id: session.id }, data: { lastProcessedMessageAt: messageCreatedAt } });
         return null;
       }
-      session = await tx.botFlowSession.update({
-        where: { id: session.id },
-        data: { flowId: restartFlowId, status: 'ACTIVE', currentStepId: null, collectedData: {} },
-      });
     }
     if (!session) {
       const sourceAdId = conversation.leadId

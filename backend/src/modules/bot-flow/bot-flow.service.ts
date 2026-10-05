@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { BadRequest, Conflict, NotFound } from '../../lib/errors';
 import type { TenantTx } from '../../lib/prisma';
-import { toTriggerFlow } from './bot-flow.triggers';
+import { toChannels, toTriggerFlow, type BotChannelName } from './bot-flow.triggers';
 import { BOT_FLOW_TEMPLATES, instantiateTemplate } from './bot-flow.templates';
 import type { AssignFlowInput, CreateFlowInput, CreateFromTemplateInput, UpdateFlowInput, UpsertStepInput } from './bot-flow.schemas';
 
@@ -55,18 +55,35 @@ function uniqueWords(words: string[]): string[] {
 }
 
 /** One ad or keyword starts one flow — refuse a trigger another active flow already uses. */
-async function assertTriggersFree(tx: TenantTx, organizationId: string, flowId: string | null, keywords: string[], adIds: string[]) {
+const CHANNEL_LABEL: Record<BotChannelName, string> = { WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram' };
+
+/**
+ * One ad or keyword starts one flow per channel — refuse a trigger another
+ * active flow already uses on the same channel (a WhatsApp flow and an
+ * Instagram flow may share "hello").
+ */
+async function assertTriggersFree(
+  tx: TenantTx,
+  organizationId: string,
+  flowId: string | null,
+  keywords: string[],
+  adIds: string[],
+  channels: BotChannelName[],
+) {
   if (keywords.length === 0 && adIds.length === 0) return;
   const others = await tx.botFlow.findMany({
     where: { organizationId, isActive: true, ...(flowId ? { id: { not: flowId } } : {}) },
-    select: { id: true, name: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true },
+    select: { id: true, name: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true, triggerChannels: true },
   });
   for (const other of others) {
     const t = toTriggerFlow(other);
+    const shared = channels.filter((c) => t.channels.includes(c));
+    if (shared.length === 0) continue;
+    const on = shared.map((c) => CHANNEL_LABEL[c]).join(' and ');
     const ad = adIds.find((a) => t.triggerAdIds.includes(a));
-    if (ad) throw Conflict(`Ad ${ad} already starts the flow "${other.name}"`);
+    if (ad) throw Conflict(`Ad ${ad} already starts the flow "${other.name}" on ${on}`);
     const kw = keywords.find((k) => t.triggerKeywords.some((o) => o.trim().toLowerCase() === k.trim().toLowerCase()));
-    if (kw) throw Conflict(`"${kw}" already starts the flow "${other.name}"`);
+    if (kw) throw Conflict(`"${kw}" already starts the flow "${other.name}" on ${on} — remove it there, or set the two flows to different channels`);
   }
 }
 
@@ -74,7 +91,8 @@ export async function createFlow(organizationId: string, input: CreateFlowInput)
   return withTenant(organizationId, async (tx) => {
     const triggerKeywords = uniqueWords(input.triggerKeywords);
     const triggerAdIds = [...new Set(input.triggerAdIds)];
-    if (input.isActive) await assertTriggersFree(tx, organizationId, null, triggerKeywords, triggerAdIds);
+    const triggerChannels = toChannels(input.triggerChannels);
+    if (input.isActive) await assertTriggersFree(tx, organizationId, null, triggerKeywords, triggerAdIds, triggerChannels);
     return tx.botFlow.create({
       data: {
         organizationId,
@@ -85,6 +103,8 @@ export async function createFlow(organizationId: string, input: CreateFlowInput)
         triggerKeywords,
         keywordMatch: input.keywordMatch,
         triggerAdIds,
+        restartOnGreeting: input.restartOnGreeting,
+        triggerChannels,
       },
     });
   });
@@ -98,10 +118,18 @@ export async function updateFlow(organizationId: string, flowId: string, input: 
       ...input,
       ...(input.triggerKeywords && { triggerKeywords: uniqueWords(input.triggerKeywords) }),
       ...(input.triggerAdIds && { triggerAdIds: [...new Set(input.triggerAdIds)] }),
+      ...(input.triggerChannels && { triggerChannels: toChannels(input.triggerChannels) }),
     };
     const current = toTriggerFlow(existing);
     if (data.isActive ?? existing.isActive) {
-      await assertTriggersFree(tx, organizationId, flowId, data.triggerKeywords ?? current.triggerKeywords, data.triggerAdIds ?? current.triggerAdIds);
+      await assertTriggersFree(
+        tx,
+        organizationId,
+        flowId,
+        data.triggerKeywords ?? current.triggerKeywords,
+        data.triggerAdIds ?? current.triggerAdIds,
+        data.triggerChannels ?? current.channels,
+      );
     }
     return tx.botFlow.update({ where: { id: flowId }, data });
   });

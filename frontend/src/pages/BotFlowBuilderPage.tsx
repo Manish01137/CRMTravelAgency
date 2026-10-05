@@ -32,6 +32,8 @@ import {
   Package as PackageIcon,
   Plus,
   Flag,
+  Instagram,
+  MessageCircle,
   PenLine,
   Settings2,
   Sparkles,
@@ -782,6 +784,8 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
   const [triggerKeywords, setTriggerKeywords] = useState(flow.triggerKeywords ?? []);
   const [keywordMatch, setKeywordMatch] = useState(flow.keywordMatch ?? 'contains');
   const [triggerAdIds, setTriggerAdIds] = useState(flow.triggerAdIds ?? []);
+  const [restartOnGreeting, setRestartOnGreeting] = useState(flow.restartOnGreeting ?? true);
+  const [triggerChannels, setTriggerChannels] = useState<('WHATSAPP' | 'INSTAGRAM')[]>(flow.triggerChannels ?? ['WHATSAPP', 'INSTAGRAM']);
 
   useEffect(() => {
     setName(flow.name);
@@ -791,6 +795,8 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
     setTriggerKeywords(flow.triggerKeywords ?? []);
     setKeywordMatch(flow.keywordMatch ?? 'contains');
     setTriggerAdIds(flow.triggerAdIds ?? []);
+    setRestartOnGreeting(flow.restartOnGreeting ?? true);
+    setTriggerChannels(flow.triggerChannels ?? ['WHATSAPP', 'INSTAGRAM']);
   }, [flow]);
 
   const mutation = useMutation({
@@ -803,6 +809,8 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
         triggerKeywords,
         keywordMatch,
         triggerAdIds,
+        restartOnGreeting,
+        triggerChannels,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bot-flow', flow.id] });
@@ -828,7 +836,41 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
             <div>
               <p className="flex items-center gap-1.5 text-sm font-medium text-foreground"><Zap className="size-3.5 text-primary" /> Start this flow when…</p>
               <p className="text-xs text-muted-foreground">
-                Works on WhatsApp and Instagram. A chat whose flow has finished starts again when it sends a keyword. Chats that match nothing go to the channel's default flow.
+                A chat whose flow has finished starts again when it sends a keyword. Chats that match nothing go to the channel's default flow.
+              </p>
+            </div>
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-foreground">Works on</p>
+              <div className="flex gap-2" role="group" aria-label="Channels">
+                {(
+                  [
+                    { key: 'WHATSAPP', label: 'WhatsApp', icon: MessageCircle, on: 'bg-emerald-600 text-white ring-emerald-600' },
+                    { key: 'INSTAGRAM', label: 'Instagram', icon: Instagram, on: 'bg-pink-600 text-white ring-pink-600' },
+                  ] as const
+                ).map((c) => {
+                  const active = triggerChannels.includes(c.key);
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() =>
+                        setTriggerChannels((prev) =>
+                          active ? (prev.length > 1 ? prev.filter((x) => x !== c.key) : prev) : [...prev, c.key],
+                        )
+                      }
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors',
+                        active ? c.on : 'bg-card text-muted-foreground ring-border hover:text-foreground',
+                      )}
+                    >
+                      <c.icon className="size-3.5" /> {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Separate WhatsApp and Instagram flows can use the same keywords (e.g. both start on “hello”).
               </p>
             </div>
             <Field label="The message has a keyword" htmlFor="fsTriggers" hint="Press Enter after each one — e.g. manali, kashmir, honeymoon, price.">
@@ -866,6 +908,16 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
                 validate={(v) => (/^\d{6,30}$/.test(v) ? null : 'Digits only — the long number from Meta Ads Manager.')}
               />
             </Field>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Start again when they say “hi”</p>
+              <p className="text-xs text-muted-foreground">
+                A returning customer who sends just hi, hello, hey, namaste, good morning, menu or start gets this flow again — straight away if their last
+                chat finished, after 30 minutes of silence if they stopped halfway, and after a day if your team took over the chat.
+              </p>
+            </div>
+            <Switch checked={restartOnGreeting} onCheckedChange={setRestartOnGreeting} aria-label="Start again when they say hi" />
           </div>
           <Field label="Fallback message" htmlFor="fsFallback" hint="Shown when the bot doesn't understand a reply.">
             <Textarea id="fsFallback" rows={2} value={fallbackMessage} onChange={(e) => setFallbackMessage(e.target.value)} />
