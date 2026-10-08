@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, SchemaType, type FunctionDeclaration } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType, type FunctionDeclaration, type GenerativeModel, type ModelParams } from '@google/generative-ai';
 import { env } from '../env';
 import { AppError } from './errors';
 
@@ -8,8 +8,42 @@ import { AppError } from './errors';
  * module reading env directly.
  */
 
-function client(apiKey: string): GoogleGenerativeAI {
-  return new GoogleGenerativeAI(apiKey);
+/**
+ * Models tried, in order, after the configured one. Google retires models for
+ * new keys (2.5-flash was) and a model can be briefly overloaded (503) — the
+ * bot should carry on with the next model instead of going quiet.
+ */
+const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+
+/** Model-specific failures worth retrying on another model: retired / unknown, overloaded, rate-limited. */
+function isModelUnavailable(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /\[(404|429|500|503)\b|not found|no longer available|high demand|overloaded|unavailable/i.test(message);
+}
+
+/** Same shape as the SDK's client, but generateContent falls back across models. */
+function client(apiKey: string) {
+  const ai = new GoogleGenerativeAI(apiKey);
+  return {
+    getGenerativeModel(params: ModelParams) {
+      return {
+        async generateContent(request: Parameters<GenerativeModel['generateContent']>[0]) {
+          const models = [params.model, ...FALLBACK_MODELS.filter((m) => m !== params.model)];
+          let lastError: unknown;
+          for (const model of models) {
+            try {
+              return await ai.getGenerativeModel({ ...params, model }).generateContent(request);
+            } catch (err) {
+              lastError = err;
+              if (!isModelUnavailable(err)) throw err;
+              console.warn(`[gemini] ${model} unavailable, trying the next model:`, err instanceof Error ? err.message.slice(0, 160) : err);
+            }
+          }
+          throw lastError;
+        },
+      };
+    },
+  };
 }
 
 async function fail<T>(fn: () => Promise<T>): Promise<T> {
@@ -64,7 +98,9 @@ export async function extractLeadFields(apiKey: string, model: string, message: 
       tools: [{ functionDeclarations: [extractLeadFieldsDeclaration] }],
     });
     const result = await genModel.generateContent(
-      `Extract any travel-enquiry details from this traveller message. Call extract_lead_fields with only the fields they actually mentioned.\n\nMessage: "${message}"`,
+      `Extract any travel-enquiry details from this traveller message. Call extract_lead_fields with only the fields they actually mentioned.\n` +
+        // The model doesn't know today's date — without this, "25 December" came back as a past year.
+        `Today is ${new Date().toISOString().slice(0, 10)}. A travel date without a year means its next occurrence from today.\n\nMessage: "${message}"`,
     );
     const calls = result.response.functionCalls();
     const call = calls?.find((c) => c.name === 'extract_lead_fields');
