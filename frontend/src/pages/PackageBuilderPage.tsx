@@ -566,11 +566,8 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       }),
     onSuccess: (res, { i }) => setValue(`itinerary.${i}.description`, res.description, { shouldDirty: true }),
     onError: (err) => {
-      if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
-        toast.error("AI isn't enabled on this server yet — contact your administrator.");
-      } else {
-        toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
-      }
+      // The server's message says exactly what's wrong (e.g. "Gemini API key not configured").
+      toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
     },
   });
 
@@ -1042,11 +1039,8 @@ function AiGenerateDialog({
       onOpenChange(false);
     },
     onError: (err) => {
-      if (err instanceof ApiError && err.code === 'AI_NOT_CONFIGURED') {
-        toast.error("AI isn't enabled on this server yet — contact your administrator.");
-      } else {
-        toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
-      }
+      // The server's message says exactly what's wrong (e.g. "Gemini API key not configured").
+      toast.error(err instanceof ApiError ? err.message : 'AI generation failed, please try again');
     },
   });
 
@@ -1067,6 +1061,7 @@ function AiGenerateDialog({
             <Textarea
               id="aiPrompt"
               rows={3}
+              maxLength={2000}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="e.g. luxury honeymoon, vegetarian meals, focus on adventure activities…"

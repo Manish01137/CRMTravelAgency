@@ -22,7 +22,7 @@ function isModelUnavailable(err: unknown): boolean {
 }
 
 /** Same shape as the SDK's client, but generateContent falls back across models. */
-function client(apiKey: string) {
+export function geminiClient(apiKey: string) {
   const ai = new GoogleGenerativeAI(apiKey);
   return {
     getGenerativeModel(params: ModelParams) {
@@ -45,6 +45,8 @@ function client(apiKey: string) {
     },
   };
 }
+
+const client = geminiClient;
 
 async function fail<T>(fn: () => Promise<T>): Promise<T> {
   try {

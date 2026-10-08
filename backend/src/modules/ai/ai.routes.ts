@@ -2,24 +2,47 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { env } from '../../env';
 import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { AppError, BadRequest } from '../../lib/errors';
+import { geminiClient } from '../../lib/gemini';
 /**
  * AI package generation (Google Gemini), using the server's GEMINI_API_KEY —
  * the same platform-level key every AI feature uses. Without it the endpoints
  * return a clear 503 so the UI can show a "not enabled" state.
  */
 
-let client: GoogleGenerativeAI | null = null;
-function resolveClient(): { genAI: GoogleGenerativeAI; model: string } | null {
-  if (!env.GEMINI_API_KEY) return null;
-  client ??= new GoogleGenerativeAI(env.GEMINI_API_KEY);
-  return { genAI: client, model: env.GEMINI_MODEL };
+/** The Gemini client (falls back across models — see lib/gemini.ts), or null without a key. */
+function resolveClient(): { genAI: ReturnType<typeof geminiClient>; model: string } | null {
+  if (!env.GEMINI_API_KEY?.trim()) return null;
+  return { genAI: geminiClient(env.GEMINI_API_KEY.trim()), model: env.GEMINI_MODEL };
 }
+
+function notConfigured(): AppError {
+  return new AppError(
+    503,
+    'AI_NOT_CONFIGURED',
+    'Gemini API key not configured — add GEMINI_API_KEY to backend/.env on the server and restart the backend.',
+  );
+}
+
+/** Logs Gemini's real error (model, status, message) server-side; the user sees a short retry message. */
+function aiFailed(err: unknown, what: string): AppError {
+  console.error(`[ai] ${what} failed:`, err instanceof Error ? err.message : err);
+  return new AppError(502, 'AI_FAILED', 'The AI service could not complete the request. Try again in a moment.');
+}
+
+// Context for a draft — never a reason to refuse one: long text is trimmed,
+// prices are rounded, and anything unreadable is simply left out.
+const optionalText = (max: number) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined), z.string().optional());
+const optionalInt = (min: number, max: number) =>
+  z.preprocess((v) => {
+    const n = typeof v === 'string' ? Number(v.replace(/[^\d.]/g, '')) : typeof v === 'number' ? v : NaN;
+    return Number.isFinite(n) && n >= min ? Math.min(Math.round(n), max) : undefined;
+  }, z.number().int().optional());
 
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -30,13 +53,13 @@ const aiLimiter = rateLimit({
 });
 
 const generateSchema = z.object({
-  prompt: z.preprocess((v) => (v === '' ? undefined : v), z.string().max(1000).optional()),
-  name: z.string().trim().max(150).optional(),
-  destination: z.string().trim().max(120).optional(),
-  nights: z.coerce.number().int().min(0).max(365).optional(),
-  days: z.coerce.number().int().min(1).max(366).optional(),
-  priceAmount: z.coerce.number().int().nonnegative().optional(),
-  currency: z.string().trim().max(3).optional(),
+  prompt: optionalText(2000),
+  name: optionalText(200),
+  destination: optionalText(200),
+  nights: optionalInt(0, 365),
+  days: optionalInt(1, 366),
+  priceAmount: optionalInt(0, 1_000_000_000),
+  currency: z.preprocess((v) => (typeof v === 'string' && /^[a-z]{3}$/i.test(v.trim()) ? v.trim().toUpperCase() : undefined), z.string().optional()),
 });
 
 // Shape we ask Gemini to return — mirrors the package builder fields.
@@ -91,13 +114,7 @@ router.post(
   validate({ body: generateSchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const resolved = resolveClient();
-    if (!resolved) {
-      throw new AppError(
-        503,
-        'AI_NOT_CONFIGURED',
-        'AI generation is not enabled on this server yet — contact your administrator.',
-      );
-    }
+    if (!resolved) throw notConfigured();
     const { genAI, model: modelName } = resolved;
 
     const input = req.body as z.infer<typeof generateSchema>;
@@ -134,7 +151,7 @@ Rules:
       const result = await model.generateContent(promptText);
       raw = result.response.text();
     } catch (err) {
-      throw new AppError(502, 'AI_FAILED', 'The AI service could not complete the request. Try again.');
+      throw aiFailed(err, 'generate-package');
     }
 
     let parsedJson: unknown;
@@ -143,12 +160,22 @@ Rules:
     } catch {
       // Occasionally the model wraps JSON in prose/fences — extract the object.
       const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) throw BadRequest('AI returned an unexpected response. Please try again.');
-      parsedJson = JSON.parse(match[0]);
+      try {
+        parsedJson = match ? JSON.parse(match[0]) : null;
+      } catch {
+        parsedJson = null;
+      }
+      if (!parsedJson) {
+        console.error('[ai] generate-package: unreadable response:', raw.slice(0, 300));
+        throw new AppError(502, 'AI_FAILED', 'AI returned an unexpected response. Please try again.');
+      }
     }
 
     const safe = aiResultSchema.safeParse(parsedJson);
-    if (!safe.success) throw BadRequest('AI returned malformed content. Please try again.');
+    if (!safe.success) {
+      console.error('[ai] generate-package: response failed the shape check:', JSON.stringify(safe.error.flatten().fieldErrors).slice(0, 300));
+      throw new AppError(502, 'AI_FAILED', 'AI returned malformed content. Please try again.');
+    }
 
     res.json(safe.data);
   }),
@@ -169,13 +196,7 @@ router.post(
   validate({ body: itineraryDaySchema }),
   asyncHandler(async (req: Request, res: Response) => {
     const resolved = resolveClient();
-    if (!resolved) {
-      throw new AppError(
-        503,
-        'AI_NOT_CONFIGURED',
-        'AI generation is not enabled on this server yet — contact your administrator.',
-      );
-    }
+    if (!resolved) throw notConfigured();
     const { genAI, model: modelName } = resolved;
 
     const input = req.body as z.infer<typeof itineraryDaySchema>;
@@ -201,7 +222,7 @@ Return ONLY the day's description text — 2-4 sentences, plain text, no markdow
       const result = await model.generateContent(promptText);
       raw = result.response.text();
     } catch (err) {
-      throw new AppError(502, 'AI_FAILED', 'The AI service could not complete the request. Try again.');
+      throw aiFailed(err, 'itinerary-day');
     }
 
     // Models occasionally wrap the answer in quotes or a stray markdown fence despite instructions.

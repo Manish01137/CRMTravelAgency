@@ -22,7 +22,10 @@ export function validate(schemas: Schemas) {
       next();
     } catch (err) {
       if (err instanceof ZodError) {
-        next(BadRequest('Validation failed', err.flatten().fieldErrors));
+        // Name the field, so the message alone says what to fix.
+        const issue = err.issues[0];
+        const where = issue?.path.length ? `${issue.path.join('.')}: ` : '';
+        next(BadRequest(issue ? `Validation failed — ${where}${issue.message}` : 'Validation failed', err.flatten().fieldErrors));
       } else {
         next(err);
       }
