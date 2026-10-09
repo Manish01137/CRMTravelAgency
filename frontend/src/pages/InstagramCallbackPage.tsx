@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Instagram, XCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import { instagramRedirectUri } from '@/lib/metaSignup';
+import {
+  IG_OAUTH_CHANNEL,
+  instagramRedirectUri,
+  pendingInstagramPopupState,
+  pendingInstagramRedirectState,
+  type InstagramOAuthMessage,
+} from '@/lib/metaSignup';
 import type { ConnectInstagramResult, InstagramPageOption } from '@/types';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
@@ -19,7 +25,7 @@ import { Button } from '@/components/ui/button';
 export function InstagramCallbackPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [state, setState] = useState<'working' | 'picking' | 'done' | 'error'>('working');
+  const [state, setState] = useState<'working' | 'picking' | 'done' | 'error' | 'handedBack'>('working');
   const [message, setMessage] = useState('');
   const [options, setOptions] = useState<InstagramPageOption[]>([]);
   const [selecting, setSelecting] = useState(false);
@@ -30,6 +36,30 @@ export function InstagramCallbackPage() {
     ran.current = true;
     const code = params.get('code');
     const errorDescription = params.get('error_description');
+    const returnedState = params.get('state');
+
+    // Popup login (Settings → Channels): hand the result to the waiting tab and close.
+    if (returnedState && returnedState === pendingInstagramPopupState()) {
+      const msg: InstagramOAuthMessage = { state: returnedState, code: code ?? undefined, error: errorDescription ?? (code ? undefined : 'No authorization code was returned') };
+      const channel = new BroadcastChannel(IG_OAUTH_CHANNEL);
+      channel.postMessage(msg);
+      channel.close();
+      setState('handedBack');
+      window.setTimeout(() => window.close(), 300);
+      return;
+    }
+    // Full-page login: the state must be the one this tab started with.
+    const expected = pendingInstagramRedirectState();
+    if (expected && returnedState !== expected) {
+      setState('error');
+      setMessage('This sign-in link didn’t come from this browser — start Connect Instagram again.');
+      return;
+    }
+    try {
+      window.sessionStorage.removeItem('ig_oauth_state');
+    } catch {
+      /* storage unavailable */
+    }
     if (errorDescription) {
       setState('error');
       setMessage(errorDescription);
@@ -37,7 +67,7 @@ export function InstagramCallbackPage() {
     }
     if (!code) {
       setState('error');
-      setMessage('No authorization code was returned by Facebook.');
+      setMessage('No authorization code was returned by Instagram.');
       return;
     }
     api
@@ -72,6 +102,13 @@ export function InstagramCallbackPage() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-muted/30 p-6">
       <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-8 text-center shadow-card">
+        {state === 'handedBack' && (
+          <>
+            <CheckCircle2 className="mx-auto size-10 text-emerald-500" />
+            <p className="mt-4 font-medium text-foreground">Signed in with Instagram</p>
+            <p className="mt-1 text-sm text-muted-foreground">Finishing in your CRM tab — you can close this window.</p>
+          </>
+        )}
         {state === 'working' && (
           <>
             <Spinner className="mx-auto size-8 text-primary" />

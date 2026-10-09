@@ -4,6 +4,7 @@ import { disconnectPrisma } from './lib/prisma';
 import { isRedisConfigured, disconnectRedis } from './lib/redis';
 import { startBotFlowPoller, stopBotFlowPoller } from './queues/bot-flow-poller';
 import { startAutomationSweep, stopAutomationSweep } from './queues/automation-sweep';
+import { refreshInstagramTokens } from './modules/channels/channels.service';
 
 const app = createApp();
 
@@ -30,6 +31,13 @@ if (isRedisConfigured()) {
   // eslint-disable-next-line no-console
   console.log('ℹ REDIS_URL not set — Bot Flow / follow-up automation workers are disabled');
 }
+
+// Instagram Login tokens expire after ~60 days — renew them well before then.
+const INSTAGRAM_TOKEN_CHECK_MS = 12 * 60 * 60 * 1000;
+const runInstagramTokenRefresh = () =>
+  refreshInstagramTokens().catch((err) => console.error('Instagram token refresh failed:', err instanceof Error ? err.message : err));
+setTimeout(runInstagramTokenRefresh, 60_000).unref();
+setInterval(runInstagramTokenRefresh, INSTAGRAM_TOKEN_CHECK_MS).unref();
 
 function shutdown(signal: string): void {
   // eslint-disable-next-line no-console

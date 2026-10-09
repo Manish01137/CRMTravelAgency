@@ -17,7 +17,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { launchWhatsAppEmbeddedSignup, buildInstagramAuthUrl, instagramRedirectUri } from '@/lib/metaSignup';
+import { launchWhatsAppEmbeddedSignup, launchInstagramLoginPopup, startInstagramRedirect, instagramRedirectUri } from '@/lib/metaSignup';
+import type { ConnectInstagramResult } from '@/types';
 
 const VERTICAL_LABELS: Record<string, string> = {
   UNDEFINED: 'Not set',
@@ -638,13 +639,30 @@ export function ChannelsSettingsPage() {
     }
   };
 
-  const handleConnectInstagram = () => {
+  // Instagram Login in a popup ("embedded" connect) — no leaving the page.
+  // Falls back to a full-page redirect when the browser blocks popups.
+  const handleConnectInstagram = async () => {
     const cfg = configQuery.data;
     if (!cfg?.instagramAppId) {
       toast.error('Instagram is not configured on this server yet');
       return;
     }
-    window.location.href = buildInstagramAuthUrl(cfg.instagramAppId, instagramRedirectUri());
+    setConnectingChannel('INSTAGRAM');
+    try {
+      const login = await launchInstagramLoginPopup(cfg.instagramAppId);
+      if (!login) {
+        startInstagramRedirect(cfg.instagramAppId);
+        return;
+      }
+      const result = await api.post<ConnectInstagramResult>('/channels/instagram/connect', { code: login.code, redirectUri: instagramRedirectUri() });
+      if (result.status === 'connected') toast.success(`Instagram connected — ${result.channel.displayName ?? ''}`.trim());
+      invalidate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Could not connect Instagram, try again');
+      invalidate();
+    } finally {
+      setConnectingChannel(null);
+    }
   };
 
   const loading = configQuery.isLoading || channelsQuery.isLoading;
@@ -677,11 +695,11 @@ export function ChannelsSettingsPage() {
           <OAuthChannelCard
             icon={<Instagram className="size-5 text-pink-600" />}
             title="Instagram"
-            description="Direct Instagram Login — no Facebook Page required. Reuses the same inbox as WhatsApp."
+            description="Sign in with Instagram in a popup — no Facebook Page needed. Messages land in the same Inbox as WhatsApp."
             status={instagram ?? { channel: 'INSTAGRAM', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }}
             enabled={!!configQuery.data?.instagramEnabled}
             onConnect={handleConnectInstagram}
-            connecting={false}
+            connecting={connectingChannel === 'INSTAGRAM'}
             onDisconnect={() => disconnectMutation.mutate('INSTAGRAM')}
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'INSTAGRAM'}
           />

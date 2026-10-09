@@ -302,6 +302,15 @@ export function InboxPage() {
     return !selected.lastInboundAt || Date.now() - new Date(selected.lastInboundAt).getTime() > WHATSAPP_WINDOW_MS;
   }, [selected, channel]);
 
+  // Instagram has no templates: a normal reply within 24h of their last message,
+  // a team member's reply up to 7 days, then nothing until they write again.
+  const igWindow = useMemo<'open' | 'agent' | 'closed'>(() => {
+    if (!selected || channel !== 'INSTAGRAM') return 'open';
+    const since = selected.lastInboundAt ? Date.now() - new Date(selected.lastInboundAt).getTime() : Infinity;
+    return since <= WHATSAPP_WINDOW_MS ? 'open' : since <= 7 * WHATSAPP_WINDOW_MS ? 'agent' : 'closed';
+  }, [selected, channel]);
+  const composerBlocked = (outsideWindow && !templateName) || igWindow === 'closed';
+
   const sendMutation = useMutation({
     mutationFn: () =>
       api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, {
@@ -820,6 +829,13 @@ export function InboxPage() {
               </div>
 
               <div className="border-t border-border p-3" style={channel === 'WHATSAPP' ? { backgroundColor: WA_COMPOSER_BG } : undefined}>
+                {igWindow !== 'open' && (
+                  <div className={cn('mb-2 rounded-lg px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
+                    {igWindow === 'closed'
+                      ? 'Their last message was over 7 days ago — Instagram won’t deliver a reply until they message you again.'
+                      : 'Over 24 hours since their last message — Instagram only accepts a personal reply from your team now (up to 7 days). Your message is sent as a team reply.'}
+                  </div>
+                )}
                 {outsideWindow && (
                   <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     Outside the 24-hour window — send an approved template to restart the conversation.
@@ -884,7 +900,7 @@ export function InboxPage() {
                       <Button
                         variant="outline"
                         size="icon"
-                        disabled={uploadMutation.isPending || (outsideWindow && !templateName)}
+                        disabled={uploadMutation.isPending || composerBlocked}
                         aria-label="Attach"
                         title="Attach a photo or document"
                       >
@@ -918,12 +934,12 @@ export function InboxPage() {
                     }
                     rows={2}
                     className="resize-none"
-                    disabled={(outsideWindow && !templateName) || (pendingMedia?.kind === 'image' && channel === 'INSTAGRAM')}
+                    disabled={composerBlocked || (pendingMedia?.kind === 'image' && channel === 'INSTAGRAM')}
                   />
                   <Button
                     variant="outline"
                     size="icon"
-                    disabled={suggestMutation.isPending || (outsideWindow && !templateName)}
+                    disabled={suggestMutation.isPending || composerBlocked}
                     onClick={() => suggestMutation.mutate()}
                     aria-label="Suggest a reply"
                     title="Suggest a reply — you can edit before sending"
@@ -934,7 +950,7 @@ export function InboxPage() {
                     size="icon"
                     className={channel === 'WHATSAPP' ? 'text-white hover:opacity-90' : undefined}
                     style={channel === 'WHATSAPP' ? { backgroundColor: WA_SEND } : undefined}
-                    disabled={(!draft.trim() && !pendingMedia) || sendMutation.isPending || (outsideWindow && !templateName)}
+                    disabled={(!draft.trim() && !pendingMedia) || sendMutation.isPending || composerBlocked}
                     onClick={() => sendMutation.mutate()}
                     aria-label="Send message"
                   >

@@ -1,7 +1,7 @@
 import { Queue, Worker, type Job } from 'bullmq';
 import { getRedisConnection } from '../lib/redis';
 import { systemPrisma, type TenantTx } from '../lib/prisma';
-import { advanceBotFlow } from '../modules/bot-flow/bot-flow.engine';
+import { processConversation } from '../modules/bot-flow/bot-flow.runner';
 import { botFlowInUse, chooseFlowForGreeting, chooseFlowForNewChat, chooseFlowForRestart, loadFlowRouting } from '../modules/bot-flow/bot-flow.triggers';
 
 /**
@@ -74,11 +74,17 @@ async function scanChannel(organizationId: string, channel: 'WHATSAPP' | 'INSTAG
     // A finished or teammate-owned chat only wakes the bot with a keyword or "hi".
     const greeting = !!chooseFlowForGreeting(routing, body, session?.flowId ?? null, latestInbound.createdAt);
     if (session?.status === 'NEEDS_REVIEW' && !greeting) continue;
-    if (session?.status === 'COMPLETED' && !greeting && !chooseFlowForRestart(routing, body, latestInbound.createdAt)) continue;
+    if (
+      session?.status === 'COMPLETED' &&
+      !greeting &&
+      !chooseFlowForRestart(routing, body, latestInbound.createdAt) &&
+      !routing.aiFollowUp.has(session.flowId)
+    ) continue;
     if (!session && !chooseFlowForNewChat(routing, body, conversation.lead?.sourceAdId, latestInbound.createdAt)) continue;
 
     try {
-      await advanceBotFlow(organizationId, conversation.id, body, latestInbound.createdAt, latestInbound.interactiveSelectionId);
+      // Same runner the webhook uses — one run per chat at a time, so the two never answer twice.
+      await processConversation(organizationId, conversation.id, routing);
     } catch (err) {
       // One conversation's failure must never stop the rest of the scan.
       // eslint-disable-next-line no-console

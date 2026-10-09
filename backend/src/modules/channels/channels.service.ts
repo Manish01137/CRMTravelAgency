@@ -1,4 +1,4 @@
-import { withTenant } from '../../lib/prisma';
+import { systemPrisma, withTenant } from '../../lib/prisma';
 import { encryptJson, decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
 import {
@@ -19,8 +19,9 @@ import {
   exchangeInstagramCode,
   exchangeInstagramLongLivedToken,
   fetchInstagramLoginProfile,
-  diagnoseInstagramTokenExchange,
-  isInstagramLoginConfigured,
+  refreshInstagramLongLivedToken,
+  subscribeInstagramLoginWebhooks,
+    isInstagramLoginConfigured,
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
@@ -47,6 +48,8 @@ export interface WhatsAppCredentials {
 export interface InstagramCredentials {
   accessToken: string;
   igUserId: string;
+  /** Instagram Login tokens last ~60 days — renewed by refreshInstagramTokens before then. */
+  tokenExpiresAt?: string;
 }
 export interface EmailCredentials {
   apiKey: string;
@@ -305,11 +308,12 @@ export async function connectInstagramLegacy(organizationId: string, input: Conn
 /** Persists an Instagram Login connection — the sending-capable counterpart to saveInstagramConnection above. No secondaryExternalId (no Facebook Page involved in this flow at all). */
 async function saveInstagramLoginConnection(
   organizationId: string,
-  data: { accessToken: string; igUserId: string; username: string },
+  data: { accessToken: string; igUserId: string; username: string; tokenExpiresAt: string },
 ): Promise<ChannelStatus> {
   const credentials: InstagramCredentials = {
     accessToken: data.accessToken,
     igUserId: data.igUserId,
+    tokenExpiresAt: data.tokenExpiresAt,
   };
   const row = await withTenant(organizationId, (tx) =>
     tx.channelConnection.upsert({
@@ -352,16 +356,21 @@ export async function connectInstagram(organizationId: string, input: ConnectIns
   try {
     const { accessToken: shortLived } = await exchangeInstagramCode(input.code, input.redirectUri);
 
-    // TEMP DEBUG — see diagnoseInstagramTokenExchange's doc comment in
-    // lib/meta.ts. Remove this line once the /access_token 400 is resolved.
-    await diagnoseInstagramTokenExchange(shortLived);
-
-    const { accessToken: longLived } = await exchangeInstagramLongLivedToken(shortLived);
+    const { accessToken: longLived, expiresIn } = await exchangeInstagramLongLivedToken(shortLived);
     // NOTE: igUserId comes from THIS call (/me?fields=user_id,username), not
     // from exchangeInstagramCode above — that one's user_id is a different,
     // unusable app-scoped id. See the comment above fetchInstagramLoginProfile.
     const { igUserId, username } = await fetchInstagramLoginProfile(longLived);
-    const channel = await saveInstagramLoginConnection(organizationId, { accessToken: longLived, igUserId, username });
+    const channel = await saveInstagramLoginConnection(organizationId, {
+      accessToken: longLived,
+      igUserId,
+      username,
+      tokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    });
+    // So this account's DMs reach the CRM. Best-effort: the connection itself already worked.
+    await subscribeInstagramLoginWebhooks(longLived).catch((err) =>
+      console.error('[channels] Instagram webhook subscription failed:', err instanceof Error ? err.message : err),
+    );
     return { status: 'connected', channel };
   } catch (err) {
     console.error(err);
@@ -477,4 +486,39 @@ function toStatus(row: {
     lastError: row.lastError,
     connectedAt: row.connectedAt,
   };
+}
+
+/** Renew Instagram Login tokens this far ahead of expiry (they last ~60 days). */
+const INSTAGRAM_REFRESH_AHEAD_MS = 20 * 24 * 3600 * 1000;
+
+/**
+ * Keeps every connected Instagram account's login alive: renews any Instagram
+ * Login token due within 20 days (or with no recorded expiry). Runs on
+ * startup and twice a day (index.ts). A token Meta won't renew any more marks
+ * the channel so Settings asks the agency to reconnect.
+ */
+export async function refreshInstagramTokens(): Promise<void> {
+  const rows = await systemPrisma.channelConnection.findMany({
+    where: { channel: 'INSTAGRAM', status: 'CONNECTED', secondaryExternalId: null, credentials: { not: null } },
+  });
+  for (const row of rows) {
+    try {
+      const creds = decryptJson<InstagramCredentials>(row.credentials!);
+      const expiresAt = creds.tokenExpiresAt ? new Date(creds.tokenExpiresAt).getTime() : 0;
+      if (expiresAt - Date.now() > INSTAGRAM_REFRESH_AHEAD_MS) continue;
+      const { accessToken, expiresIn } = await refreshInstagramLongLivedToken(creds.accessToken);
+      const updated: InstagramCredentials = { ...creds, accessToken, tokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString() };
+      await systemPrisma.channelConnection.update({ where: { id: row.id }, data: { credentials: encryptJson(updated), lastError: null } });
+      console.log(`[channels] Instagram token renewed for org ${row.organizationId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[channels] Instagram token renewal failed for org ${row.organizationId}:`, message);
+      if (/expired|invalid|session has been invalidated|error validating access token/i.test(message)) {
+        await systemPrisma.channelConnection.update({
+          where: { id: row.id },
+          data: { lastError: 'Instagram login expired — please reconnect Instagram in Settings → Channels.' },
+        });
+      }
+    }
+  }
 }

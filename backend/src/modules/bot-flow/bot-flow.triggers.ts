@@ -38,6 +38,8 @@ export interface FlowRouting {
   defaultSince: Date | null;
   /** Active flows that start again when a returning customer says "hi". */
   restartOnGreeting: Set<string>;
+  /** Active flows whose finished chats are looked after by the AI assistant. */
+  aiFollowUp: Set<string>;
 }
 
 /** Mid-flow, "hi" restarts only after this much silence — otherwise it may be an answer. */
@@ -160,7 +162,7 @@ export async function loadFlowRouting(tx: TenantTx, organizationId: string, chan
   // Sequential — an interactive transaction uses one connection.
   const flows = await tx.botFlow.findMany({
     where: { organizationId, isActive: true },
-    select: { id: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true, triggerChannels: true, restartOnGreeting: true },
+    select: { id: true, triggerKeywords: true, keywordMatch: true, triggerAdIds: true, triggerChannels: true, restartOnGreeting: true, aiFollowUp: true },
     orderBy: { createdAt: 'asc' },
   });
   const assignment = await tx.botFlowAssignment.findUnique({
@@ -174,6 +176,7 @@ export async function loadFlowRouting(tx: TenantTx, organizationId: string, chan
     defaultFlowId: assignment?.flow.isActive ? assignment.flowId : null,
     defaultSince: assignment?.flow.isActive ? assignment.updatedAt : null,
     restartOnGreeting: new Set(flows.filter((f) => f.restartOnGreeting).map((f) => f.id)),
+    aiFollowUp: new Set(flows.filter((f) => f.aiFollowUp).map((f) => f.id)),
   };
 }
 

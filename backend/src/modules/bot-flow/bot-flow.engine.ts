@@ -17,6 +17,7 @@ import {
 } from './bot-flow.triggers';
 import { updateLead } from '../leads/leads.service';
 import { updateLeadSchema } from '../leads/leads.schemas';
+import { runAiFollowUp } from './bot-flow.followup';
 import { SETTABLE_LEAD_FIELDS } from './bot-flow.schemas';
 
 /**
@@ -148,7 +149,7 @@ async function loadState(
   conversationId: string,
   messageBody: string,
   messageCreatedAt: Date,
-): Promise<LoadedState | null> {
+): Promise<LoadedState | { aiFollowUpSessionId: string } | null> {
   return withTenant(organizationId, async (tx) => {
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
@@ -198,6 +199,9 @@ async function loadState(
         if (wasHandedOff && conversation.leadId) {
           await tx.lead.updateMany({ where: { id: conversation.leadId, organizationId }, data: { needsReview: false, needsReviewReason: null } });
         }
+      } else if (session.status === 'COMPLETED' && routing.aiFollowUp.has(session.flowId)) {
+        // A finished chat with a new request — the AI assistant looks after it (bot-flow.followup.ts).
+        return { aiFollowUpSessionId: session.id };
       } else if (session.status !== 'ACTIVE') {
         // Finished, or a teammate's chat — the bot stays out of it.
         await tx.botFlowSession.update({ where: { id: session.id }, data: { lastProcessedMessageAt: messageCreatedAt } });
@@ -306,14 +310,21 @@ async function decide(
     const answerType = config.validation ?? defaultAnswerType(currentStep.leadField);
     const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
 
-    // The AI's reading of the message first ("I'm Rahul" → "Rahul"), then the raw text.
-    let extractedValue: unknown = null;
-    if (currentStep.leadField && agent) {
+    // The answer as typed first — a date, number, email, phone or a short
+    // answer ("Manali", "Rahul") needs no AI, which keeps the reply instant.
+    // Only a longer sentence ("we're 4 friends planning Manali in Dec") or an
+    // answer that doesn't check out goes to the AI to read.
+    const typed = validateAnswer(answerType, messageBody);
+    const wordCount = messageBody.trim().split(/\s+/).length;
+    const plainShortAnswer = wordCount <= 3 && !/^(i am|i'm|im|my|we are|we're|it is|it's|its)\b/i.test(messageBody.trim());
+    let valid = typed.ok && (answerType !== 'text' || plainShortAnswer) ? typed : null;
+    if (!valid && currentStep.leadField && agent) {
       const extracted = await extractLeadFields(agent.apiKey, DEFAULT_GEMINI_MODEL, messageBody).catch(() => ({}));
-      extractedValue = extracted[currentStep.leadField as keyof typeof extracted] ?? null;
+      const extractedValue = extracted[currentStep.leadField as keyof typeof extracted] ?? null;
+      const fromAi = extractedValue != null ? validateAnswer(answerType, extractedValue) : null;
+      valid = fromAi?.ok ? fromAi : typed.ok ? typed : null;
     }
-    const checked = [extractedValue, messageBody].filter((v) => v != null).map((v) => validateAnswer(answerType, v));
-    const valid = checked.find((r) => r.ok);
+    if (!valid && typed.ok) valid = typed;
     if (valid?.ok) return { kind: 'ADVANCE', leadField: currentStep.leadField ?? undefined, leadValue: valid.value, nextStep };
 
     // Invalid — ask again, up to the step's attempt limit, then move on without saving it.
@@ -518,6 +529,10 @@ export async function advanceBotFlow(
 ): Promise<void> {
   const state = await loadState(organizationId, conversationId, messageBody, messageCreatedAt);
   if (!state) return;
+  if ('aiFollowUpSessionId' in state) {
+    await runAiFollowUp(organizationId, conversationId, state.aiFollowUpSessionId, messageBody, messageCreatedAt);
+    return;
+  }
 
   const action = await decide(state, messageBody, organizationId, interactiveSelectionId);
 

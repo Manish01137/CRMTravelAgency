@@ -6,6 +6,7 @@ import { fetchInstagramSenderProfile } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { sendPackage } from '../bot-flow/bot-send';
 import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
+import { triggerBotFlowNow } from '../bot-flow/bot-flow.runner';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
 import { describeWhatsAppMessage } from '../../lib/whatsappInbound';
 import { env } from '../../env';
@@ -419,7 +420,10 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
           console.error('[ad-package] send failed:', err instanceof Error ? err.message : err);
         }
       }
-      if (adPackageSent) continue; // the package IS the reply — don't also run Smart Bot on this message
+      if (adPackageSent) {
+        triggerBotFlowNow(organizationId, inbound.conversationId); // flow mid-conversation: marked handled, nothing more is sent
+        continue; // the package IS the reply — don't also run Smart Bot on this message
+      }
 
       // Smart Bot (POC, feature-flagged per org) — see smart-bot.service.ts's
       // own guard against double-running alongside Bot Flow. Best-effort: a
@@ -434,6 +438,9 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       } catch (err) {
         console.error('[smart-bot] runSmartBotForWhatsApp failed:', err instanceof Error ? err.message : err);
       }
+
+      // Bot Flow: answer now instead of waiting for the next poll.
+      triggerBotFlowNow(organizationId, inbound.conversationId);
     }
 
     for (const st of statuses) {
@@ -481,7 +488,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
     // payload itself — looked up separately via the User Profile API
     // (Meta's "implicit consent" rule), at most once per sender.
     const { contactName, contactAvatarUrl } = await resolveInstagramContactInfo(organizationId, sender);
-    await recordInbound({
+    const igInbound = await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
@@ -494,6 +501,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
+    triggerBotFlowNow(organizationId, igInbound.conversationId); // Bot Flow: answer now, not on the next poll
   }
 }
 
@@ -535,7 +543,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
     console.log('[webhooks] processPageEntry — recording inbound from sender:', sender, '| text:', message?.text);
     // See resolveInstagramContactInfo's comment in processInstagramEntry above.
     const { contactName, contactAvatarUrl } = await resolveInstagramContactInfo(organizationId, sender);
-    await recordInbound({
+    const igInbound = await recordInbound({
       organizationId,
       channel: 'INSTAGRAM',
       externalContactId: sender,
@@ -548,6 +556,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
+    triggerBotFlowNow(organizationId, igInbound.conversationId); // Bot Flow: answer now, not on the next poll
   }
 }
 

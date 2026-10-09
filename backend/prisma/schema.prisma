@@ -1035,6 +1035,9 @@ model BotFlow {
   triggerAdIds        Json     @default("[]") @map("trigger_ad_ids")
   /// A returning customer who just says "hi" / "hello" gets this flow again.
   restartOnGreeting   Boolean  @default(true) @map("restart_on_greeting")
+  /// After the flow finishes, an AI assistant answers new requests: sends
+  /// matching packages from the CRM, or hands the chat to the team.
+  aiFollowUp          Boolean  @default(true) @map("ai_follow_up")
   /// Channels this flow's keyword / ad triggers apply to: ["WHATSAPP","INSTAGRAM"].
   triggerChannels     Json     @default("[\"WHATSAPP\",\"INSTAGRAM\"]") @map("trigger_channels")
   createdAt           DateTime @default(now()) @map("created_at")

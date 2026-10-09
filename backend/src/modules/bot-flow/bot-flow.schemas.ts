@@ -30,6 +30,7 @@ export const createFlowSchema = z.object({
   keywordMatch: keywordMatchSchema.default('contains'),
   triggerAdIds: triggerAdIdsSchema.default([]),
   restartOnGreeting: z.coerce.boolean().default(true),
+  aiFollowUp: z.coerce.boolean().default(true),
   triggerChannels: triggerChannelsSchema.default(['WHATSAPP', 'INSTAGRAM']),
 });
 
@@ -43,6 +44,7 @@ export const updateFlowSchema = z
     keywordMatch: keywordMatchSchema.optional(),
     triggerAdIds: triggerAdIdsSchema.optional(),
     restartOnGreeting: z.boolean().optional(),
+    aiFollowUp: z.boolean().optional(),
     triggerChannels: triggerChannelsSchema.optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });

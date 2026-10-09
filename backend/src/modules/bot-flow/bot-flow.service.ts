@@ -104,6 +104,7 @@ export async function createFlow(organizationId: string, input: CreateFlowInput)
         keywordMatch: input.keywordMatch,
         triggerAdIds,
         restartOnGreeting: input.restartOnGreeting,
+        aiFollowUp: input.aiFollowUp,
         triggerChannels,
       },
     });

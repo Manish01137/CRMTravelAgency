@@ -725,16 +725,28 @@ export async function subscribePageWebhook(pageId: string, pageAccessToken: stri
  * against this host succeeds immediately. See the "Instagram Login" section
  * below for the OAuth flow that produces this token.
  */
+/**
+ * Instagram only accepts a normal reply within 24h of the customer's last
+ * message. A person on the team may reply for up to 7 days with Meta's
+ * HUMAN_AGENT tag (needs the Human Agent feature on the Meta app).
+ */
+export interface InstagramSendOptions {
+  humanAgent?: boolean;
+}
+
+const humanAgentTag = (opts?: InstagramSendOptions) => (opts?.humanAgent ? { messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' } : {});
+
 export async function sendInstagramText(
   igUserId: string,
   accessToken: string,
   recipientId: string,
   text: string,
+  opts?: InstagramSendOptions,
 ): Promise<{ externalMessageId: string }> {
   const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ recipient: { id: recipientId }, message: { text } }),
+    body: JSON.stringify({ recipient: { id: recipientId }, message: { text }, ...humanAgentTag(opts) }),
   });
   return { externalMessageId: data.message_id };
 }
@@ -745,6 +757,7 @@ export async function sendInstagramImage(
   accessToken: string,
   recipientId: string,
   imageUrl: string,
+  opts?: InstagramSendOptions,
 ): Promise<{ externalMessageId: string }> {
   const data = await instagramGraphFetch<{ message_id: string }>(`/${igUserId}/messages`, {
     method: 'POST',
@@ -752,6 +765,7 @@ export async function sendInstagramImage(
     body: JSON.stringify({
       recipient: { id: recipientId },
       message: { attachment: { type: 'image', payload: { url: imageUrl } } },
+      ...humanAgentTag(opts),
     }),
   });
   return { externalMessageId: data.message_id };
@@ -890,71 +904,40 @@ export async function exchangeInstagramCode(code: string, redirectUri: string): 
   return { accessToken: data.access_token, igUserId: String(data.user_id) };
 }
 
-/**
- * TEMP DEBUG — isolating exchangeInstagramLongLivedToken's 100% reproducible
- * 400 "Unsupported request - method type: get" on GET /access_token. Three
- * independent checks, each try/caught separately so a diagnostic failure can
- * never block the real connect flow that calls this. Remove this whole
- * function (and its one call site in channels.service.ts's connectInstagram)
- * once the /access_token issue is understood/fixed.
- *
- * 1) Calls a DIFFERENT graph.instagram.com endpoint (versioned /me) with the
- *    SAME short-lived token, to test whether the token itself is usable at
- *    all — this deliberately does NOT go through instagramGraphFetch, which
- *    hits the UNVERSIONED host (see its comment above) — the whole point
- *    here is to test the versioned form specifically. Distinguishes "the
- *    /access_token endpoint itself is uniquely broken" from "the short-lived
- *    token is bad" as two separately-diagnosable failure modes.
- * 2) Logs the app secret's own byte length (never its value) — rules out
- *    truncation/env-loading issues a length check would catch.
- * 3) Attempts the exact same token exchange as a POST with a url-encoded
- *    body instead of GET+query-string, without touching
- *    exchangeInstagramLongLivedToken below — Meta has a track record (see
- *    the in2code-de/instagram#41 report on the sibling refresh_access_token
- *    endpoint) of silently flipping a documented-GET endpoint in this family
- *    to require POST.
- */
-export async function diagnoseInstagramTokenExchange(shortLivedToken: string): Promise<void> {
-  const { appSecret } = requireInstagramLoginConfigured();
-  console.log('[IG DIAG] client_secret length:', appSecret.length);
-
-  try {
-    const url = `https://graph.instagram.com/${env.META_GRAPH_VERSION}/me?fields=user_id,username&access_token=${encodeURIComponent(shortLivedToken)}`;
-    const res = await fetch(url);
-    const body = await res.text();
-    console.log('[IG DIAG] (1) versioned GET /me with short-lived token — status:', res.status, '| body:', body);
-  } catch (err) {
-    console.log('[IG DIAG] (1) versioned GET /me with short-lived token — THREW:', err instanceof Error ? err.message : String(err));
-  }
-
-  try {
-    const form = new URLSearchParams({
-      grant_type: 'ig_exchange_token',
-      client_secret: appSecret,
-      access_token: shortLivedToken,
-    });
-    const res = await fetch(`${INSTAGRAM_GRAPH_BASE}/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-    });
-    const body = await res.text();
-    console.log('[IG DIAG] (3) POST /access_token with url-encoded body — status:', res.status, '| body:', body);
-  } catch (err) {
-    console.log('[IG DIAG] (3) POST /access_token with url-encoded body — THREW:', err instanceof Error ? err.message : String(err));
-  }
-}
-
 /** Step 2 — short-lived Instagram Login token → long-lived (~60 day) token. */
-export async function exchangeInstagramLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string }> {
+export async function exchangeInstagramLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string; expiresIn: number }> {
   const { appSecret } = requireInstagramLoginConfigured();
   const params = new URLSearchParams({
     grant_type: 'ig_exchange_token',
     client_secret: appSecret,
     access_token: shortLivedToken,
   });
-  const data = await instagramGraphFetch<{ access_token: string }>(`/access_token?${params.toString()}`);
-  return { accessToken: data.access_token };
+  const data = await instagramGraphFetch<{ access_token: string; expires_in?: number }>(`/access_token?${params.toString()}`);
+  return { accessToken: data.access_token, expiresIn: data.expires_in ?? 60 * 24 * 3600 };
+}
+
+/**
+ * Renews a long-lived Instagram Login token for another ~60 days. Meta only
+ * allows it once the token is at least 24h old and not yet expired — so it
+ * runs periodically (see refreshInstagramTokens), well before expiry.
+ */
+export async function refreshInstagramLongLivedToken(accessToken: string): Promise<{ accessToken: string; expiresIn: number }> {
+  const params = new URLSearchParams({ grant_type: 'ig_refresh_token', access_token: accessToken });
+  const data = await instagramGraphFetch<{ access_token: string; expires_in?: number }>(`/refresh_access_token?${params.toString()}`);
+  return { accessToken: data.access_token, expiresIn: data.expires_in ?? 60 * 24 * 3600 };
+}
+
+/**
+ * Subscribes the connected Instagram account to this app's webhooks, so its
+ * DMs (and button taps, reactions, read receipts) reach the CRM for any
+ * agency that connects — not only accounts set up in the Meta app dashboard.
+ */
+export async function subscribeInstagramLoginWebhooks(accessToken: string): Promise<void> {
+  const fields = 'messages,messaging_postbacks,messaging_seen,message_reactions';
+  await instagramGraphFetch(`/${env.META_GRAPH_VERSION}/me/subscribed_apps?subscribed_fields=${fields}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 }
 
 /** Fetches the @username for display once we know which Instagram account is being connected — Instagram Login token variant of fetchInstagramUsername above. */

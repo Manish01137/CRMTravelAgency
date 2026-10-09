@@ -935,6 +935,8 @@ export interface BotFlow {
   triggerAdIds: string[];
   /** A returning customer who just says "hi" gets this flow again. */
   restartOnGreeting: boolean;
+  /** After the flow finishes, the AI assistant answers new requests (packages from the CRM, or hand-off). */
+  aiFollowUp: boolean;
   /** Channels the keyword / ad triggers apply to. */
   triggerChannels: ('WHATSAPP' | 'INSTAGRAM')[];
   createdAt: string;

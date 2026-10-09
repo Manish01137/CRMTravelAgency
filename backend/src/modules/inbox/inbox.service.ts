@@ -14,6 +14,12 @@ import type { WhatsAppCredentials, InstagramCredentials } from '../channels/chan
 import { LEAD_STAGES, type CreateTemplateInput, type ListConversationsQuery, type SendMessageInput, type StageCountsQuery } from './inbox.schemas';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Instagram: a normal reply within 24h of their last message; a team member's reply (HUMAN_AGENT tag) within 7 days. */
+const INSTAGRAM_WINDOW_MS = 24 * 60 * 60 * 1000;
+const INSTAGRAM_HUMAN_AGENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const INSTAGRAM_WINDOW_HELP =
+  "Instagram only allows replies within 24 hours of the customer's last message (up to 7 days for a team member's reply, if your Meta app has the Human Agent feature). Ask them to message you again — then you can reply.";
+
 
 /** The chat's lead as the Inbox shows it: stage, tags and who it's assigned to. */
 const CONVERSATION_LEAD_SELECT = {
@@ -23,6 +29,12 @@ const CONVERSATION_LEAD_SELECT = {
   assignedToId: true,
   assignedTo: { select: { id: true, name: true } },
 } as const;
+
+/** Instagram's own "sent outside of allowed window" error, in words the agent can act on. */
+function explainInstagramWindow(err: unknown): never {
+  if (err instanceof Error && /allowed window|outside.*window|human.?agent/i.test(err.message)) throw BadRequest(INSTAGRAM_WINDOW_HELP);
+  throw err;
+}
 
 /** There's no separate "media kind" column on Message — a document attachment
  *  is just a mediaUrl that happens to end in .pdf, same as everything else
@@ -136,6 +148,13 @@ export async function sendMessage(
       throw BadRequest('This conversation is outside the 24-hour window — send an approved template instead');
     }
 
+    // Instagram has no templates: past 24h only a team member's reply (HUMAN_AGENT tag) is allowed, for 7 days.
+    const igSinceInbound = conversation.lastInboundAt ? Date.now() - conversation.lastInboundAt.getTime() : Infinity;
+    if (conversation.channel === 'INSTAGRAM' && igSinceInbound > INSTAGRAM_HUMAN_AGENT_WINDOW_MS) {
+      throw BadRequest(INSTAGRAM_WINDOW_HELP);
+    }
+    const igOptions = { humanAgent: conversation.channel === 'INSTAGRAM' && igSinceInbound > INSTAGRAM_WINDOW_MS };
+
     const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : (input.body ?? '');
 
     try {
@@ -175,10 +194,10 @@ export async function sendMessage(
           // Instagram's attachment message has no caption field — any typed
           // text alongside a photo is dropped rather than silently sent as a
           // separate, unlabeled second message.
-          const sent = await sendInstagramImage(creds.igUserId, creds.accessToken, conversation.externalContactId, input.mediaUrl);
+          const sent = await sendInstagramImage(creds.igUserId, creds.accessToken, conversation.externalContactId, input.mediaUrl, igOptions).catch(explainInstagramWindow);
           externalMessageId = sent.externalMessageId;
         } else {
-          const sent = await sendInstagramText(creds.igUserId, creds.accessToken, conversation.externalContactId, input.body!);
+          const sent = await sendInstagramText(creds.igUserId, creds.accessToken, conversation.externalContactId, input.body!, igOptions).catch(explainInstagramWindow);
           externalMessageId = sent.externalMessageId;
         }
       }

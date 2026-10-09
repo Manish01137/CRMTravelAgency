@@ -293,14 +293,99 @@ export async function launchWhatsAppEmbeddedSignup(appId: string, configId: stri
 }
 
 /** Builds the Instagram Login (Business Login for Instagram) OAuth URL. Redirect flow — no popup/JS SDK, same pattern as before but a different host and scope set than classic Facebook Login. */
-export function buildInstagramAuthUrl(appId: string, redirectUri: string): string {
+export function buildInstagramAuthUrl(appId: string, redirectUri: string, state?: string): string {
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments',
+    ...(state ? { state } : {}),
   });
   return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+}
+
+// --- Instagram "embedded" connect: Instagram Login in a popup ---------------
+//
+// Opens Instagram's login in a popup; the popup lands on
+// InstagramCallbackPage, which hands the code back to this window and
+// closes. The hand-back goes over a BroadcastChannel (same origin), NOT
+// window.opener — instagram.com can cut the opener link (COOP), which would
+// leave the popup unable to reach us. `state` is a one-time value checked on
+// return, so a forged callback link can't connect someone else's account.
+
+export const IG_OAUTH_CHANNEL = 'joinetra-instagram-oauth';
+const IG_POPUP_STATE_KEY = 'ig_oauth_popup_state';
+const IG_REDIRECT_STATE_KEY = 'ig_oauth_state';
+
+export interface InstagramOAuthMessage {
+  state: string;
+  code?: string;
+  error?: string;
+}
+
+function safeStorage(kind: 'local' | 'session'): Storage | null {
+  try {
+    return kind === 'local' ? window.localStorage : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** The state this tab is waiting on in a popup, if any (read by the callback page). */
+export function pendingInstagramPopupState(): string | null {
+  return safeStorage('local')?.getItem(IG_POPUP_STATE_KEY) ?? null;
+}
+
+/** The state of a full-page (non-popup) Instagram login started from this tab. */
+export function pendingInstagramRedirectState(): string | null {
+  return safeStorage('session')?.getItem(IG_REDIRECT_STATE_KEY) ?? null;
+}
+
+/**
+ * Runs Instagram Login in a popup and resolves with the authorization code.
+ * Resolves `null` when the browser blocked the popup — the caller then falls
+ * back to a full-page redirect (see startInstagramRedirect).
+ */
+export function launchInstagramLoginPopup(appId: string): Promise<{ code: string } | null> {
+  const state = crypto.randomUUID();
+  const width = 520;
+  const height = 720;
+  const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+  const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+  safeStorage('local')?.setItem(IG_POPUP_STATE_KEY, state);
+  const popup = window.open(
+    buildInstagramAuthUrl(appId, instagramRedirectUri(), state),
+    'instagram-login',
+    `popup=yes,width=${width},height=${height},left=${Math.round(left)},top=${Math.round(top)}`,
+  );
+  if (!popup) {
+    safeStorage('local')?.removeItem(IG_POPUP_STATE_KEY);
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    const channel = new BroadcastChannel(IG_OAUTH_CHANNEL);
+    const timer = window.setTimeout(() => finish(new Error('Instagram login timed out — try again')), 10 * 60 * 1000);
+    function finish(result: Error | { code: string }) {
+      window.clearTimeout(timer);
+      channel.close();
+      safeStorage('local')?.removeItem(IG_POPUP_STATE_KEY);
+      if (result instanceof Error) reject(result);
+      else resolve(result);
+    }
+    channel.onmessage = (event: MessageEvent<InstagramOAuthMessage>) => {
+      const msg = event.data;
+      if (!msg || msg.state !== state) return; // someone else's login
+      if (msg.code) finish({ code: msg.code });
+      else finish(new Error(msg.error || 'Instagram login was cancelled'));
+    };
+  });
+}
+
+/** Full-page fallback when popups are blocked — returns to InstagramCallbackPage, which finishes the connection. */
+export function startInstagramRedirect(appId: string): void {
+  const state = crypto.randomUUID();
+  safeStorage('session')?.setItem(IG_REDIRECT_STATE_KEY, state);
+  window.location.href = buildInstagramAuthUrl(appId, instagramRedirectUri(), state);
 }
 
 export function instagramRedirectUri(): string {

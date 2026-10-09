@@ -785,6 +785,7 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
   const [keywordMatch, setKeywordMatch] = useState(flow.keywordMatch ?? 'contains');
   const [triggerAdIds, setTriggerAdIds] = useState(flow.triggerAdIds ?? []);
   const [restartOnGreeting, setRestartOnGreeting] = useState(flow.restartOnGreeting ?? true);
+  const [aiFollowUp, setAiFollowUp] = useState(flow.aiFollowUp ?? true);
   const [triggerChannels, setTriggerChannels] = useState<('WHATSAPP' | 'INSTAGRAM')[]>(flow.triggerChannels ?? ['WHATSAPP', 'INSTAGRAM']);
 
   useEffect(() => {
@@ -796,6 +797,7 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
     setKeywordMatch(flow.keywordMatch ?? 'contains');
     setTriggerAdIds(flow.triggerAdIds ?? []);
     setRestartOnGreeting(flow.restartOnGreeting ?? true);
+    setAiFollowUp(flow.aiFollowUp ?? true);
     setTriggerChannels(flow.triggerChannels ?? ['WHATSAPP', 'INSTAGRAM']);
   }, [flow]);
 
@@ -810,6 +812,7 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
         keywordMatch,
         triggerAdIds,
         restartOnGreeting,
+        aiFollowUp,
         triggerChannels,
       }),
     onSuccess: () => {
@@ -918,6 +921,19 @@ function FlowSettingsDialog({ flow, open, onOpenChange }: { flow: BotFlowDetail;
               </p>
             </div>
             <Switch checked={restartOnGreeting} onCheckedChange={setRestartOnGreeting} aria-label="Start again when they say hi" />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <Sparkles className="size-3.5 text-primary" /> AI assistant after the flow ends
+              </p>
+              <p className="text-xs text-muted-foreground">
+                When the flow has finished and they write something new (“4 of us, Manali on 26 Nov, send the package”), AI saves the details to the lead and
+                sends your matching packages. No matching package, or a question it can’t answer from your package details — it replies politely and hands
+                the chat to your team. “Ok” and “thanks” get no reply.
+              </p>
+            </div>
+            <Switch checked={aiFollowUp} onCheckedChange={setAiFollowUp} aria-label="AI assistant after the flow ends" />
           </div>
           <Field label="Fallback message" htmlFor="fsFallback" hint="Shown when the bot doesn't understand a reply.">
             <Textarea id="fsFallback" rows={2} value={fallbackMessage} onChange={(e) => setFallbackMessage(e.target.value)} />

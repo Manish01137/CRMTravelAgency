@@ -242,6 +242,109 @@ Reply naturally as the agent (plain text, no markdown), then decide whether this
   });
 }
 
+// --- Bot Flow: AI follow-up after a flow has finished -----------------------
+
+export interface CatalogPackage {
+  id: string;
+  name: string;
+  destination: string;
+  days: number;
+  nights: number;
+  price: string;
+  summary: string;
+}
+
+export interface FollowUpResult {
+  /** package: they want a trip/package · question: about a trip, price, booking · other: thanks / ok / small talk */
+  intent: 'package' | 'question' | 'other';
+  /** Catalogue ids that fit what they asked for (only ids from the catalogue). */
+  packageIds: string[];
+  /** Message to send now — empty for "other". */
+  reply: string;
+  /** True when a person on the team needs to take over (no fitting package, can't answer from the facts). */
+  handoff: boolean;
+  lead: { name?: string; destination?: string; travelDate?: string; travelerCount?: number; email?: string };
+}
+
+/**
+ * After a Bot Flow has finished, reads the traveller's new message against the
+ * agency's own package catalogue: picks matching packages, writes a short
+ * reply grounded ONLY in the catalogue and agency facts, and flags when a
+ * person should take over. Never invents packages, prices or inclusions.
+ */
+export async function runFollowUpAssistant(
+  apiKey: string,
+  model: string,
+  persona: { systemPrompt: string | null; agencyFacts: string | null; tone: string | null },
+  catalog: CatalogPackage[],
+  history: ConversationTurn[],
+  latestMessage: string,
+): Promise<FollowUpResult> {
+  return fail(async () => {
+    const genModel = client(apiKey).getGenerativeModel({
+      model,
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+    });
+    const transcript = history
+      .slice(-12)
+      .map((t) => `${t.direction === 'INBOUND' ? 'Traveller' : 'Agency'}: ${t.body.slice(0, 400)}`)
+      .join('\n');
+    const catalogText = catalog.length
+      ? catalog.map((p) => `- id=${p.id} | ${p.name} | ${p.destination} | ${p.days}D/${p.nights}N | ${p.price} | ${p.summary}`).join('\n')
+      : '(no packages)';
+    const prompt = `${personaPreamble(persona.systemPrompt, persona.agencyFacts, persona.tone)}
+
+You are the agency's WhatsApp/Instagram assistant. Today is ${new Date().toISOString().slice(0, 10)}.
+The agency's packages (the ONLY trips you may offer):
+${catalogText}
+
+Recent conversation:
+${transcript || '(none)'}
+Traveller: ${latestMessage}
+
+Decide what the traveller wants and return ONLY JSON:
+{"intent": "package" | "question" | "other",
+ "packageIds": ["ids from the list above that fit, best first, at most 5"],
+ "reply": "short friendly message to send now, plain text, 1-3 sentences, same language as the traveller",
+ "handoff": true or false,
+ "lead": {"name": "", "destination": "", "travelDate": "YYYY-MM-DD", "travelerCount": 0, "email": ""}}
+
+Rules:
+- Decide from the traveller's LATEST message only; earlier messages are just context. "Thanks", "ok", "great" after packages were sent is intent "other" — never send the same packages again unless they ask again.
+- intent "package": they want a trip, package, itinerary or prices for a place. Put the fitting package ids in packageIds — match by destination or name, also nearby/obvious matches (e.g. Kasol for Manali only if the package mentions it). The packages are sent right after your reply, so the reply just introduces them (e.g. "Here's our Manali package for your group of 4 👇") — don't repeat prices or details.
+- If nothing in the list fits, packageIds is [], the reply apologises that there's no ready package for that place right now and says the team will get back to them shortly, and handoff is true.
+- intent "question": answer ONLY from the package details and agency facts above. If the answer isn't there, say the team will confirm shortly and set handoff true. Never invent prices, dates, inclusions or availability.
+- intent "other": thanks, ok, emojis, small talk — reply is "" and handoff false.
+- lead: only details the traveller actually stated; leave others empty. A date without a year means its next occurrence from today.`;
+    const result = await genModel.generateContent(prompt);
+    const raw = result.response.text();
+    let parsed: Partial<FollowUpResult> & { lead?: Record<string, unknown> };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : {};
+    }
+    const known = new Set(catalog.map((p) => p.id));
+    const lead = (parsed.lead ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const count = Number(lead.travelerCount);
+    return {
+      intent: parsed.intent === 'package' || parsed.intent === 'question' ? parsed.intent : 'other',
+      packageIds: (Array.isArray(parsed.packageIds) ? parsed.packageIds : []).filter((id): id is string => typeof id === 'string' && known.has(id)).slice(0, 5),
+      reply: typeof parsed.reply === 'string' ? parsed.reply.trim().slice(0, 1000) : '',
+      handoff: !!parsed.handoff,
+      lead: {
+        name: str(lead.name),
+        destination: str(lead.destination),
+        travelDate: str(lead.travelDate),
+        travelerCount: Number.isFinite(count) && count > 0 ? Math.round(count) : undefined,
+        email: str(lead.email),
+      },
+    };
+  });
+}
+
 // --- Smart Bot: tool routing (function calling) ------------------------------
 
 export interface BotToolCall {
