@@ -460,13 +460,55 @@ export async function sendWhatsAppCarousel(
   return { externalMessageId: data.messages[0].id };
 }
 
+export interface TemplateBodyVariable {
+  /** "1" for {{1}}, "customer_name" for {{customer_name}}. */
+  key: string;
+  /** Named ({{customer_name}}) vs numbered ({{1}}) — Meta needs parameter_name only for named ones. */
+  named: boolean;
+}
+
+/**
+ * The {{...}} placeholders in a template body, in the order Meta expects their
+ * values: numbered ones by number ({{1}}, {{2}}, …), named ones in order of
+ * first appearance. A placeholder used twice is one variable.
+ */
+export function templateBodyVariables(bodyText: string): TemplateBodyVariable[] {
+  const found = new Map<string, TemplateBodyVariable>();
+  for (const m of bodyText.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)) {
+    if (!found.has(m[1])) found.set(m[1], { key: m[1], named: !/^\d+$/.test(m[1]) });
+  }
+  const variables = [...found.values()];
+  return variables.every((v) => !v.named) ? variables.sort((a, b) => Number(a.key) - Number(b.key)) : variables;
+}
+
+/**
+ * Sends an approved template. A body with variables needs one value per
+ * variable (bodyParams, in templateBodyVariables order) or Meta rejects it with
+ * #132000; for named variables pass their names in bodyParamNames (null for
+ * numbered ones). Templates without variables send exactly as before.
+ */
 export async function sendWhatsAppTemplate(
   phoneNumberId: string,
   accessToken: string,
   to: string,
   templateName: string,
   language: string,
+  bodyParams: string[] = [],
+  bodyParamNames: (string | null)[] = [],
 ): Promise<{ externalMessageId: string }> {
+  const template: Record<string, unknown> = { name: templateName, language: { code: language } };
+  if (bodyParams.length > 0) {
+    template.components = [
+      {
+        type: 'body',
+        parameters: bodyParams.map((text, i) => ({
+          type: 'text',
+          text,
+          ...(bodyParamNames[i] ? { parameter_name: bodyParamNames[i] } : {}),
+        })),
+      },
+    ];
+  }
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -474,7 +516,7 @@ export async function sendWhatsAppTemplate(
       messaging_product: 'whatsapp',
       to,
       type: 'template',
-      template: { name: templateName, language: { code: language } },
+      template,
     }),
   });
   return { externalMessageId: data.messages[0].id };

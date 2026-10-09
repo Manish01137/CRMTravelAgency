@@ -5,6 +5,7 @@ import {
   sendWhatsAppImage,
   sendWhatsAppDocument,
   sendWhatsAppTemplate,
+  templateBodyVariables,
   sendInstagramText,
   sendInstagramImage,
   createWhatsAppTemplate,
@@ -166,7 +167,23 @@ export async function sendMessage(
             where: { organizationId, name: input.templateName, status: 'APPROVED' },
           });
           if (!template) throw BadRequest('That template was not found or is not yet approved');
-          const sent = await sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, template.name, template.language);
+          // Fill the template's variables: the first one is the contact's name.
+          // Other values aren't guessed — a template needing more is refused.
+          const variables = templateBodyVariables(template.bodyText);
+          if (variables.length > 1) {
+            throw BadRequest(`This template needs ${variables.length} values; only the contact name is supported right now`);
+          }
+          const bodyParams = variables.length === 1 ? [conversation.contactName?.trim() || 'there'] : [];
+          const bodyParamNames = variables.map((v) => (v.named ? v.key : null));
+          const sent = await sendWhatsAppTemplate(
+            creds.phoneNumberId,
+            creds.accessToken,
+            conversation.externalContactId,
+            template.name,
+            template.language,
+            bodyParams,
+            bodyParamNames,
+          );
           externalMessageId = sent.externalMessageId;
         } else if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
           const sent = await sendWhatsAppDocument(

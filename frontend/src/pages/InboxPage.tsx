@@ -93,6 +93,21 @@ function documentNameFromUrl(url: string): string {
   return decodeURIComponent(withoutQuery.replace(/^\d+-[0-9a-f]+-/, '')) || 'document.pdf';
 }
 
+/**
+ * The template as the customer will read it: the first {{...}} placeholder —
+ * braces included — becomes the contact's name, the same value the server
+ * sends ("there" when there's no name). Mirrors templateBodyVariables in
+ * backend/src/lib/meta.ts: numbered placeholders go by number, named ones by
+ * first appearance.
+ */
+function fillTemplatePreview(bodyText: string, contactName: string | null | undefined): string {
+  const keys = [...new Set(Array.from(bodyText.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g), (m) => m[1]))];
+  if (keys.length === 0) return bodyText;
+  const first = keys.every((k) => /^\d+$/.test(k)) ? [...keys].sort((a, b) => Number(a) - Number(b))[0] : keys[0];
+  const name = contactName?.trim() || 'there';
+  return bodyText.replace(new RegExp(`\\{\\{\\s*${first}\\s*\\}\\}`, 'g'), name);
+}
+
 function statusIcon(status: ChannelMessage['status'], whatsapp: boolean) {
   const dim = whatsapp ? 'text-black/40' : 'text-white/70';
   const read = whatsapp ? 'text-sky-600' : 'text-sky-300';
@@ -376,7 +391,7 @@ export function InboxPage() {
   const pickTemplate = (name: string) => {
     const tpl = approvedTemplates.find((t) => t.name === name);
     setTemplateName(name);
-    setDraft(tpl?.bodyText ?? '');
+    setDraft(tpl ? fillTemplatePreview(tpl.bodyText, selected?.contactName) : '');
   };
 
   return (
