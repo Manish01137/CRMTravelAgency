@@ -21,18 +21,39 @@ function isModelUnavailable(err: unknown): boolean {
   return /\[(404|429|500|503)\b|not found|no longer available|high demand|overloaded|unavailable/i.test(message);
 }
 
+/**
+ * Thinking (the model's hidden reasoning) is billed as output and was ~90% of
+ * the cost of the bot's small tasks — reading an answer, yes/no, picking a
+ * package — with the same result without it (measured). `fast` turns it off
+ * (thinkingBudget 0); a model that doesn't accept that (e.g. flash-lite, which
+ * doesn't think by default) is asked again without it.
+ */
+const MINIMAL_THINKING = { thinkingConfig: { thinkingBudget: 0 } };
+const isThinkingConfigRejected = (err: unknown) =>
+  err instanceof Error && /\[400\b/.test(err.message) && /invalid argument|thinking/i.test(err.message);
+
 /** Same shape as the SDK's client, but generateContent falls back across models. */
 export function geminiClient(apiKey: string) {
   const ai = new GoogleGenerativeAI(apiKey);
   return {
-    getGenerativeModel(params: ModelParams) {
+    getGenerativeModel(params: ModelParams & { fast?: boolean }) {
+      const { fast, ...modelParams } = params;
       return {
         async generateContent(request: Parameters<GenerativeModel['generateContent']>[0]) {
-          const models = [params.model, ...FALLBACK_MODELS.filter((m) => m !== params.model)];
+          const models = [modelParams.model, ...FALLBACK_MODELS.filter((m) => m !== modelParams.model)];
           let lastError: unknown;
           for (const model of models) {
             try {
-              return await ai.getGenerativeModel({ ...params, model }).generateContent(request);
+              if (fast) {
+                // The SDK passes generationConfig through as-is; its types just predate thinkingConfig.
+                const generationConfig = { ...modelParams.generationConfig, ...MINIMAL_THINKING } as ModelParams['generationConfig'];
+                try {
+                  return await ai.getGenerativeModel({ ...modelParams, model, generationConfig }).generateContent(request);
+                } catch (err) {
+                  if (!isThinkingConfigRejected(err)) throw err;
+                }
+              }
+              return await ai.getGenerativeModel({ ...modelParams, model }).generateContent(request);
             } catch (err) {
               lastError = err;
               if (!isModelUnavailable(err)) throw err;
@@ -97,6 +118,7 @@ export async function extractLeadFields(apiKey: string, model: string, message: 
   return fail(async () => {
     const genModel = client(apiKey).getGenerativeModel({
       model,
+      fast: true,
       tools: [{ functionDeclarations: [extractLeadFieldsDeclaration] }],
     });
     const result = await genModel.generateContent(
@@ -172,6 +194,7 @@ export async function classifyYesNo(apiKey: string, model: string, question: str
   return fail(async () => {
     const genModel = client(apiKey).getGenerativeModel({
       model,
+      fast: true,
       generationConfig: { responseMimeType: 'application/json', temperature: 0 },
     });
     const prompt = `Question asked: "${question}"\nTraveller's reply: "${reply}"\n\nDoes the reply mean yes or no? Return ONLY JSON: {"answer": "yes" | "no" | "unclear"}`;
@@ -211,6 +234,7 @@ export async function runOpenStep(
   return fail(async () => {
     const genModel = client(apiKey).getGenerativeModel({
       model,
+      fast: true,
       generationConfig: { responseMimeType: 'application/json', temperature: 0.6 },
     });
     const transcript = history
@@ -251,7 +275,8 @@ export interface CatalogPackage {
   days: number;
   nights: number;
   price: string;
-  summary: string;
+  /** Full details — only for the packages the conversation is about; the rest are one line each. */
+  summary?: string;
 }
 
 export interface FollowUpResult {
@@ -283,6 +308,7 @@ export async function runFollowUpAssistant(
   return fail(async () => {
     const genModel = client(apiKey).getGenerativeModel({
       model,
+      fast: true,
       generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
     });
     const transcript = history
@@ -290,12 +316,12 @@ export async function runFollowUpAssistant(
       .map((t) => `${t.direction === 'INBOUND' ? 'Traveller' : 'Agency'}: ${t.body.slice(0, 400)}`)
       .join('\n');
     const catalogText = catalog.length
-      ? catalog.map((p) => `- id=${p.id} | ${p.name} | ${p.destination} | ${p.days}D/${p.nights}N | ${p.price} | ${p.summary}`).join('\n')
+      ? catalog.map((p) => `- ${p.id} | ${p.name} | ${p.destination} | ${p.days}D/${p.nights}N | ${p.price}${p.summary ? ` | ${p.summary}` : ''}`).join('\n')
       : '(no packages)';
     const prompt = `${personaPreamble(persona.systemPrompt, persona.agencyFacts, persona.tone)}
 
 You are the agency's WhatsApp/Instagram assistant. Today is ${new Date().toISOString().slice(0, 10)}.
-The agency's packages (the ONLY trips you may offer):
+The agency's packages (the ONLY trips you may offer; the first value is the package id — some lines include details, the rest are one-line summaries, and you may only state inclusions/details that are written here):
 ${catalogText}
 
 Recent conversation:
@@ -311,7 +337,7 @@ Decide what the traveller wants and return ONLY JSON:
 
 Rules:
 - Decide from the traveller's LATEST message only; earlier messages are just context. "Thanks", "ok", "great" after packages were sent is intent "other" — never send the same packages again unless they ask again.
-- intent "package": they want a trip, package, itinerary or prices for a place. Put the fitting package ids in packageIds — match by destination or name, also nearby/obvious matches (e.g. Kasol for Manali only if the package mentions it). The packages are sent right after your reply, so the reply just introduces them (e.g. "Here's our Manali package for your group of 4 👇") — don't repeat prices or details.
+- intent "package": they want a trip, package, itinerary or prices for a place or kind of trip. Put the fitting package ids in packageIds — match by destination or name, and use your general knowledge of places for themes (desert → Jaisalmer, beach → Goa/Andaman, snow → Manali/Kashmir, honeymoon, hills, pilgrimage…), also nearby/obvious matches (e.g. Kasol for Manali only if the package mentions it). The packages are sent right after your reply, so the reply just introduces them (e.g. "Here's our Manali package for your group of 4 👇") — don't repeat prices or details.
 - If nothing in the list fits, packageIds is [], the reply apologises that there's no ready package for that place right now and says the team will get back to them shortly, and handoff is true.
 - intent "question": answer ONLY from the package details and agency facts above. If the answer isn't there, say the team will confirm shortly and set handoff true. Never invent prices, dates, inclusions or availability.
 - intent "other": thanks, ok, emojis, small talk — reply is "" and handoff false.
@@ -371,6 +397,7 @@ export async function classifyBotIntent(
   return fail(async () => {
     const genModel = client(apiKey).getGenerativeModel({
       model,
+      fast: true,
       tools: [{ functionDeclarations: toolDeclarations }],
     });
     const context = packageNames.length

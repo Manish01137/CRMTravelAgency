@@ -38,6 +38,7 @@ export async function runAiFollowUp(
 ): Promise<void> {
   try {
     if (isPlaceholderBody(messageBody) || !messageBody.trim()) return; // voice note / sticker / reaction
+    if (isAcknowledgement(messageBody)) return; // "ok", "thanks", 👍 — nothing to answer, no AI call
     if (Date.now() - messageCreatedAt.getTime() > START_WINDOW_MS) return; // too old to reply to
 
     const loaded = await withTenant(organizationId, async (tx) => {
@@ -71,26 +72,42 @@ export async function runAiFollowUp(
     const agent = await loadAgentContext(organizationId).catch(() => null);
     let result: FollowUpResult | null = null;
     if (agent) {
-      const catalog: CatalogPackage[] = packages.map((p) => ({
-        id: p.id,
+      const history = loaded.recent
+        .filter((m) => m.body && m.createdAt < messageCreatedAt)
+        .map((m) => ({ direction: m.direction, body: m.body as string }));
+      // Only what the AI needs (the input is most of the cost):
+      //  - this message names packages/places → only those, with full details;
+      //  - otherwise → packages the last few messages were about (e.g. a
+      //    question about the one just sent) with details, plus every other
+      //    package on one line (name, place, days, price, a few words) so a
+      //    theme like "desert trips" still finds Jaisalmer.
+      // Short ids (P1, P2…) instead of 36-character ids, mapped back below.
+      const named = matchPackagesInText(messageBody, packages).slice(0, 5);
+      const discussed = named.length > 0 ? [] : matchPackagesInText(history.slice(-4).map((t) => t.body).join('\n'), packages).slice(0, 3);
+      const detailed = new Set([...named, ...discussed].map((p) => p.id));
+      const inCatalog = named.length > 0 ? named : [...discussed, ...packages.filter((p) => !detailed.has(p.id))];
+      const shortIds = new Map(inCatalog.map((p, i) => [`P${i + 1}`, p.id]));
+      const catalog: CatalogPackage[] = inCatalog.map((p, i) => ({
+        id: `P${i + 1}`,
         name: p.name,
         destination: p.destination,
         days: p.days,
         nights: p.nights,
         price: p.priceAmount ? money(p.priceAmount, p.priceCurrency) : 'price on request',
-        summary: [p.whatsappDescription || p.description, p.inclusions && `Includes: ${p.inclusions.replace(/\n+/g, ', ')}`]
-          .filter(Boolean)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .slice(0, 300),
+        summary: detailed.has(p.id)
+          ? [p.whatsappDescription || p.description, p.inclusions && `Includes: ${p.inclusions.replace(/\n+/g, ', ')}`]
+              .filter(Boolean)
+              .join(' ')
+              .replace(/\s+/g, ' ')
+              .slice(0, 300)
+          : clipWords(p.whatsappDescription || p.description || '', 60),
       }));
-      const history = loaded.recent
-        .filter((m) => m.body && m.createdAt < messageCreatedAt)
-        .map((m) => ({ direction: m.direction, body: m.body as string }));
-      result = await runFollowUpAssistant(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, catalog, history, messageBody).catch((err) => {
-        console.error('[bot-flow] AI follow-up failed, using package-name matching:', err instanceof Error ? err.message : err);
-        return null;
-      });
+      result = await runFollowUpAssistant(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, catalog, history, messageBody)
+        .then((r) => ({ ...r, packageIds: r.packageIds.map((id) => shortIds.get(id)).filter((id): id is string => !!id) }))
+        .catch((err) => {
+          console.error('[bot-flow] AI follow-up failed, using package-name matching:', err instanceof Error ? err.message : err);
+          return null;
+        });
     }
 
     if (!result) {
@@ -127,6 +144,24 @@ export async function runAiFollowUp(
       tx.botFlowSession.updateMany({ where: { id: sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }),
     ).catch(() => undefined);
   }
+}
+
+/** The first ~max characters, ending on a whole word. */
+function clipWords(text: string, max: number): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return cut.slice(0, Math.max(cut.lastIndexOf(' '), 0) || max);
+}
+
+// "ok", "thanks", "👍", "ok thank you sir", "theek hai" — acknowledgements, not requests.
+const ACK_WORDS = new Set(
+  'ok okay okk k kk okie fine thanks thank thanku thankyou thx ty you so much very great nice cool done sure alright noted perfect awesome good hmm hm haan ha han ji sir madam mam bhai theek thik hai accha achha acha shukriya dhanyavad welcome bye got it'.split(' '),
+);
+function isAcknowledgement(message: string): boolean {
+  const words = message.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true; // only emojis / punctuation
+  return words.length <= 6 && words.every((w) => ACK_WORDS.has(w.replace(/(.)\1{2,}/g, '$1$1')));
 }
 
 async function sendText(organizationId: string, channel: 'WHATSAPP' | 'INSTAGRAM', to: string, conversationId: string, text: string) {
