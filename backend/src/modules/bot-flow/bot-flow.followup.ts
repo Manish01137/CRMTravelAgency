@@ -114,7 +114,12 @@ export async function runAiFollowUp(
       // No AI (no key, or it failed): packages named in the message still go out.
       const named = matchPackagesInText(messageBody, packages);
       if (named.length > 0) result = { intent: 'package', packageIds: named.slice(0, 5).map((p) => p.id), reply: '', handoff: false, lead: {} };
-      else return;
+      else if (agent) {
+        // The AI was supposed to answer but couldn't (quota, outage): never
+        // leave them unanswered — a holding reply (at most every 6h) and a flag for the team.
+        await sendHoldingReply(organizationId, channel, to, conversationId, conversation.leadId, messageBody);
+        return;
+      } else return;
     }
 
     if (conversation.leadId) await saveLeadDetails(organizationId, conversation.leadId, result.lead);
@@ -130,14 +135,13 @@ export async function runAiFollowUp(
       await sendText(organizationId, channel, to, conversationId, result.reply);
     }
 
-    if (result.handoff) {
+    if (result.handoff && conversation.leadId) {
+      // Flag it for the team — but keep answering: the AI only steps back once
+      // a teammate actually replies in this chat (see bot-flow.engine.ts).
       const reason = `AI assistant: ${result.intent === 'package' ? 'no matching package' : "couldn't answer from the package details"} — "${messageBody.slice(0, 120)}"`;
-      await withTenant(organizationId, async (tx) => {
-        await tx.botFlowSession.update({ where: { id: sessionId }, data: { status: 'NEEDS_REVIEW' } });
-        if (conversation.leadId) {
-          await tx.lead.updateMany({ where: { id: conversation.leadId, organizationId }, data: { needsReview: true, needsReviewReason: reason } });
-        }
-      });
+      await withTenant(organizationId, (tx) =>
+        tx.lead.updateMany({ where: { id: conversation.leadId!, organizationId }, data: { needsReview: true, needsReviewReason: reason } }),
+      );
     }
   } finally {
     await withTenant(organizationId, (tx) =>
@@ -162,6 +166,34 @@ function isAcknowledgement(message: string): boolean {
   const words = message.toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
   if (words.length === 0) return true; // only emojis / punctuation
   return words.length <= 6 && words.every((w) => ACK_WORDS.has(w.replace(/(.)\1{2,}/g, '$1$1')));
+}
+
+const HOLDING_REPLY = 'Thanks for your message! Our team will get back to you shortly 🙏';
+const HOLDING_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
+
+async function sendHoldingReply(
+  organizationId: string,
+  channel: 'WHATSAPP' | 'INSTAGRAM',
+  to: string,
+  conversationId: string,
+  leadId: string | null,
+  messageBody: string,
+): Promise<void> {
+  const recentlySent = await withTenant(organizationId, (tx) =>
+    tx.message.findFirst({
+      where: { conversationId, direction: 'OUTBOUND', body: HOLDING_REPLY, createdAt: { gte: new Date(Date.now() - HOLDING_REPLY_EVERY_MS) } },
+      select: { id: true },
+    }),
+  );
+  if (!recentlySent) await sendText(organizationId, channel, to, conversationId, HOLDING_REPLY);
+  if (leadId) {
+    await withTenant(organizationId, (tx) =>
+      tx.lead.updateMany({
+        where: { id: leadId, organizationId },
+        data: { needsReview: true, needsReviewReason: `AI assistant unavailable — please reply: "${messageBody.slice(0, 120)}"` },
+      }),
+    );
+  }
 }
 
 async function sendText(organizationId: string, channel: 'WHATSAPP' | 'INSTAGRAM', to: string, conversationId: string, text: string) {

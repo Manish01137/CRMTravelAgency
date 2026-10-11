@@ -73,7 +73,8 @@ async function scanChannel(organizationId: string, channel: 'WHATSAPP' | 'INSTAG
     // Cheap pre-checks so chats no flow applies to aren't loaded every 10s.
     // A finished or teammate-owned chat only wakes the bot with a keyword or "hi".
     const greeting = !!chooseFlowForGreeting(routing, body, session?.flowId ?? null, latestInbound.createdAt);
-    if (session?.status === 'NEEDS_REVIEW' && !greeting) continue;
+    // Handed over: "hi", or the AI assistant (it checks whether a teammate is replying).
+    if (session?.status === 'NEEDS_REVIEW' && !greeting && !routing.aiFollowUp.has(session.flowId)) continue;
     if (
       session?.status === 'COMPLETED' &&
       !greeting &&

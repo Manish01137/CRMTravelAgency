@@ -44,6 +44,8 @@ export interface FlowRouting {
 
 /** Mid-flow, "hi" restarts only after this much silence — otherwise it may be an answer. */
 export const ACTIVE_RESTART_QUIET_MS = 30 * 60 * 1000;
+/** After a teammate replies, the AI assistant leaves the chat to them for this long. */
+export const TEAMMATE_ACTIVE_MS = 12 * 60 * 60 * 1000;
 /** A chat a teammate took over restarts only after a day of silence. */
 export const HANDOFF_RESTART_QUIET_MS = 24 * 60 * 60 * 1000;
 

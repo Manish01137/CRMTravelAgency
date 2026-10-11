@@ -24,6 +24,9 @@ import {
   Sparkles,
   Star,
   X,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -136,18 +139,51 @@ function StagePill({ status, className }: { status: LeadStatus; className?: stri
   );
 }
 
+type InboxView = 'normal' | 'full' | 'compact';
+const INBOX_VIEW_KEY = 'inbox_view';
+
+const VIEW_OPTIONS: { key: InboxView; label: string; icon: typeof Maximize2 }[] = [
+  { key: 'compact', label: 'Compact chat list', icon: PanelLeftClose },
+  { key: 'normal', label: 'Normal view', icon: Minimize2 },
+  { key: 'full', label: 'Full screen', icon: Maximize2 },
+];
+
 function ConversationRow({
   c,
   active,
   onClick,
   onToggleFavorite,
+  compact,
 }: {
   c: Conversation;
   active: boolean;
   onClick: () => void;
   onToggleFavorite: () => void;
+  compact?: boolean;
 }) {
   const label = c.contactName || c.contactPhone || c.externalContactId;
+  if (compact) {
+    // Compact list: just the picture, with the unread count on it.
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${label}${c.lastMessagePreview ? ` — ${c.lastMessagePreview}` : ''}`}
+        aria-label={label}
+        className={cn('relative flex w-full justify-center border-b border-border py-2.5 transition-colors hover:bg-muted/60', active && 'bg-primary/10')}
+      >
+        <Avatar>
+          {c.contactAvatarUrl && <AvatarImage src={c.contactAvatarUrl} alt="" />}
+          <AvatarFallback>{initials(label)}</AvatarFallback>
+        </Avatar>
+        {c.unreadCount > 0 && (
+          <span className="absolute right-2.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+            {c.unreadCount > 9 ? '9+' : c.unreadCount}
+          </span>
+        )}
+      </button>
+    );
+  }
   return (
     <div className={cn('group relative border-b border-border', active && 'bg-primary/5')}>
       <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 py-3 pr-9 text-left transition-colors hover:bg-muted/60">
@@ -201,6 +237,35 @@ function ConversationRow({
 export function InboxPage() {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ConversationChannel>('WHATSAPP');
+  const [wideScreen, setWideScreen] = useState(() => window.matchMedia('(min-width: 640px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 640px)');
+    const onChange = () => setWideScreen(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  // Inbox size: normal, full screen (covers the whole window) or a compact chat list.
+  const [view, setView] = useState<InboxView>(() => {
+    try {
+      const saved = window.localStorage.getItem(INBOX_VIEW_KEY);
+      return saved === 'full' || saved === 'compact' ? saved : 'normal';
+    } catch {
+      return 'normal';
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INBOX_VIEW_KEY, view);
+    } catch {
+      /* storage unavailable — the choice just isn't remembered */
+    }
+    if (view !== 'full') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) setView('normal');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view]);
   const [filter, setFilter] = useState<ConversationFilter>('all');
   const [stage, setStage] = useState<ConversationStage | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -394,12 +459,15 @@ export function InboxPage() {
     setDraft(tpl ? fillTemplatePreview(tpl.bodyText, selected?.contactName) : '');
   };
 
+  const full = view === 'full';
+  const compact = view === 'compact' && wideScreen; // phones stack list and chat — no compact list there
   return (
-    <div>
-      <PageHeader title="Inbox" description="WhatsApp and Instagram conversations — auto-created from incoming messages." />
+    <div className={cn(full && 'fixed inset-0 z-40 flex flex-col bg-background p-3 sm:p-4')}>
+      {!full && <PageHeader title="Inbox" description="WhatsApp and Instagram conversations — auto-created from incoming messages." />}
 
+      <div className={cn('flex flex-wrap items-center justify-between gap-2', full ? 'mb-3' : 'mb-4')}>
       {/* Channel switcher */}
-      <div className="mb-4 inline-flex rounded-lg border border-border bg-card p-1">
+      <div className="inline-flex rounded-lg border border-border bg-card p-1">
         <button
           type="button"
           onClick={() => setChannel('WHATSAPP')}
@@ -422,10 +490,38 @@ export function InboxPage() {
         </button>
       </div>
 
-      <div className="grid h-[calc(100dvh-230px)] min-h-[520px] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-card sm:grid-cols-[300px_1fr]">
+      {/* Inbox size */}
+      <div className="inline-flex rounded-lg border border-border bg-card p-1" role="group" aria-label="Inbox size">
+        {VIEW_OPTIONS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => setView(o.key)}
+            aria-pressed={view === o.key}
+            aria-label={o.label}
+            title={o.key === 'full' ? 'Full screen (Esc to exit)' : o.label}
+            className={cn(
+              'size-8 items-center justify-center rounded-md transition-colors',
+              o.key === 'compact' ? 'hidden sm:flex' : 'flex',
+              view === o.key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            <o.icon className="size-4" />
+          </button>
+        ))}
+      </div>
+      </div>
+
+      <div
+        className={cn(
+          'grid grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-card',
+          full ? 'min-h-0 flex-1' : 'h-[calc(100dvh-230px)] min-h-[520px]',
+          compact ? 'grid-cols-[76px_1fr]' : 'sm:grid-cols-[300px_1fr]',
+        )}
+      >
         {/* Conversation list */}
         <div className="flex min-h-0 flex-col border-b border-border sm:border-b-0 sm:border-r">
-          <div className="border-b border-border p-3">
+          <div className={cn('border-b border-border p-3', compact && 'hidden')}>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -547,6 +643,7 @@ export function InboxPage() {
                   active={c.id === selectedId}
                   onClick={() => setSelectedId(c.id)}
                   onToggleFavorite={() => favoriteMutation.mutate({ id: c.id, isFavorite: !c.isFavorite })}
+                  compact={compact}
                 />
               ))
             )}

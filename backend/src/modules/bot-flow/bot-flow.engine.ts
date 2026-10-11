@@ -10,6 +10,7 @@ import { findAdPackages } from '../ad-package-mappings/ad-package-mappings.servi
 import {
   ACTIVE_RESTART_QUIET_MS,
   HANDOFF_RESTART_QUIET_MS,
+  TEAMMATE_ACTIVE_MS,
   chooseFlowForGreeting,
   chooseFlowForNewChat,
   chooseFlowForRestart,
@@ -199,8 +200,15 @@ async function loadState(
         if (wasHandedOff && conversation.leadId) {
           await tx.lead.updateMany({ where: { id: conversation.leadId, organizationId }, data: { needsReview: false, needsReviewReason: null } });
         }
-      } else if (session.status === 'COMPLETED' && routing.aiFollowUp.has(session.flowId)) {
-        // A finished chat with a new request — the AI assistant looks after it (bot-flow.followup.ts).
+      } else if (
+        session.status !== 'ACTIVE' &&
+        routing.aiFollowUp.has(session.flowId) &&
+        ((await sinceLastOutbound(true)) ?? Infinity) >= TEAMMATE_ACTIVE_MS
+      ) {
+        // A finished chat — or one handed over that nobody on the team has
+        // answered in 12h — gets a new message: the AI assistant answers it
+        // (bot-flow.followup.ts), so the customer is never left unanswered.
+        // Once a teammate replies, the AI leaves the chat to them.
         return { aiFollowUpSessionId: session.id };
       } else if (session.status !== 'ACTIVE') {
         // Finished, or a teammate's chat — the bot stays out of it.

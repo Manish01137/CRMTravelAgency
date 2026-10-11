@@ -41,7 +41,8 @@ function shouldRun(
   if (session?.lastProcessedMessageAt && session.lastProcessedMessageAt >= latest.createdAt) return false;
   const body = latest.body ?? '';
   const greeting = !!chooseFlowForGreeting(routing, body, session?.flowId ?? null, latest.createdAt);
-  if (session?.status === 'NEEDS_REVIEW') return greeting;
+  // Handed over: "hi", or the AI assistant (it checks whether a teammate is replying).
+  if (session?.status === 'NEEDS_REVIEW') return greeting || routing.aiFollowUp.has(session.flowId);
   if (session?.status === 'COMPLETED') {
     return greeting || !!chooseFlowForRestart(routing, body, latest.createdAt) || routing.aiFollowUp.has(session.flowId);
   }
