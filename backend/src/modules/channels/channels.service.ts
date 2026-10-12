@@ -1,4 +1,5 @@
 import { systemPrisma, withTenant } from '../../lib/prisma';
+import { forgetChannelCredentials } from '../bot-flow/bot-send';
 import { encryptJson, decryptJson } from '../../lib/encryption';
 import { env } from '../../env';
 import {
@@ -149,6 +150,7 @@ async function markFailed(organizationId: string, channel: (typeof ALL_CHANNELS)
       update: { status: 'FAILED', lastError: message },
     }),
   );
+  forgetChannelCredentials(organizationId);
 }
 
 export async function connectWhatsApp(organizationId: string, input: ConnectWhatsAppInput): Promise<ChannelStatus> {
@@ -200,6 +202,7 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
         },
       }),
     );
+    forgetChannelCredentials(organizationId);
     return toStatus(row);
   } catch (err) {
     console.error(err);
@@ -245,6 +248,7 @@ async function saveInstagramConnection(organizationId: string, option: Instagram
     }),
   );
   await subscribePageWebhook(option.pageId, option.pageAccessToken);
+  forgetChannelCredentials(organizationId);
   return toStatus(row);
 }
 
@@ -340,6 +344,7 @@ async function saveInstagramLoginConnection(
       },
     }),
   );
+  forgetChannelCredentials(organizationId);
   return toStatus(row);
 }
 
@@ -415,6 +420,7 @@ export async function connectEmail(organizationId: string, input: ConnectEmailIn
       },
     }),
   );
+  forgetChannelCredentials(organizationId);
   return toStatus(row);
 }
 
@@ -432,6 +438,7 @@ export async function disconnectChannel(
       data: { status: 'NOT_CONNECTED', credentials: null, externalId: null, displayName: null, lastError: null, connectedAt: null },
     });
   });
+  forgetChannelCredentials(organizationId);
 }
 
 /** Shared by the three Business Profile functions below — throws a clear error instead of a Meta 4xx if WhatsApp isn't connected yet. */
@@ -509,6 +516,7 @@ export async function refreshInstagramTokens(): Promise<void> {
       const { accessToken, expiresIn } = await refreshInstagramLongLivedToken(creds.accessToken);
       const updated: InstagramCredentials = { ...creds, accessToken, tokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString() };
       await systemPrisma.channelConnection.update({ where: { id: row.id }, data: { credentials: encryptJson(updated), lastError: null } });
+      forgetChannelCredentials(row.organizationId);
       console.log(`[channels] Instagram token renewed for org ${row.organizationId}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

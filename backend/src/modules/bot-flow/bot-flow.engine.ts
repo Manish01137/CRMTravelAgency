@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { extractLeadFields, classifyYesNo, runOpenStep, DEFAULT_GEMINI_MODEL, type ConversationTurn } from '../../lib/gemini';
 import { loadAgentContext } from '../ai-agent/ai-agent.service';
-import { attemptSend, recordOutbound, sendChoices, sendMediaMessage, sendPackage, sendPackageCarousel, type StepMedia } from './bot-send';
+import { attemptSend, flushOutbound, recordOutbound, sendChoices, sendMediaMessage, sendPackage, sendPackageCarousel, type StepMedia } from './bot-send';
 import { defaultAnswerType, validateAnswer, parseTravelDate, DEFAULT_ERROR_MESSAGES, type AnswerType } from '../../lib/answerValidation';
 import { matchPackagesInText } from '../../lib/packageMatch';
 import { isPlaceholderBody, isReactionBody, TYPE_YOUR_REPLY } from '../../lib/whatsappInbound';
@@ -15,6 +15,7 @@ import {
   chooseFlowForNewChat,
   chooseFlowForRestart,
   loadFlowRouting,
+  type FlowRouting,
 } from './bot-flow.triggers';
 import { updateLead } from '../leads/leads.service';
 import { updateLeadSchema } from '../leads/leads.schemas';
@@ -150,13 +151,15 @@ async function loadState(
   conversationId: string,
   messageBody: string,
   messageCreatedAt: Date,
+  knownRouting?: FlowRouting,
 ): Promise<LoadedState | { aiFollowUpSessionId: string } | null> {
   return withTenant(organizationId, async (tx) => {
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
 
     // Which flow — see bot-flow.triggers.ts.
-    const routing = await loadFlowRouting(tx, organizationId, conversation.channel);
+    // The caller usually has it already (bot-flow.runner.ts) — saves database round trips.
+    const routing = knownRouting ?? (await loadFlowRouting(tx, organizationId, conversation.channel));
     let session = await tx.botFlowSession.findUnique({ where: { conversationId } });
 
     if (session) {
@@ -534,8 +537,25 @@ export async function advanceBotFlow(
   messageBody: string,
   messageCreatedAt: Date,
   interactiveSelectionId: string | null = null,
+  routing?: FlowRouting,
 ): Promise<void> {
-  const state = await loadState(organizationId, conversationId, messageBody, messageCreatedAt);
+  try {
+    await advance(organizationId, conversationId, messageBody, messageCreatedAt, interactiveSelectionId, routing);
+  } finally {
+    // Messages are sent without waiting on their Inbox copies (bot-send.ts) — make sure they're all saved.
+    await flushOutbound(conversationId);
+  }
+}
+
+async function advance(
+  organizationId: string,
+  conversationId: string,
+  messageBody: string,
+  messageCreatedAt: Date,
+  interactiveSelectionId: string | null,
+  knownRouting: FlowRouting | undefined,
+): Promise<void> {
+  const state = await loadState(organizationId, conversationId, messageBody, messageCreatedAt, knownRouting);
   if (!state) return;
   if ('aiFollowUpSessionId' in state) {
     await runAiFollowUp(organizationId, conversationId, state.aiFollowUpSessionId, messageBody, messageCreatedAt);

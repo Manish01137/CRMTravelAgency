@@ -420,10 +420,10 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
           console.error('[ad-package] send failed:', err instanceof Error ? err.message : err);
         }
       }
-      if (adPackageSent) {
-        triggerBotFlowNow(organizationId, inbound.conversationId); // flow mid-conversation: marked handled, nothing more is sent
-        continue; // the package IS the reply — don't also run Smart Bot on this message
-      }
+      // Bot Flow: answer straight away (in the background). With an ad
+      // package it runs after that send, which may already have answered.
+      triggerBotFlowNow(organizationId, inbound.conversationId, 'WHATSAPP');
+      if (adPackageSent) continue; // the package IS the reply — don't also run Smart Bot on this message
 
       // Smart Bot (POC, feature-flagged per org) — see smart-bot.service.ts's
       // own guard against double-running alongside Bot Flow. Best-effort: a
@@ -439,8 +439,6 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         console.error('[smart-bot] runSmartBotForWhatsApp failed:', err instanceof Error ? err.message : err);
       }
 
-      // Bot Flow: answer now instead of waiting for the next poll.
-      triggerBotFlowNow(organizationId, inbound.conversationId);
     }
 
     for (const st of statuses) {
@@ -501,7 +499,7 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
-    triggerBotFlowNow(organizationId, igInbound.conversationId); // Bot Flow: answer now, not on the next poll
+    triggerBotFlowNow(organizationId, igInbound.conversationId, 'INSTAGRAM'); // Bot Flow: answer now, not on the next poll
   }
 }
 
@@ -556,7 +554,7 @@ async function processPageEntry(entry: Record<string, unknown>): Promise<void> {
       externalMessageId: message?.mid ?? null,
       leadSource: instagramLeadSource(event, message),
     });
-    triggerBotFlowNow(organizationId, igInbound.conversationId); // Bot Flow: answer now, not on the next poll
+    triggerBotFlowNow(organizationId, igInbound.conversationId, 'INSTAGRAM'); // Bot Flow: answer now, not on the next poll
   }
 }
 

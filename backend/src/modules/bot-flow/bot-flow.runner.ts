@@ -56,28 +56,40 @@ export function processConversation(
   conversationId: string,
   routing?: FlowRouting,
   path: 'instant' | 'poller' = 'poller',
+  knownChannel?: 'WHATSAPP' | 'INSTAGRAM',
 ): Promise<void> {
   return runExclusive(conversationId, async () => {
-    const conversation = await systemPrisma.conversation.findUnique({
-      where: { id: conversationId },
-      include: {
-        messages: { where: { direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, take: 1 },
-        botFlowSession: true,
-        lead: { select: { sourceAdId: true } },
-      },
-    });
+    // Independent lookups run together — each one is a network round trip to the database.
+    const [conversation, flowRouting, connection] = await Promise.all([
+      systemPrisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          messages: { where: { direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, take: 1 },
+          botFlowSession: true,
+          lead: { select: { sourceAdId: true } },
+        },
+      }),
+      routing ?? (knownChannel ? loadFlowRouting(systemPrisma as unknown as TenantTx, organizationId, knownChannel) : null),
+      knownChannel
+        ? systemPrisma.channelConnection.findUnique({
+            where: { organizationId_channel: { organizationId, channel: knownChannel } },
+            select: { status: true },
+          })
+        : null,
+    ]);
     if (!conversation || conversation.organizationId !== organizationId) return;
     if (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM') return;
+    if (knownChannel && connection?.status !== 'CONNECTED') return;
     const latest = conversation.messages[0];
     if (!latest) return;
 
-    const flowRouting = routing ?? (await loadFlowRouting(systemPrisma as unknown as TenantTx, organizationId, conversation.channel));
-    if (!botFlowInUse(flowRouting)) return;
-    if (!shouldRun(flowRouting, conversation.botFlowSession, latest, conversation.lead?.sourceAdId)) return;
+    const routingNow = flowRouting ?? (await loadFlowRouting(systemPrisma as unknown as TenantTx, organizationId, conversation.channel));
+    if (!botFlowInUse(routingNow)) return;
+    if (!shouldRun(routingNow, conversation.botFlowSession, latest, conversation.lead?.sourceAdId)) return;
 
     showTyping(organizationId, conversation.channel, conversation.externalContactId, latest.externalMessageId);
     const started = Date.now();
-    await advanceBotFlow(organizationId, conversation.id, latest.body ?? '', latest.createdAt, latest.interactiveSelectionId);
+    await advanceBotFlow(organizationId, conversation.id, latest.body ?? '', latest.createdAt, latest.interactiveSelectionId, routingNow);
     // How long the customer waited: from their message reaching us to our reply going out.
     console.log(
       `[bot-flow] ${conversation.channel} reply via ${path}: ${Date.now() - latest.createdAt.getTime()}ms after the message arrived (bot work ${Date.now() - started}ms)`,
@@ -86,15 +98,8 @@ export function processConversation(
 }
 
 /** From the webhook: answer this chat now, in the background — never delays or breaks the webhook itself. */
-export function triggerBotFlowNow(organizationId: string, conversationId: string): void {
-  void (async () => {
-    const connection = await systemPrisma.conversation.findUnique({ where: { id: conversationId }, select: { channel: true } });
-    if (!connection) return;
-    const channelConnection = await systemPrisma.channelConnection.findUnique({
-      where: { organizationId_channel: { organizationId, channel: connection.channel } },
-      select: { status: true },
-    });
-    if (channelConnection?.status !== 'CONNECTED') return;
-    await processConversation(organizationId, conversationId, undefined, 'instant');
-  })().catch((err) => console.error('[bot-flow] instant run failed (the poller will retry):', err instanceof Error ? err.message : err));
+export function triggerBotFlowNow(organizationId: string, conversationId: string, channel: 'WHATSAPP' | 'INSTAGRAM'): void {
+  processConversation(organizationId, conversationId, undefined, 'instant', channel).catch((err) =>
+    console.error('[bot-flow] instant run failed (the poller will retry):', err instanceof Error ? err.message : err),
+  );
 }

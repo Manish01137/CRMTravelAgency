@@ -40,12 +40,31 @@ export interface SendResult {
   errorMessage?: string;
 }
 
+/**
+ * Channel credentials, kept in memory for a minute: the database is a network
+ * round trip away and every bot message needed them, which added up to seconds
+ * per reply. channels.service.ts clears this on every connect / disconnect /
+ * token renewal, so a change applies straight away.
+ */
+const CREDENTIALS_TTL_MS = 60_000;
+const credentialsCache = new Map<string, { value: string | null; expires: number }>();
+
+export function forgetChannelCredentials(organizationId: string): void {
+  credentialsCache.delete(`${organizationId}:WHATSAPP`);
+  credentialsCache.delete(`${organizationId}:INSTAGRAM`);
+}
+
 async function credentialsFor(organizationId: string, channel: BotChannel) {
+  const key = `${organizationId}:${channel}`;
+  const hit = credentialsCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
   // A short read-only lookup, its own fast transaction — never held open across the send.
   const connection = await withTenant(organizationId, (tx) =>
     tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel } } }),
   );
-  return connection?.credentials ?? null;
+  const value = connection?.credentials ?? null;
+  credentialsCache.set(key, { value, expires: Date.now() + CREDENTIALS_TTL_MS });
+  return value;
 }
 
 async function trySend(fn: () => Promise<{ externalMessageId: string }>): Promise<SendResult> {
@@ -101,12 +120,44 @@ export function showTyping(organizationId: string, channel: BotChannel, to: stri
   })().catch(() => undefined);
 }
 
-export async function recordOutbound(
+/**
+ * Inbox copies of what the bot sent are written in the background, in order,
+ * so the bot's next message isn't held up by a database round trip — the
+ * engine awaits flushOutbound() before it finishes.
+ */
+const pendingOutbound = new Map<string, Promise<void>>();
+
+export function recordOutbound(
   organizationId: string,
   conversationId: string,
   body: string,
   result: SendResult | null,
   mediaUrl?: string,
+): Promise<void> {
+  const sentAt = new Date();
+  const previous = pendingOutbound.get(conversationId) ?? Promise.resolve();
+  const next = previous
+    .then(() => writeOutbound(organizationId, conversationId, body, result, mediaUrl, sentAt))
+    .catch((err) => console.error('[bot-send] could not save the sent message to the Inbox:', err instanceof Error ? err.message : err));
+  pendingOutbound.set(conversationId, next);
+  void next.finally(() => {
+    if (pendingOutbound.get(conversationId) === next) pendingOutbound.delete(conversationId);
+  });
+  return Promise.resolve();
+}
+
+/** Waits until every message the bot sent in this chat is saved to the Inbox. */
+export async function flushOutbound(conversationId: string): Promise<void> {
+  await pendingOutbound.get(conversationId);
+}
+
+async function writeOutbound(
+  organizationId: string,
+  conversationId: string,
+  body: string,
+  result: SendResult | null,
+  mediaUrl: string | undefined,
+  sentAt: Date,
 ): Promise<void> {
   await withTenant(organizationId, async (tx) => {
     const conv = await tx.conversation.findUnique({ where: { id: conversationId }, select: { channel: true } });
@@ -119,6 +170,7 @@ export async function recordOutbound(
         body,
         mediaUrl,
         status: result?.ok ? 'SENT' : 'FAILED',
+        createdAt: sentAt,
         externalMessageId: result?.externalMessageId,
         errorMessage: result?.errorMessage,
         sentById: null,
@@ -126,7 +178,7 @@ export async function recordOutbound(
     });
     await tx.conversation.update({
       where: { id: conversationId },
-      data: { lastMessageAt: new Date(), lastMessagePreview: (mediaUrl ? `📷 ${body}` : body).slice(0, 200) },
+      data: { lastMessageAt: sentAt, lastMessagePreview: (mediaUrl ? `📷 ${body}` : body).slice(0, 200) },
     });
   });
 }

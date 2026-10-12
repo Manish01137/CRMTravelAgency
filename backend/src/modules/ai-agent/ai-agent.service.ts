@@ -48,8 +48,13 @@ export async function updateSettings(organizationId: string, input: UpdateSettin
       update: data,
     }),
   );
+  personaCache.delete(organizationId);
   return toView(row);
 }
+
+/** The org's AI persona, kept in memory for a minute (cleared on save) — the bot asks for it on every message. */
+const PERSONA_TTL_MS = 60_000;
+const personaCache = new Map<string, { value: { systemPrompt: string | null; agencyFacts: string | null; tone: string | null }; expires: number }>();
 
 /** The server's Gemini key + this org's persona — used by every AI feature
  *  (Bot Flow, Smart Bot, Suggest Reply, Summarize). Null when the server has
@@ -62,8 +67,12 @@ export async function loadAgentContext(organizationId: string): Promise<{
 } | null> {
   if (!env.GEMINI_API_KEY) return null;
   const apiKey = env.GEMINI_API_KEY;
+  const hit = personaCache.get(organizationId);
+  if (hit && hit.expires > Date.now()) return { apiKey, ...hit.value };
   const row = await withTenant(organizationId, (tx) => tx.aiAgentSettings.findUnique({ where: { organizationId } }));
-  return { apiKey, systemPrompt: row?.systemPrompt ?? null, agencyFacts: row?.agencyFacts ?? null, tone: row?.tone ?? null };
+  const value = { systemPrompt: row?.systemPrompt ?? null, agencyFacts: row?.agencyFacts ?? null, tone: row?.tone ?? null };
+  personaCache.set(organizationId, { value, expires: Date.now() + PERSONA_TTL_MS });
+  return { apiKey, ...value };
 }
 
 /** Loads the last N turns of a conversation directly (same Prisma tables Phase
