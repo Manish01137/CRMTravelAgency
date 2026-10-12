@@ -247,6 +247,19 @@ export async function subscribeWabaWebhook(wabaId: string, accessToken: string):
   });
 }
 
+/**
+ * Marks the customer's message as read (blue ticks) and shows "typing…" in
+ * their WhatsApp until our reply arrives (or ~25s) — so a reply that takes a
+ * few seconds still feels instant.
+ */
+export async function sendWhatsAppTypingIndicator(phoneNumberId: string, accessToken: string, messageId: string): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: messageId, typing_indicator: { type: 'text' } }),
+  });
+}
+
 export async function sendWhatsAppText(
   phoneNumberId: string,
   accessToken: string,
@@ -767,6 +780,15 @@ export async function subscribePageWebhook(pageId: string, pageAccessToken: stri
  * against this host succeeds immediately. See the "Instagram Login" section
  * below for the OAuth flow that produces this token.
  */
+/** Shows the typing bubble in the customer's Instagram chat while the bot prepares its reply. */
+export async function sendInstagramTypingIndicator(igUserId: string, accessToken: string, recipientId: string): Promise<void> {
+  await instagramGraphFetch(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: { id: recipientId }, sender_action: 'typing_on' }),
+  });
+}
+
 /**
  * Instagram only accepts a normal reply within 24h of the customer's last
  * message. A person on the team may reply for up to 7 days with Meta's

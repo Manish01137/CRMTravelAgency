@@ -14,6 +14,8 @@ import {
   sendInstagramVideo,
   sendInstagramQuickReplies,
   sendInstagramCards,
+  sendWhatsAppTypingIndicator,
+  sendInstagramTypingIndicator,
   type InstagramCard,
   type WhatsAppCarouselCard,
   type WhatsAppChoice,
@@ -81,6 +83,22 @@ export async function attemptSend(organizationId: string, channel: BotChannel, e
 async function instagramCreds(organizationId: string): Promise<InstagramCredentials | null> {
   const credentials = await credentialsFor(organizationId, 'INSTAGRAM');
   return credentials ? decryptJson<InstagramCredentials>(credentials) : null;
+}
+
+/** "typing…" in the customer's chat (and blue ticks on WhatsApp) — best-effort, never delays or blocks the reply. */
+export function showTyping(organizationId: string, channel: BotChannel, to: string, inboundExternalId: string | null): void {
+  void (async () => {
+    const credentials = await credentialsFor(organizationId, channel);
+    if (!credentials) return;
+    if (channel === 'WHATSAPP') {
+      if (!inboundExternalId) return;
+      const creds = decryptJson<WhatsAppCredentials>(credentials);
+      await sendWhatsAppTypingIndicator(creds.phoneNumberId, creds.accessToken, inboundExternalId);
+    } else {
+      const creds = decryptJson<InstagramCredentials>(credentials);
+      await sendInstagramTypingIndicator(creds.igUserId, creds.accessToken, to);
+    }
+  })().catch(() => undefined);
 }
 
 export async function recordOutbound(

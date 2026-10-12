@@ -17,7 +17,8 @@ import { botFlowInUse, chooseFlowForGreeting, chooseFlowForNewChat, chooseFlowFo
 
 const QUEUE_NAME = 'bot-flow-poll';
 const JOB_NAME = 'scan';
-const POLL_INTERVAL_MS = 10_000;
+// Backup only — replies go out straight from the webhook (bot-flow.runner.ts).
+const POLL_INTERVAL_MS = 3_000;
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // only scan conversations active in the last 7 days
 
 let queue: Queue | null = null;

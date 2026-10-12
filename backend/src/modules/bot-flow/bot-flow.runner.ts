@@ -1,5 +1,6 @@
 import { systemPrisma, type TenantTx } from '../../lib/prisma';
 import { advanceBotFlow } from './bot-flow.engine';
+import { showTyping } from './bot-send';
 import {
   botFlowInUse,
   chooseFlowForGreeting,
@@ -50,7 +51,12 @@ function shouldRun(
   return true; // ACTIVE
 }
 
-export function processConversation(organizationId: string, conversationId: string, routing?: FlowRouting): Promise<void> {
+export function processConversation(
+  organizationId: string,
+  conversationId: string,
+  routing?: FlowRouting,
+  path: 'instant' | 'poller' = 'poller',
+): Promise<void> {
   return runExclusive(conversationId, async () => {
     const conversation = await systemPrisma.conversation.findUnique({
       where: { id: conversationId },
@@ -69,7 +75,13 @@ export function processConversation(organizationId: string, conversationId: stri
     if (!botFlowInUse(flowRouting)) return;
     if (!shouldRun(flowRouting, conversation.botFlowSession, latest, conversation.lead?.sourceAdId)) return;
 
+    showTyping(organizationId, conversation.channel, conversation.externalContactId, latest.externalMessageId);
+    const started = Date.now();
     await advanceBotFlow(organizationId, conversation.id, latest.body ?? '', latest.createdAt, latest.interactiveSelectionId);
+    // How long the customer waited: from their message reaching us to our reply going out.
+    console.log(
+      `[bot-flow] ${conversation.channel} reply via ${path}: ${Date.now() - latest.createdAt.getTime()}ms after the message arrived (bot work ${Date.now() - started}ms)`,
+    );
   });
 }
 
@@ -83,6 +95,6 @@ export function triggerBotFlowNow(organizationId: string, conversationId: string
       select: { status: true },
     });
     if (channelConnection?.status !== 'CONNECTED') return;
-    await processConversation(organizationId, conversationId);
+    await processConversation(organizationId, conversationId, undefined, 'instant');
   })().catch((err) => console.error('[bot-flow] instant run failed (the poller will retry):', err instanceof Error ? err.message : err));
 }
