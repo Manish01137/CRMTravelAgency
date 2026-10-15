@@ -323,6 +323,37 @@ function StatusDropdown({
   );
 }
 
+const LIVE_REFRESH_MS = 5000;
+const FRESH_HIGHLIGHT_MS = 4000;
+
+/**
+ * Ids of rows that appeared in `items` since the first load for this filter —
+ * kept for a few seconds so a new lead visibly lights up. A filter change
+ * starts over (its rows aren't "new").
+ */
+function useFreshIds(items: { id: string }[] | undefined, resetKey: string): Set<string> {
+  const seen = useRef<Set<string> | null>(null);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    seen.current = null;
+    setFresh(new Set());
+  }, [resetKey]);
+  useEffect(() => {
+    if (!items) return;
+    if (!seen.current) {
+      seen.current = new Set(items.map((i) => i.id));
+      return;
+    }
+    const added = items.filter((i) => !seen.current!.has(i.id)).map((i) => i.id);
+    added.forEach((id) => seen.current!.add(id));
+    if (added.length === 0) return;
+    setFresh((prev) => new Set([...prev, ...added]));
+    // Not cleared on the next update — each batch fades on its own schedule.
+    window.setTimeout(() => setFresh((prev) => new Set([...prev].filter((id) => !added.includes(id)))), FRESH_HIGHLIGHT_MS);
+  }, [items]);
+  return fresh;
+}
+
 /** Inline assignee changer: avatar + name + dropdown of team members. */
 function AssigneeDropdown({
   lead,
@@ -597,16 +628,26 @@ export function LeadsPage() {
     setSelected(new Set());
   }, [queryString]);
 
+  // Live: new WhatsApp / Instagram leads show up on their own. Checks every
+  // 5s while this tab is visible (paused in the background) and right away
+  // when you come back to it.
   const leadsQuery = useQuery({
     queryKey: ['leads', queryString],
     queryFn: () => api.get<Paginated<Lead>>(`/leads?${queryString}`),
     placeholderData: keepPreviousData,
+    refetchInterval: LIVE_REFRESH_MS,
+    refetchOnWindowFocus: true,
   });
 
   const statsQuery = useQuery({
     queryKey: ['lead-stats'],
     queryFn: () => api.get<LeadStats>('/leads/stats'),
+    refetchInterval: LIVE_REFRESH_MS,
+    refetchOnWindowFocus: true,
   });
+
+  // Leads that arrived since the page loaded get a brief highlight.
+  const freshLeadIds = useFreshIds(leadsQuery.data?.items, queryString);
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -887,6 +928,13 @@ export function LeadsPage() {
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <QuickPills statuses={statuses} onPick={setStatuses} />
         <div className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
+          <span className="mr-1 inline-flex items-center gap-1 text-xs text-emerald-700" title="This list updates on its own every few seconds">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+            </span>
+            Live
+          </span>
           <span>
             Showing {leads.length} lead{leads.length === 1 ? '' : 's'} out of {data?.total ?? 0}
           </span>
@@ -1022,7 +1070,8 @@ export function LeadsPage() {
                       <tr
                         key={lead.id}
                         className={cn(
-                          'align-top transition-colors',
+                          'align-top transition-colors duration-700',
+                          freshLeadIds.has(lead.id) && '!bg-emerald-50',
                           temp
                             ? cn('bg-gradient-to-r to-transparent', temp.key === 'HOT' ? 'from-amber-100/70 via-amber-50/40' : 'from-sky-100/60 via-sky-50/30')
                             : 'hover:bg-muted/50',
@@ -1058,7 +1107,7 @@ export function LeadsPage() {
             {leads.map((lead) => {
               const temp = leadTemperature(lead);
               return (
-                <Card key={lead.id} className={cn('p-4', temp?.cardClass)}>
+                <Card key={lead.id} className={cn('p-4 transition-colors duration-700', temp?.cardClass, freshLeadIds.has(lead.id) && '!bg-emerald-50')}>
                   <div className="flex items-start justify-between gap-3">
                     <LeadIdentityCell lead={lead} onEdit={() => openEdit(lead)} onTag={setTag} />
                     <RowActions onEdit={() => openEdit(lead)} onDelete={() => setDeletingLead(lead)} onConvert={() => setConvertingLead(lead)} />

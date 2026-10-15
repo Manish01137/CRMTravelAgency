@@ -280,11 +280,15 @@ export function DashboardPage() {
   const statsQuery = useQuery({
     queryKey: ['lead-stats'],
     queryFn: () => api.get<LeadStats>('/leads/stats'),
+    refetchInterval: 15_000, // new WhatsApp / Instagram leads show up without a refresh
+    refetchOnWindowFocus: true,
   });
 
   const recentQuery = useQuery({
     queryKey: ['leads', { recent: true }],
     queryFn: () => api.get<Paginated<Lead>>('/leads?pageSize=5&sort=createdAt&order=desc'),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   const bookingStatsQuery = useQuery({

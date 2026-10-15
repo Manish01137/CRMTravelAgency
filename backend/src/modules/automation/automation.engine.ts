@@ -9,8 +9,8 @@ import type { EmailCredentials, WhatsAppCredentials, InstagramCredentials } from
  * queues/automation-sweep.ts): for each org with automation enabled, finds
  * open leads that have gone quiet past `delayHours` and haven't already been
  * nudged for this staleness window, then sends one nudge via whichever
- * channel is actually eligible (WhatsApp inside its 24h window > Instagram >
- * Email). Fully testable today via Email; identical code path once an org's
+ * channel is actually eligible (WhatsApp or Instagram inside their 24h
+ * window > Email). Fully testable today via Email; identical code path once an org's
  * WhatsApp connection is live for real.
  *
  * Every external send call runs OUTSIDE a `withTenant` transaction — a slow/
@@ -44,7 +44,9 @@ async function lastActivityAt(organizationId: string, leadId: string): Promise<D
 async function alreadyNudgedSince(organizationId: string, leadId: string, since: Date): Promise<boolean> {
   return withTenant(organizationId, async (tx) => {
     const existing = await tx.followUpAttempt.findFirst({
-      where: { organizationId, leadId, status: { in: ['SENT', 'SKIPPED'] }, scheduledFor: { gte: since } },
+      // One try per quiet spell — a FAILED attempt counts too, otherwise a
+      // nudge that can't be delivered was retried every 15 minutes forever.
+      where: { organizationId, leadId, status: { in: ['SENT', 'SKIPPED', 'FAILED'] }, scheduledFor: { gte: since } },
     });
     return !!existing;
   });
@@ -74,7 +76,10 @@ async function resolveTarget(organizationId: string, lead: LeadRow): Promise<Tar
 
     if (conversation && (conversation.channel === 'WHATSAPP' || conversation.channel === 'INSTAGRAM')) {
       const connection = await tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel: conversation.channel } } });
-      const withinWindow = conversation.channel === 'INSTAGRAM' || (!!conversation.lastInboundAt && Date.now() - conversation.lastInboundAt.getTime() <= WHATSAPP_WINDOW_MS);
+      // WhatsApp AND Instagram only accept a free-form business message within
+      // 24h of the customer's last message (Instagram's 7-day "human agent"
+      // exception is for a person replying, not for automated nudges).
+      const withinWindow = !!conversation.lastInboundAt && Date.now() - conversation.lastInboundAt.getTime() <= WHATSAPP_WINDOW_MS;
 
       if (connection?.status === 'CONNECTED' && connection.credentials && withinWindow) {
         if (conversation.channel === 'WHATSAPP') {
@@ -95,7 +100,13 @@ async function resolveTarget(organizationId: string, lead: LeadRow): Promise<Tar
       }
     }
 
-    return { via: 'NONE', reason: 'No connected channel eligible for this lead (no email, and no WhatsApp/Instagram conversation within window)' };
+    return {
+      via: 'NONE',
+      reason:
+        conversation && (conversation.channel === 'WHATSAPP' || conversation.channel === 'INSTAGRAM')
+          ? `Their last ${conversation.channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} message was over 24 hours ago, so a nudge can't be sent there — set "Nudge after" to 23 hours or less, or add an email to the lead`
+          : 'No channel to reach this lead (no WhatsApp/Instagram chat and no email)',
+    };
   });
 }
 

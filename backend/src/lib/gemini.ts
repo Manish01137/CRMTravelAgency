@@ -13,7 +13,15 @@ import { AppError } from './errors';
  * new keys (2.5-flash was) and a model can be briefly overloaded (503) — the
  * bot should carry on with the next model instead of going quiet.
  */
-const FALLBACK_MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+
+/**
+ * Models Google has retired for this key ("no longer available to new users",
+ * 404). Remembered for the life of the process so every message doesn't try
+ * them first and wait for the error.
+ */
+const retiredModels = new Set<string>();
+const isModelRetired = (err: unknown) => err instanceof Error && /\[404\b|no longer available|not found/i.test(err.message);
 
 /** Model-specific failures worth retrying on another model: retired / unknown, overloaded, rate-limited. */
 function isModelUnavailable(err: unknown): boolean {
@@ -40,11 +48,14 @@ export function geminiClient(apiKey: string) {
       const { fast, ...modelParams } = params;
       return {
         async generateContent(request: Parameters<GenerativeModel['generateContent']>[0]) {
-          const models = [modelParams.model, ...FALLBACK_MODELS.filter((m) => m !== modelParams.model)];
+          const candidates = [modelParams.model, ...FALLBACK_MODELS.filter((m) => m !== modelParams.model)];
+          const models = candidates.filter((m) => !retiredModels.has(m));
+          if (models.length === 0) models.push(...candidates); // everything marked retired — try again rather than give up
           let lastError: unknown;
           for (const model of models) {
             try {
-              if (fast) {
+              // Flash-Lite models don't think by default and reject the setting — skip it (saves a failed call).
+              if (fast && !/flash-lite/.test(model)) {
                 // The SDK passes generationConfig through as-is; its types just predate thinkingConfig.
                 const generationConfig = { ...modelParams.generationConfig, ...MINIMAL_THINKING } as ModelParams['generationConfig'];
                 try {
@@ -57,6 +68,7 @@ export function geminiClient(apiKey: string) {
             } catch (err) {
               lastError = err;
               if (!isModelUnavailable(err)) throw err;
+              if (isModelRetired(err)) retiredModels.add(model);
               console.warn(`[gemini] ${model} unavailable, trying the next model:`, err instanceof Error ? err.message.slice(0, 160) : err);
             }
           }

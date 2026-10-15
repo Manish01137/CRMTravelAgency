@@ -90,6 +90,12 @@ export function AutomationSettingsPage() {
             <Field label="Nudge after" htmlFor="autoDelay" hint="Hours of silence before a nudge is sent (1-720).">
               <Input id="autoDelay" type="number" min={1} max={720} value={delayHours} onChange={(e) => setDelayHours(Number(e.target.value) || 1)} className="max-w-[140px]" />
             </Field>
+            {delayHours >= 24 && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                WhatsApp and Instagram only accept a message within <b>24 hours</b> of the customer’s last message. With {delayHours} hours, nudges can only
+                reach leads that have an email address — set <b>23 hours or less</b> to nudge on WhatsApp and Instagram.
+              </p>
+            )}
             <Field label="Nudge message" htmlFor="autoMessage">
               <Textarea
                 id="autoMessage"
