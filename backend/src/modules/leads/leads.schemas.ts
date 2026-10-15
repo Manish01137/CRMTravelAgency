@@ -54,7 +54,7 @@ export const createLeadSchema = z.object({
     emptyToUndefined,
     z.coerce.number().int().nonnegative().max(1_000_000_000).optional(),
   ),
-  budgetCurrency: z.string().trim().length(3).toUpperCase().optional().default('USD'),
+  budgetCurrency: z.string().trim().length(3).toUpperCase().optional().default('INR'),
   notes: z.preprocess(emptyToUndefined, z.string().max(5000).optional()),
   assignedToId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),

@@ -187,6 +187,9 @@ function BillsTab({ booking }: { booking: Booking }) {
   const queryClient = useQueryClient();
   const bills = booking.bills ?? [];
   const [adding, setAdding] = useState(false);
+  // The bill being edited — the same form as "Add bill", filled in.
+  const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const formOpen = adding || editingBill !== null;
 
   const { register, handleSubmit, control, reset } = useForm<BillFormValues>({
     defaultValues: { vendorName: '', category: 'HOTEL', amount: '', billDate: '', notes: '' },
@@ -194,24 +197,43 @@ function BillsTab({ booking }: { booking: Booking }) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['booking', booking.id] });
 
+  const closeForm = () => {
+    reset({ vendorName: '', category: 'HOTEL', amount: '', billDate: '', notes: '' });
+    setAdding(false);
+    setEditingBill(null);
+  };
+
+  const openEdit = (bill: Bill) => {
+    setAdding(false);
+    setEditingBill(bill);
+    reset({
+      vendorName: bill.vendorName,
+      category: bill.category,
+      amount: String(bill.amount),
+      billDate: bill.billDate ? bill.billDate.slice(0, 10) : '',
+      notes: bill.notes ?? '',
+    });
+  };
+
   const createMutation = useMutation({
-    mutationFn: (v: BillFormValues) =>
-      api.post<Bill>('/bills', {
-        bookingId: booking.id,
+    mutationFn: (v: BillFormValues) => {
+      const fields = {
         vendorName: v.vendorName.trim(),
         category: v.category,
         amount: v.amount ? Number(v.amount) : 0,
-        currency: booking.currency,
         billDate: v.billDate || undefined,
-        notes: v.notes.trim() || undefined,
-      }),
+      };
+      return editingBill
+        ? api.patch<Bill>(`/bills/${editingBill.id}`, { ...fields, notes: v.notes.trim() || null })
+        : api.post<Bill>('/bills', { ...fields, bookingId: booking.id, currency: booking.currency, notes: v.notes.trim() || undefined });
+    },
     onSuccess: () => {
       invalidate();
-      toast.success('Bill added');
-      reset();
-      setAdding(false);
+      queryClient.invalidateQueries({ queryKey: ['bills'] });
+      toast.success(editingBill ? 'Bill updated' : 'Bill added');
+      closeForm();
     },
-    onError: () => toast.error('Could not add bill'),
+    onError: () => toast.error(editingBill ? 'Could not update the bill' : 'Could not add bill'),
   });
 
   const toggleMutation = useMutation({
@@ -249,8 +271,9 @@ function BillsTab({ booking }: { booking: Booking }) {
         ))}
       </div>
 
-      {adding ? (
+      {formOpen ? (
         <Card className="p-4">
+          <p className="mb-3 text-sm font-semibold text-foreground">{editingBill ? `Edit bill — ${editingBill.vendorName}` : 'Add a bill'}</p>
           <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="space-y-3" noValidate>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Vendor" htmlFor="vendorName" required>
@@ -289,12 +312,12 @@ function BillsTab({ booking }: { booking: Booking }) {
               <Input id="billNotes" placeholder="Reference number, terms…" {...register('notes')} />
             </Field>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setAdding(false)}>
+              <Button type="button" variant="outline" onClick={closeForm}>
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
                 {createMutation.isPending && <Spinner />}
-                Add bill
+                {editingBill ? 'Save changes' : 'Add bill'}
               </Button>
             </div>
           </form>
@@ -337,6 +360,9 @@ function BillsTab({ booking }: { booking: Booking }) {
                   {BILL_STATUS_META[bill.status].label}
                 </button>
                 <span className="font-medium text-foreground">{formatCurrency(bill.amount, bill.currency)}</span>
+                <Button variant="ghost" size="icon-sm" aria-label="Edit bill" title="Edit bill" onClick={() => openEdit(bill)}>
+                  <Pencil />
+                </Button>
                 <Button variant="ghost" size="icon-sm" aria-label="Delete bill" onClick={() => deleteMutation.mutate(bill.id)}>
                   <Trash2 className="text-destructive" />
                 </Button>

@@ -71,7 +71,7 @@ export function OwnerLeadsPage() {
                     <td className="px-4 py-3 text-muted-foreground">{leadSourceLabel(lead.source)}</td>
                     <td className="px-4 py-3 text-muted-foreground">{lead.destination ?? '—'}</td>
                     <td className="px-4 py-3 text-foreground">
-                      {lead.budgetAmount != null ? formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'USD') : '—'}
+                      {lead.budgetAmount != null ? formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'INR') : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', style.pill)}>

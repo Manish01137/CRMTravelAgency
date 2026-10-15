@@ -103,7 +103,7 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
       travelDate: toDateInputValue(lead?.travelDate),
       travelerCount: lead?.travelerCount != null ? String(lead.travelerCount) : '',
       budgetAmount: lead?.budgetAmount != null ? String(lead.budgetAmount) : '',
-      budgetCurrency: lead?.budgetCurrency ?? 'USD',
+      budgetCurrency: lead?.budgetCurrency ?? 'INR',
       notes: lead?.notes ?? '',
       assignedToId: lead?.assignedToId ?? UNASSIGNED,
       tags: lead?.tags ?? [],
@@ -139,7 +139,7 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
       travelDate: values.travelDate || null,
       travelerCount: values.travelerCount ? Number(values.travelerCount) : null,
       budgetAmount: values.budgetAmount ? Number(values.budgetAmount) : null,
-      budgetCurrency: (values.budgetCurrency || 'USD').toUpperCase(),
+      budgetCurrency: (values.budgetCurrency || 'INR').toUpperCase(),
       notes: values.notes.trim() || null,
       assignedToId,
       tags: values.tags,
@@ -265,7 +265,7 @@ function LeadForm({ lead, users, packages, onDone }: { lead: Lead | null; users:
           <Input id="budgetAmount" type="number" min={0} placeholder="2500" {...register('budgetAmount')} />
         </Field>
         <Field label="Currency" htmlFor="budgetCurrency" error={errors.budgetCurrency?.message}>
-          <Input id="budgetCurrency" maxLength={3} placeholder="USD" className="uppercase" {...register('budgetCurrency')} />
+          <Input id="budgetCurrency" maxLength={3} placeholder="INR" className="uppercase" {...register('budgetCurrency')} />
         </Field>
       </div>
 

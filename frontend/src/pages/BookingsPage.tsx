@@ -397,6 +397,15 @@ export function BookingsPage() {
                     <span className="font-medium text-foreground">{formatCurrency(bk.totalAmount, bk.currency)}</span>
                   </div>
                 </Link>
+                {/* Phones have no Actions menu — edit right from the card. */}
+                <div className="mt-3 flex gap-2 border-t border-border pt-3">
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => { setEditing(bk); setFormOpen(true); }}>
+                    <Pencil /> Edit booking
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => navigate(`/bookings/${bk.id}`)}>
+                    <CalendarCheck2 /> Open
+                  </Button>
+                </div>
               </Card>
             ))}
           </div>

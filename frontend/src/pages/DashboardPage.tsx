@@ -451,7 +451,7 @@ export function DashboardPage() {
                           </div>
                           <div className="hidden text-right sm:block">
                             <p className="text-sm font-medium text-foreground">
-                              {formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'USD')}
+                              {formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'INR')}
                             </p>
                           </div>
                           <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset', st.pill)}>

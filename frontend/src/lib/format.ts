@@ -33,10 +33,11 @@ export function initials(name: string): string {
   return result || '?';
 }
 
-export function formatCurrency(amount?: number | null, currency = 'USD'): string {
+/** Amounts default to INR, in Indian grouping (₹1,85,000). */
+export function formatCurrency(amount?: number | null, currency = 'INR'): string {
   if (amount == null) return '—';
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency,
       maximumFractionDigits: 0,

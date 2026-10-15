@@ -552,7 +552,7 @@ function EnquiryCell({ lead }: { lead: Lead }) {
         )}
         {lead.budgetAmount != null && (
           <span className="flex items-center gap-1">
-            <Wallet className="size-3" /> {formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'USD')}
+            <Wallet className="size-3" /> {formatCurrency(lead.budgetAmount, lead.budgetCurrency ?? 'INR')}
           </span>
         )}
       </div>

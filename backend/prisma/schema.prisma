@@ -388,7 +388,7 @@ model Lead {
   travelDate        DateTime?    @map("travel_date") @db.Date
   travelerCount     Int?         @map("traveler_count")
   budgetAmount      Int?         @map("budget_amount") // whole units of budgetCurrency
-  budgetCurrency    String?      @default("USD") @map("budget_currency")
+  budgetCurrency    String?      @default("INR") @map("budget_currency")
   notes             String?
   assignedToId      String?      @map("assigned_to_id") @db.Uuid
   // Package the lead is interested in, if known at entry time — purely
