@@ -37,117 +37,139 @@ export async function runAiFollowUp(
   messageCreatedAt: Date,
 ): Promise<void> {
   try {
-    if (isPlaceholderBody(messageBody) || !messageBody.trim()) return; // voice note / sticker / reaction
-    if (isAcknowledgement(messageBody)) return; // "ok", "thanks", 👍 — nothing to answer, no AI call
-    if (Date.now() - messageCreatedAt.getTime() > START_WINDOW_MS) return; // too old to reply to
-
-    const loaded = await withTenant(organizationId, async (tx) => {
-      const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
-      if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
-      const packages = await tx.package.findMany({
-        where: { organizationId, isActive: true },
-        select: {
-          id: true,
-          name: true,
-          destination: true,
-          days: true,
-          nights: true,
-          priceAmount: true,
-          priceCurrency: true,
-          whatsappDescription: true,
-          description: true,
-          inclusions: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: CATALOG_LIMIT,
-      });
-      const recent = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: 12 });
-      return { conversation, packages, recent: recent.reverse() };
-    });
-    if (!loaded) return;
-    const { conversation, packages } = loaded;
-    const channel = conversation.channel as 'WHATSAPP' | 'INSTAGRAM';
-    const to = conversation.externalContactId;
-
-    const agent = await loadAgentContext(organizationId).catch(() => null);
-    let result: FollowUpResult | null = null;
-    if (agent) {
-      const history = loaded.recent
-        .filter((m) => m.body && m.createdAt < messageCreatedAt)
-        .map((m) => ({ direction: m.direction, body: m.body as string }));
-      // Only what the AI needs (the input is most of the cost):
-      //  - this message names packages/places → only those, with full details;
-      //  - otherwise → packages the last few messages were about (e.g. a
-      //    question about the one just sent) with details, plus every other
-      //    package on one line (name, place, days, price, a few words) so a
-      //    theme like "desert trips" still finds Jaisalmer.
-      // Short ids (P1, P2…) instead of 36-character ids, mapped back below.
-      const named = matchPackagesInText(messageBody, packages).slice(0, 5);
-      const discussed = named.length > 0 ? [] : matchPackagesInText(history.slice(-4).map((t) => t.body).join('\n'), packages).slice(0, 3);
-      const detailed = new Set([...named, ...discussed].map((p) => p.id));
-      const inCatalog = named.length > 0 ? named : [...discussed, ...packages.filter((p) => !detailed.has(p.id))];
-      const shortIds = new Map(inCatalog.map((p, i) => [`P${i + 1}`, p.id]));
-      const catalog: CatalogPackage[] = inCatalog.map((p, i) => ({
-        id: `P${i + 1}`,
-        name: p.name,
-        destination: p.destination,
-        days: p.days,
-        nights: p.nights,
-        price: p.priceAmount ? money(p.priceAmount, p.priceCurrency) : 'price on request',
-        summary: detailed.has(p.id)
-          ? [p.whatsappDescription || p.description, p.inclusions && `Includes: ${p.inclusions.replace(/\n+/g, ', ')}`]
-              .filter(Boolean)
-              .join(' ')
-              .replace(/\s+/g, ' ')
-              .slice(0, 300)
-          : clipWords(p.whatsappDescription || p.description || '', 60),
-      }));
-      result = await runFollowUpAssistant(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, catalog, history, messageBody)
-        .then((r) => ({ ...r, packageIds: r.packageIds.map((id) => shortIds.get(id)).filter((id): id is string => !!id) }))
-        .catch((err) => {
-          console.error('[bot-flow] AI follow-up failed, using package-name matching:', err instanceof Error ? err.message : err);
-          return null;
-        });
-    }
-
-    if (!result) {
-      // No AI (no key, or it failed): packages named in the message still go out.
-      const named = matchPackagesInText(messageBody, packages);
-      if (named.length > 0) result = { intent: 'package', packageIds: named.slice(0, 5).map((p) => p.id), reply: '', handoff: false, lead: {} };
-      else if (agent) {
-        // The AI was supposed to answer but couldn't (quota, outage): never
-        // leave them unanswered — a holding reply (at most every 6h) and a flag for the team.
-        await sendHoldingReply(organizationId, channel, to, conversationId, conversation.leadId, messageBody);
-        return;
-      } else return;
-    }
-
-    if (conversation.leadId) await saveLeadDetails(organizationId, conversation.leadId, result.lead);
-
-    if (result.intent === 'package' && result.packageIds.length > 0) {
-      if (result.packageIds.length === 1) {
-        if (result.reply) await sendText(organizationId, channel, to, conversationId, result.reply);
-        await sendPackage(organizationId, channel, to, conversationId, result.packageIds[0]);
-      } else {
-        await sendPackageCarousel(organizationId, channel, to, conversationId, result.packageIds, result.reply || 'Here are our packages for you 👇');
-      }
-    } else if (result.reply && (result.intent !== 'other' || result.handoff)) {
-      await sendText(organizationId, channel, to, conversationId, result.reply);
-    }
-
-    if (result.handoff && conversation.leadId) {
-      // Flag it for the team — but keep answering: the AI only steps back once
-      // a teammate actually replies in this chat (see bot-flow.engine.ts).
-      const reason = `AI assistant: ${result.intent === 'package' ? 'no matching package' : "couldn't answer from the package details"} — "${messageBody.slice(0, 120)}"`;
-      await withTenant(organizationId, (tx) =>
-        tx.lead.updateMany({ where: { id: conversation.leadId!, organizationId }, data: { needsReview: true, needsReviewReason: reason } }),
-      );
-    }
+    await answerWithAi(organizationId, conversationId, messageBody, messageCreatedAt, { midFlow: false });
   } finally {
     await withTenant(organizationId, (tx) =>
       tx.botFlowSession.updateMany({ where: { id: sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }),
     ).catch(() => undefined);
   }
+}
+
+/**
+ * Answers one message with the CRM's packages (see the top of this file).
+ * Also used in the middle of a flow (bot-flow.engine.ts) when the traveller
+ * asks for something the flow itself doesn't cover — then nothing is sent for
+ * small talk or when the AI is unavailable, so the flow carries on as usual.
+ * Returns true when something was sent.
+ */
+export async function answerWithAi(
+  organizationId: string,
+  conversationId: string,
+  messageBody: string,
+  messageCreatedAt: Date,
+  { midFlow }: { midFlow: boolean },
+): Promise<boolean> {
+  if (isPlaceholderBody(messageBody) || !messageBody.trim()) return false; // voice note / sticker / reaction
+  if (isAcknowledgement(messageBody)) return false; // "ok", "thanks", 👍 — nothing to answer, no AI call
+  if (Date.now() - messageCreatedAt.getTime() > START_WINDOW_MS) return false; // too old to reply to
+
+  const loaded = await withTenant(organizationId, async (tx) => {
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
+    if (!conversation || (conversation.channel !== 'WHATSAPP' && conversation.channel !== 'INSTAGRAM')) return null;
+    const packages = await tx.package.findMany({
+      where: { organizationId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        destination: true,
+        days: true,
+        nights: true,
+        priceAmount: true,
+        priceCurrency: true,
+        whatsappDescription: true,
+        description: true,
+        inclusions: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: CATALOG_LIMIT,
+    });
+    const recent = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: 12 });
+    return { conversation, packages, recent: recent.reverse() };
+  });
+  if (!loaded) return false;
+  const { conversation, packages } = loaded;
+  const channel = conversation.channel as 'WHATSAPP' | 'INSTAGRAM';
+  const to = conversation.externalContactId;
+
+  const agent = await loadAgentContext(organizationId).catch(() => null);
+  let result: FollowUpResult | null = null;
+  if (agent) {
+    const history = loaded.recent
+      .filter((m) => m.body && m.createdAt < messageCreatedAt)
+      .map((m) => ({ direction: m.direction, body: m.body as string }));
+    // Only what the AI needs (the input is most of the cost):
+    //  - this message names packages/places → only those, with full details;
+    //  - otherwise → packages the last few messages were about (e.g. a
+    //    question about the one just sent) with details, plus every other
+    //    package on one line (name, place, days, price, a few words) so a
+    //    theme like "desert trips" still finds Jaisalmer.
+    // Short ids (P1, P2…) instead of 36-character ids, mapped back below.
+    const named = matchPackagesInText(messageBody, packages).slice(0, 5);
+    const discussed = named.length > 0 ? [] : matchPackagesInText(history.slice(-4).map((t) => t.body).join('\n'), packages).slice(0, 3);
+    const detailed = new Set([...named, ...discussed].map((p) => p.id));
+    const inCatalog = named.length > 0 ? named : [...discussed, ...packages.filter((p) => !detailed.has(p.id))];
+    const shortIds = new Map(inCatalog.map((p, i) => [`P${i + 1}`, p.id]));
+    const catalog: CatalogPackage[] = inCatalog.map((p, i) => ({
+      id: `P${i + 1}`,
+      name: p.name,
+      destination: p.destination,
+      days: p.days,
+      nights: p.nights,
+      price: p.priceAmount ? money(p.priceAmount, p.priceCurrency) : 'price on request',
+      summary: detailed.has(p.id)
+        ? [p.whatsappDescription || p.description, p.inclusions && `Includes: ${p.inclusions.replace(/\n+/g, ', ')}`]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .slice(0, 300)
+        : clipWords(p.whatsappDescription || p.description || '', 60),
+    }));
+    result = await runFollowUpAssistant(agent.apiKey, DEFAULT_GEMINI_MODEL, agent, catalog, history, messageBody)
+      .then((r) => ({ ...r, packageIds: r.packageIds.map((id) => shortIds.get(id)).filter((id): id is string => !!id) }))
+      .catch((err) => {
+        console.error('[bot-flow] AI follow-up failed, using package-name matching:', err instanceof Error ? err.message : err);
+        return null;
+      });
+  }
+
+  if (!result) {
+    // No AI (no key, or it failed): packages named in the message still go out.
+    const named = matchPackagesInText(messageBody, packages);
+    if (named.length > 0) result = { intent: 'package', packageIds: named.slice(0, 5).map((p) => p.id), reply: '', handoff: false, lead: {} };
+    else if (agent && !midFlow) {
+      // The AI was supposed to answer but couldn't (quota, outage): never
+      // leave them unanswered — a holding reply (at most every 6h) and a flag for the team.
+      await sendHoldingReply(organizationId, channel, to, conversationId, conversation.leadId, messageBody);
+      return true;
+    } else return false;
+  }
+
+  // Mid-flow small talk or an answer the AI has nothing to add to — the flow handles it.
+  const answers = (result.intent === 'package' && result.packageIds.length > 0) || (!!result.reply && (result.intent !== 'other' || result.handoff));
+  if (midFlow && !answers) return false;
+
+  if (conversation.leadId) await saveLeadDetails(organizationId, conversation.leadId, result.lead);
+
+  if (result.intent === 'package' && result.packageIds.length > 0) {
+    if (result.packageIds.length === 1) {
+      if (result.reply) await sendText(organizationId, channel, to, conversationId, result.reply);
+      await sendPackage(organizationId, channel, to, conversationId, result.packageIds[0]);
+    } else {
+      await sendPackageCarousel(organizationId, channel, to, conversationId, result.packageIds, result.reply || 'Here are our packages for you 👇');
+    }
+  } else if (result.reply && (result.intent !== 'other' || result.handoff)) {
+    await sendText(organizationId, channel, to, conversationId, result.reply);
+  }
+
+  if (result.handoff && conversation.leadId) {
+    // Flag it for the team — but keep answering: the AI only steps back once
+    // a teammate actually replies in this chat (see bot-flow.engine.ts).
+    const reason = `AI assistant: ${result.intent === 'package' ? 'no matching package' : "couldn't answer from the package details"} — "${messageBody.slice(0, 120)}"`;
+    await withTenant(organizationId, (tx) =>
+      tx.lead.updateMany({ where: { id: conversation.leadId!, organizationId }, data: { needsReview: true, needsReviewReason: reason } }),
+    );
+  }
+  return answers;
 }
 
 /** The first ~max characters, ending on a whole word. */

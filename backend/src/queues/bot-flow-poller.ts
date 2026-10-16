@@ -2,7 +2,14 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { getRedisConnection } from '../lib/redis';
 import { systemPrisma, type TenantTx } from '../lib/prisma';
 import { processConversation } from '../modules/bot-flow/bot-flow.runner';
-import { botFlowInUse, chooseFlowForGreeting, chooseFlowForNewChat, chooseFlowForRestart, loadFlowRouting } from '../modules/bot-flow/bot-flow.triggers';
+import {
+  botFlowInUse,
+  chooseFlowForGreeting,
+  chooseFlowForNewChat,
+  chooseFlowForRestart,
+  loadFlowRouting,
+  settingsFlowId,
+} from '../modules/bot-flow/bot-flow.triggers';
 
 /**
  * Reacts to new inbound WhatsApp/Instagram messages for orgs using Bot Flow
@@ -73,14 +80,15 @@ async function scanChannel(organizationId: string, channel: 'WHATSAPP' | 'INSTAG
     const body = latestInbound.body ?? '';
     // Cheap pre-checks so chats no flow applies to aren't loaded every 10s.
     // A finished or teammate-owned chat only wakes the bot with a keyword or "hi".
-    const greeting = !!chooseFlowForGreeting(routing, body, session?.flowId ?? null, latestInbound.createdAt);
+    const flowId = session ? settingsFlowId(routing, session.flowId) : null;
+    const greeting = !!chooseFlowForGreeting(routing, body, flowId, latestInbound.createdAt);
     // Handed over: "hi", or the AI assistant (it checks whether a teammate is replying).
-    if (session?.status === 'NEEDS_REVIEW' && !greeting && !routing.aiFollowUp.has(session.flowId)) continue;
+    if (session?.status === 'NEEDS_REVIEW' && !greeting && !routing.aiFollowUp.has(flowId!)) continue;
     if (
       session?.status === 'COMPLETED' &&
       !greeting &&
       !chooseFlowForRestart(routing, body, latestInbound.createdAt) &&
-      !routing.aiFollowUp.has(session.flowId)
+      !routing.aiFollowUp.has(flowId!)
     ) continue;
     if (!session && !chooseFlowForNewChat(routing, body, conversation.lead?.sourceAdId, latestInbound.createdAt)) continue;
 

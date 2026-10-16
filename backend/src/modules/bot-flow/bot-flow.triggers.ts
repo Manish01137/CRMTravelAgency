@@ -182,5 +182,19 @@ export async function loadFlowRouting(tx: TenantTx, organizationId: string, chan
   };
 }
 
+/**
+ * A chat's flow that's no longer in use here — the default was switched to
+ * another flow, or the flow was turned off / lost its triggers. Such a chat
+ * moves to the current flow on its next message instead of finishing the old one.
+ */
+export function isRetiredFlow(routing: FlowRouting, flowId: string): boolean {
+  return flowId !== routing.defaultFlowId && !routing.triggered.some((f) => f.id === flowId);
+}
+
+/** Whose settings (AI assistant, start again on "hi") apply to a chat — the current default for a retired flow. */
+export function settingsFlowId(routing: FlowRouting, flowId: string): string {
+  return isRetiredFlow(routing, flowId) && routing.defaultFlowId ? routing.defaultFlowId : flowId;
+}
+
 /** True when Bot Flow is in use on this channel at all — Smart Bot stays off then, so a chat never gets two bots. */
 export const botFlowInUse = (routing: FlowRouting) => routing.defaultFlowId !== null || routing.triggered.length > 0;

@@ -7,6 +7,7 @@ import {
   chooseFlowForNewChat,
   chooseFlowForRestart,
   loadFlowRouting,
+  settingsFlowId,
   type FlowRouting,
 } from './bot-flow.triggers';
 
@@ -41,11 +42,12 @@ function shouldRun(
 ): boolean {
   if (session?.lastProcessedMessageAt && session.lastProcessedMessageAt >= latest.createdAt) return false;
   const body = latest.body ?? '';
-  const greeting = !!chooseFlowForGreeting(routing, body, session?.flowId ?? null, latest.createdAt);
+  const flowId = session ? settingsFlowId(routing, session.flowId) : null;
+  const greeting = !!chooseFlowForGreeting(routing, body, flowId, latest.createdAt);
   // Handed over: "hi", or the AI assistant (it checks whether a teammate is replying).
-  if (session?.status === 'NEEDS_REVIEW') return greeting || routing.aiFollowUp.has(session.flowId);
+  if (session?.status === 'NEEDS_REVIEW') return greeting || routing.aiFollowUp.has(flowId!);
   if (session?.status === 'COMPLETED') {
-    return greeting || !!chooseFlowForRestart(routing, body, latest.createdAt) || routing.aiFollowUp.has(session.flowId);
+    return greeting || !!chooseFlowForRestart(routing, body, latest.createdAt) || routing.aiFollowUp.has(flowId!);
   }
   if (!session) return !!chooseFlowForNewChat(routing, body, sourceAdId, latest.createdAt);
   return true; // ACTIVE

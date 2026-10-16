@@ -14,12 +14,14 @@ import {
   chooseFlowForGreeting,
   chooseFlowForNewChat,
   chooseFlowForRestart,
+  isRetiredFlow,
   loadFlowRouting,
+  settingsFlowId,
   type FlowRouting,
 } from './bot-flow.triggers';
 import { updateLead } from '../leads/leads.service';
 import { updateLeadSchema } from '../leads/leads.schemas';
-import { runAiFollowUp } from './bot-flow.followup';
+import { answerWithAi, runAiFollowUp } from './bot-flow.followup';
 import { SETTABLE_LEAD_FIELDS } from './bot-flow.schemas';
 
 /**
@@ -100,7 +102,18 @@ type Action =
   | { kind: 'REPEAT_FALLBACK' }
   | { kind: 'REPLY_AND_STAY'; reply: string; retry?: { stepId: string; count: number } }
   | { kind: 'IGNORE' }
-  | { kind: 'ADVANCE'; leadField?: string; leadValue?: unknown; reply?: string; packages?: string[]; nextStep: StepRow | null };
+  /** Stay on the current question and ask it again (the AI just answered something else). */
+  | { kind: 'REPROMPT' }
+  | {
+      kind: 'ADVANCE';
+      leadField?: string;
+      leadValue?: unknown;
+      reply?: string;
+      packages?: string[];
+      nextStep: StepRow | null;
+      /** The package they asked for — a "Send package" step on the way sends this one. */
+      requestedPackageId?: string;
+    };
 
 const LEAD_DATE_FIELD = 'travelDate';
 const LEAD_INT_FIELD = 'travelerCount';
@@ -111,6 +124,66 @@ const LEAD_UPDATE_TYPES: StepType[] = ['SET_ATTRIBUTE', 'ADD_TAG', 'UPDATE_STAGE
 function matchesKeyword(message: string, keywords: string[]): string | null {
   const lower = message.toLowerCase();
   return keywords.find((k) => lower.includes(k.toLowerCase())) ?? null;
+}
+
+// --- Requests in the middle of a flow ("send me the Udaipur package") ---------
+
+/** Words that make a message a request or question, not an answer to the bot's question. */
+const REQUEST_WORDS =
+  /\b(send|share|show|give|need|want|details?|package|packages|pkg|itinerary|price|prices|cost|costs|rate|rates|plan|trip|trips|tour|tours|brochure|pdf|info|information|about|how much|kitna|kitne|bhejo|bhej|chahiye|batao)\b|\?/i;
+/** Menu labels too general to be a destination ("Yes", "Other", "Talk to agent"). */
+const GENERIC_LABEL_WORDS = new Set(
+  'yes no ok okay other others more back menu main talk to an agent call help package packages tour tours trip trips contact human support team me the a our view see show all details info'.split(' '),
+);
+const norm = (t: string) =>
+  t
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+type PackageRef = { id: string; name: string; destination: string };
+
+async function loadPackageRefs(organizationId: string): Promise<PackageRef[]> {
+  return withTenant(organizationId, (tx) =>
+    tx.package.findMany({ where: { organizationId, isActive: true }, select: { id: true, name: true, destination: true }, take: 300 }),
+  );
+}
+
+/**
+ * Where the flow itself handles what they asked for, if anywhere:
+ *   1. a menu option for that package / place (e.g. "Udaipur") — go down that branch;
+ *   2. a "Send package" step with that package;
+ *   3. no CRM package named — a menu option whose words are in the message.
+ */
+function findFlowRoute(state: LoadedState, message: string, named: PackageRef[]): { nextStep: StepRow; packageId?: string } | null {
+  const stepById = (id: string | null) => (id ? state.steps.find((s) => s.id === id) ?? null : null);
+  const menuOptions = state.steps
+    .filter((s) => s.type === 'CONFIRM')
+    .flatMap((s) => (Array.isArray(s.options) ? (s.options as ConfirmOption[]) : []))
+    .map((o) => ({ label: norm(o.label), raw: o.label, target: stepById(o.nextStepId) }))
+    .filter((o): o is { label: string; raw: string; target: StepRow } => !!o.target && o.label.length >= 3);
+
+  for (const o of menuOptions) {
+    const pkg = named.find((p) => matchPackagesInText(o.raw, [p]).length > 0 || ` ${norm(`${p.name} ${p.destination}`)} `.includes(` ${o.label} `));
+    if (pkg) return { nextStep: o.target, packageId: pkg.id };
+  }
+  for (const step of state.steps) {
+    if (step.type !== 'SEND_PACKAGE') continue;
+    const config = (step.config ?? {}) as { packageId?: string; packageIds?: string[] };
+    const ids = config.packageIds?.length ? config.packageIds : config.packageId ? [config.packageId] : [];
+    const pkg = named.find((p) => ids.includes(p.id));
+    if (pkg) return { nextStep: step, packageId: pkg.id };
+  }
+  if (named.length === 0) {
+    const text = ` ${norm(message)} `;
+    const option = menuOptions.find(
+      (o) => o.label.length >= 4 && o.label.split(' ').some((w) => !GENERIC_LABEL_WORDS.has(w)) && text.includes(` ${o.label} `),
+    );
+    if (option) return { nextStep: option.target };
+  }
+  return null;
 }
 
 /** Picks a flow's opening step: the one no other step's `nextStepId`/option points to. */
@@ -161,8 +234,26 @@ async function loadState(
     // The caller usually has it already (bot-flow.runner.ts) — saves database round trips.
     const routing = knownRouting ?? (await loadFlowRouting(tx, organizationId, conversation.channel));
     let session = await tx.botFlowSession.findUnique({ where: { conversationId } });
+    const sourceAdIdOf = async () =>
+      conversation.leadId ? (await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { sourceAdId: true } }))?.sourceAdId : null;
 
-    if (session) {
+    // Mid-way through a flow that's no longer in use (another flow was
+    // assigned, or it was turned off): move to the current flow right away
+    // rather than finishing the old one.
+    let switched = false;
+    if (session?.status === 'ACTIVE' && isRetiredFlow(routing, session.flowId)) {
+      const flowId = chooseFlowForNewChat(routing, messageBody, await sourceAdIdOf(), messageCreatedAt);
+      if (!flowId) {
+        await tx.botFlowSession.update({ where: { id: session.id }, data: { status: 'COMPLETED', currentStepId: null, lastProcessedMessageAt: messageCreatedAt } });
+        return null;
+      }
+      session = await tx.botFlowSession.update({ where: { id: session.id }, data: { flowId, currentStepId: null, collectedData: {} } });
+      switched = true;
+    }
+
+    if (session && !switched) {
+      // A retired flow's chat follows the current flow's settings.
+      const settingsId = settingsFlowId(routing, session.flowId);
       // A returning customer's keyword, or just "hi", starts a flow again:
       //   - finished chat: straight away;
       //   - mid-flow: 30 min after the bot's last message (sooner, "hi" may
@@ -182,9 +273,9 @@ async function loadState(
       };
       let restartFlowId: string | null = null;
       if (session.status === 'COMPLETED') {
-        restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt) ?? chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
+        restartFlowId = chooseFlowForRestart(routing, messageBody, messageCreatedAt) ?? chooseFlowForGreeting(routing, messageBody, settingsId, messageCreatedAt);
       } else {
-        const greetingFlowId = chooseFlowForGreeting(routing, messageBody, session.flowId, messageCreatedAt);
+        const greetingFlowId = chooseFlowForGreeting(routing, messageBody, settingsId, messageCreatedAt);
         if (greetingFlowId && session.status === 'NEEDS_REVIEW') {
           const teammate = await sinceLastOutbound(true);
           const ok = teammate !== null ? teammate >= HANDOFF_RESTART_QUIET_MS : ((await sinceLastOutbound(false)) ?? Infinity) >= ACTIVE_RESTART_QUIET_MS;
@@ -205,7 +296,7 @@ async function loadState(
         }
       } else if (
         session.status !== 'ACTIVE' &&
-        routing.aiFollowUp.has(session.flowId) &&
+        routing.aiFollowUp.has(settingsId) &&
         ((await sinceLastOutbound(true)) ?? Infinity) >= TEAMMATE_ACTIVE_MS
       ) {
         // A finished chat — or one handed over that nobody on the team has
@@ -220,10 +311,7 @@ async function loadState(
       }
     }
     if (!session) {
-      const sourceAdId = conversation.leadId
-        ? (await tx.lead.findUnique({ where: { id: conversation.leadId }, select: { sourceAdId: true } }))?.sourceAdId
-        : null;
-      const flowId = chooseFlowForNewChat(routing, messageBody, sourceAdId, messageCreatedAt);
+      const flowId = chooseFlowForNewChat(routing, messageBody, await sourceAdIdOf(), messageCreatedAt);
       if (!flowId) return null; // no flow applies to this chat
       // upsert, not create: the scheduled poller (every 10s) and a manually
       // triggered scan can both reach this for the same brand-new conversation.
@@ -292,6 +380,7 @@ async function loadRecentHistory(organizationId: string, conversationId: string)
 async function decide(
   state: LoadedState,
   messageBody: string,
+  messageCreatedAt: Date,
   organizationId: string,
   interactiveSelectionId: string | null,
 ): Promise<Action> {
@@ -309,11 +398,31 @@ async function decide(
     return isReactionBody(messageBody) ? { kind: 'IGNORE' } : { kind: 'REPLY_AND_STAY', reply: TYPE_YOUR_REPLY };
   }
 
+  // A request for a package or place ("send me the Udaipur package") at any
+  // point: the flow's own branch / "Send package" step for it if it has one,
+  // otherwise the AI assistant answers with the CRM's packages.
+  const asking = !placeholder && REQUEST_WORDS.test(messageBody);
+  let namedCache: PackageRef[] | null = null;
+  const namedPackages = async () => (namedCache ??= asking ? matchPackagesInText(messageBody, await loadPackageRefs(organizationId)) : []);
+  const routeTo = async (): Promise<Action | null> => {
+    if (!asking) return null;
+    const route = findFlowRoute(state, messageBody, await namedPackages());
+    return route ? { kind: 'ADVANCE', nextStep: route.nextStep, requestedPackageId: route.packageId } : null;
+  };
+  const aiAnswered = () => answerWithAi(organizationId, state.conversation.id, messageBody, messageCreatedAt, { midFlow: true });
+
   if (!currentStep) {
     // Brand-new session: the inbound message just triggered the flow — open
     // with the first step, preceded by the ad's package when this lead came
     // from a linked Click-to-WhatsApp ad.
-    return { kind: 'ADVANCE', packages: await openingAdPackages(state, organizationId), nextStep: findStartStep(state.steps) };
+    const adPackages = await openingAdPackages(state, organizationId);
+    const opening: Action = { kind: 'ADVANCE', packages: adPackages, nextStep: findStartStep(state.steps) };
+    if (adPackages.length > 0) return opening;
+    const route = await routeTo();
+    if (route) return route;
+    // A package the flow doesn't have: the AI sends it, then the flow opens as usual.
+    if ((await namedPackages()).length > 0) await aiAnswered();
+    return opening;
   }
 
   if (currentStep.type === 'COLLECT') {
@@ -329,6 +438,19 @@ async function decide(
     const wordCount = messageBody.trim().split(/\s+/).length;
     const plainShortAnswer = wordCount <= 3 && !/^(i am|i'm|im|my|we are|we're|it is|it's|its)\b/i.test(messageBody.trim());
     let valid = typed.ok && (answerType !== 'text' || plainShortAnswer) ? typed : null;
+
+    // Not an answer but a request ("send me the Udaipur package", "what's the
+    // price?") — handle it, then ask this question again. Where they want to
+    // go IS the answer to a destination question, so that one is left alone.
+    if (!valid && asking && currentStep.leadField !== 'destination') {
+      const named = await namedPackages();
+      const question = answerType !== 'text' && /\?/.test(messageBody);
+      if (named.length > 0 || question) {
+        const route = await routeTo();
+        if (route) return route;
+        if (await aiAnswered()) return { kind: 'REPROMPT' };
+      }
+    }
     if (!valid && currentStep.leadField && agent) {
       const extracted = await extractLeadFields(agent.apiKey, DEFAULT_GEMINI_MODEL, messageBody).catch(() => ({}));
       const extractedValue = extracted[currentStep.leadField as keyof typeof extracted] ?? null;
@@ -369,10 +491,20 @@ async function decide(
         options.find((o) => lower.includes(o.label.toLowerCase()) || o.label.toLowerCase().includes(lower));
     }
 
+    // 4. A package / place from elsewhere in the flow, or one only the CRM has.
+    if (!matchedOption) {
+      const route = await routeTo();
+      if (route) return route;
+      if ((await namedPackages()).length > 0 && (await aiAnswered())) return { kind: 'REPROMPT' };
+    }
+
     if (!matchedOption && options.length === 2 && agent) {
       const answer = await classifyYesNo(agent.apiKey, DEFAULT_GEMINI_MODEL, currentStep.question ?? '', messageBody).catch(() => null);
       if (answer) matchedOption = options.find((o) => o.label.toLowerCase().includes(answer)) ?? options[answer === 'yes' ? 0 : 1];
     }
+
+    // 5. Any other question — the AI answers it, then the options come back.
+    if (!matchedOption && agent && (await aiAnswered())) return { kind: 'REPROMPT' };
 
     if (!matchedOption) return { kind: 'REPEAT_FALLBACK' };
     const nextStep = matchedOption.nextStepId ? state.steps.find((s) => s.id === matchedOption!.nextStepId) ?? null : null;
@@ -404,6 +536,12 @@ async function decide(
       );
       const matches = matchPackagesInText(messageBody, candidates);
       if (matches.length === 1) picked = matches[0].id;
+    }
+    if (!picked && (await namedPackages()).length > 0) {
+      // A package that isn't in this carousel.
+      const route = await routeTo();
+      if (route) return route;
+      if (await aiAnswered()) return { kind: 'REPROMPT' };
     }
     const nextStep = currentStep.nextStepId ? state.steps.find((s) => s.id === currentStep.nextStepId) ?? null : null;
     return { kind: 'ADVANCE', packages: picked ? [picked] : [], nextStep };
@@ -562,7 +700,7 @@ async function advance(
     return;
   }
 
-  const action = await decide(state, messageBody, organizationId, interactiveSelectionId);
+  const action = await decide(state, messageBody, messageCreatedAt, organizationId, interactiveSelectionId);
 
   if (action.kind === 'NEEDS_REVIEW') {
     await withTenant(organizationId, async (tx) => {
@@ -580,6 +718,17 @@ async function advance(
     // Didn't match any option — put the buttons back in front of them.
     const current = state.steps.find((s) => s.id === state.currentStepId);
     if (current?.type === 'CONFIRM') await sendConfirm(organizationId, state, current);
+    await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
+    return;
+  }
+
+  if (action.kind === 'REPROMPT') {
+    const current = state.steps.find((s) => s.id === state.currentStepId);
+    if (current?.type === 'CONFIRM') await sendConfirm(organizationId, state, current);
+    else if (current && current.type !== 'CAROUSEL' && current.question) {
+      const result = await attemptSend(organizationId, state.conversation.channel, state.conversation.externalContactId, current.question);
+      await recordOutbound(organizationId, conversationId, current.question, result);
+    }
     await withTenant(organizationId, (tx) => tx.botFlowSession.update({ where: { id: state.sessionId }, data: { lastProcessedMessageAt: messageCreatedAt } }));
     return;
   }
@@ -670,7 +819,10 @@ async function advance(
     if (cursor.type === 'SEND_PACKAGE') {
       const config = (cursor.config ?? {}) as { packageId?: string; packageIds?: string[] };
       const candidateIds = config.packageIds?.length ? config.packageIds : config.packageId ? [config.packageId] : [];
-      const chosenId = await pickPackageForLead(organizationId, candidateIds, state.conversation.leadId);
+      const chosenId =
+        action.requestedPackageId && candidateIds.includes(action.requestedPackageId)
+          ? action.requestedPackageId
+          : await pickPackageForLead(organizationId, candidateIds, state.conversation.leadId);
       if (chosenId && !adPackageIds.has(chosenId)) {
         await sendPackage(organizationId, channel, externalContactId, conversationId, chosenId);
       }
