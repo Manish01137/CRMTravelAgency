@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Check, Pencil, Plus, Receipt, Search, Trash2, Undo2, Wallet } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Bill, BillCategory, BillStatus, Booking, Paginated } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BILL_CATEGORIES, BILL_CATEGORY_META, BILL_STATUS_META, bookingRef } from '@/lib/crmMeta';
+import { BILL_CATEGORIES, BILL_CATEGORY_META, BILL_STATUS_META, billPayment, bookingRef } from '@/lib/crmMeta';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 
@@ -37,6 +37,7 @@ interface FormValues {
   vendorName: string;
   category: BillCategory;
   amount: string;
+  amountPaid: string;
   currency: string;
   billDate: string;
   bookingId: string;
@@ -58,12 +59,14 @@ function BillForm({ bill, onDone }: { bill: Bill | null; onDone: () => void }) {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors },
   } = useForm<FormValues>({
     defaultValues: {
       vendorName: bill?.vendorName ?? '',
       category: bill?.category ?? 'HOTEL',
       amount: bill ? String(bill.amount) : '',
+      amountPaid: bill ? String(bill.status === 'PAID' ? bill.amount : bill.amountPaid ?? 0) : '',
       currency: bill?.currency ?? 'INR',
       billDate: bill?.billDate ? bill.billDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
       bookingId: bill?.bookingId ?? NO_BOOKING,
@@ -79,14 +82,18 @@ function BillForm({ bill, onDone }: { bill: Bill | null; onDone: () => void }) {
       toast.success(bill ? 'Bill updated' : 'Bill added');
       onDone();
     },
-    onError: () => toast.error('Could not save this bill'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save this bill'),
   });
+  const total = Number(watch('amount')) || 0;
+  const paidNow = Number(watch('amountPaid')) || 0;
+  const overpaid = paidNow > total;
 
   const onSubmit = (v: FormValues) => {
     const base = {
       vendorName: v.vendorName.trim(),
       category: v.category,
       amount: v.amount ? Number(v.amount) : 0,
+      amountPaid: v.amountPaid ? Number(v.amountPaid) : 0,
       currency: (v.currency || 'INR').toUpperCase(),
       billDate: v.billDate || undefined,
       notes: v.notes.trim() || (bill ? null : undefined),
@@ -127,10 +134,21 @@ function BillForm({ bill, onDone }: { bill: Bill | null; onDone: () => void }) {
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <Field label="Amount" htmlFor="billAmount" required>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Total amount" htmlFor="billAmount" required>
           <Input id="billAmount" type="number" min={0} placeholder="0" {...register('amount', { required: true })} />
         </Field>
+        <Field
+          label="Amount paid"
+          htmlFor="billPaid"
+          error={overpaid ? "Can't be more than the total" : undefined}
+          hint={!overpaid && total > 0 ? `Due: ${formatCurrency(Math.max(0, total - paidNow), watch('currency') || 'INR')}` : undefined}
+        >
+          <Input id="billPaid" type="number" min={0} placeholder="0" {...register('amountPaid')} />
+        </Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
         <Field label="Currency" htmlFor="billCurrency">
           <Input id="billCurrency" maxLength={3} className="uppercase" {...register('currency')} />
         </Field>
@@ -173,7 +191,7 @@ function BillForm({ bill, onDone }: { bill: Bill | null; onDone: () => void }) {
             Cancel
           </Button>
         </DialogClose>
-        <Button type="submit" disabled={mutation.isPending}>
+        <Button type="submit" disabled={mutation.isPending || overpaid}>
           {mutation.isPending && <Spinner className="size-4" />}
           {bill ? 'Save changes' : 'Add bill'}
         </Button>
@@ -213,7 +231,7 @@ export function BillsPage() {
   const currency = all[0]?.currency ?? 'INR';
   const totals = useMemo(() => {
     const spend = bills.reduce((s, b) => s + b.amount, 0);
-    const unpaid = bills.filter((b) => b.status === 'UNPAID').reduce((s, b) => s + b.amount, 0);
+    const unpaid = bills.reduce((s, b) => s + billPayment(b).due, 0);
     return { spend, unpaid, paid: spend - unpaid };
   }, [bills]);
 
@@ -325,7 +343,7 @@ export function BillsPage() {
         <Card className="divide-y divide-border overflow-hidden p-0">
           {bills.map((bill) => {
             const cat = BILL_CATEGORY_META[bill.category];
-            const st = BILL_STATUS_META[bill.status];
+            const st = billPayment(bill);
             const paid = bill.status === 'PAID';
             return (
               <div key={bill.id} className="flex flex-wrap items-center gap-3 p-4 transition-colors hover:bg-muted/40">
@@ -358,9 +376,17 @@ export function BillsPage() {
                   </p>
                 </div>
 
-                <p className={cn('font-display text-base font-bold', paid ? 'text-muted-foreground' : 'text-foreground')}>
-                  {formatCurrency(bill.amount, bill.currency)}
-                </p>
+                <div className="text-right">
+                  <p className={cn('font-display text-base font-bold', paid ? 'text-muted-foreground' : 'text-foreground')}>
+                    {formatCurrency(bill.amount, bill.currency)}
+                  </p>
+                  {!paid && st.paid > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Paid {formatCurrency(st.paid, bill.currency)} ·{' '}
+                      <span className="font-medium text-amber-600">Due {formatCurrency(st.due, bill.currency)}</span>
+                    </p>
+                  )}
+                </div>
 
                 <div className="flex gap-1">
                   <Button

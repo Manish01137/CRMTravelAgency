@@ -449,7 +449,10 @@ export interface Bill {
   bookingId: string | null;
   vendorName: string;
   category: BillCategory;
+  /** Total amount of the bill. */
   amount: number;
+  /** Paid to the vendor so far. */
+  amountPaid: number;
   currency: string;
   billDate: string;
   status: BillStatus;

@@ -113,6 +113,19 @@ export const BILL_STATUS_META: Record<BillStatus, { label: string; pill: string 
   PAID: { label: 'Paid', pill: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
 };
 
+/** A bill's payment state for display: Unpaid, Partly paid or Paid, plus what's still due. */
+export function billPayment(bill: { amount: number; amountPaid?: number; status: BillStatus }) {
+  const paid = bill.status === 'PAID' ? bill.amount : Math.min(bill.amountPaid ?? 0, bill.amount);
+  const due = Math.max(0, bill.amount - paid);
+  const meta =
+    bill.status === 'PAID'
+      ? BILL_STATUS_META.PAID
+      : paid > 0
+        ? { label: 'Partly paid', pill: 'bg-sky-50 text-sky-700 ring-sky-200' }
+        : BILL_STATUS_META.UNPAID;
+  return { paid, due, ...meta };
+}
+
 export function bookingRef(n: number): string {
   return `BK-${String(n).padStart(4, '0')}`;
 }

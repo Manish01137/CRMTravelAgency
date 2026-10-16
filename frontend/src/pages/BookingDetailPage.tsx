@@ -19,7 +19,7 @@ import {
   Wallet,
   Wand2,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Bill, BillCategory, Booking, Invoice, TravelPackage, User } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,7 @@ import { BookingFormDialog } from '@/components/bookings/BookingFormDialog';
 import {
   BILL_CATEGORIES,
   BILL_CATEGORY_META,
-  BILL_STATUS_META,
+  billPayment,
   BOOKING_STATUS_STYLES,
   INVOICE_STATUS_STYLES,
   bookingRef,
@@ -179,6 +179,7 @@ interface BillFormValues {
   vendorName: string;
   category: BillCategory;
   amount: string;
+  amountPaid: string;
   billDate: string;
   notes: string;
 }
@@ -191,14 +192,17 @@ function BillsTab({ booking }: { booking: Booking }) {
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const formOpen = adding || editingBill !== null;
 
-  const { register, handleSubmit, control, reset } = useForm<BillFormValues>({
-    defaultValues: { vendorName: '', category: 'HOTEL', amount: '', billDate: '', notes: '' },
+  const { register, handleSubmit, control, reset, watch } = useForm<BillFormValues>({
+    defaultValues: { vendorName: '', category: 'HOTEL', amount: '', amountPaid: '', billDate: '', notes: '' },
   });
+  const billTotal = Number(watch('amount')) || 0;
+  const billPaidNow = Number(watch('amountPaid')) || 0;
+  const overpaid = billPaidNow > billTotal;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['booking', booking.id] });
 
   const closeForm = () => {
-    reset({ vendorName: '', category: 'HOTEL', amount: '', billDate: '', notes: '' });
+    reset({ vendorName: '', category: 'HOTEL', amount: '', amountPaid: '', billDate: '', notes: '' });
     setAdding(false);
     setEditingBill(null);
   };
@@ -210,6 +214,7 @@ function BillsTab({ booking }: { booking: Booking }) {
       vendorName: bill.vendorName,
       category: bill.category,
       amount: String(bill.amount),
+      amountPaid: String(billPayment(bill).paid),
       billDate: bill.billDate ? bill.billDate.slice(0, 10) : '',
       notes: bill.notes ?? '',
     });
@@ -221,6 +226,7 @@ function BillsTab({ booking }: { booking: Booking }) {
         vendorName: v.vendorName.trim(),
         category: v.category,
         amount: v.amount ? Number(v.amount) : 0,
+        amountPaid: v.amountPaid ? Number(v.amountPaid) : 0,
         billDate: v.billDate || undefined,
       };
       return editingBill
@@ -233,7 +239,8 @@ function BillsTab({ booking }: { booking: Booking }) {
       toast.success(editingBill ? 'Bill updated' : 'Bill added');
       closeForm();
     },
-    onError: () => toast.error(editingBill ? 'Could not update the bill' : 'Could not add bill'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : editingBill ? 'Could not update the bill' : 'Could not add bill'),
   });
 
   const toggleMutation = useMutation({
@@ -300,11 +307,19 @@ function BillsTab({ booking }: { booking: Booking }) {
                 />
               </Field>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={`Amount (${booking.currency})`} htmlFor="billAmount" required>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Field label={`Total amount (${booking.currency})`} htmlFor="billAmount" required>
                 <Input id="billAmount" type="number" min={0} {...register('amount', { required: true })} />
               </Field>
-              <Field label="Bill date" htmlFor="billDate">
+              <Field
+                label="Amount paid"
+                htmlFor="billPaid"
+                error={overpaid ? "Can't be more than the total" : undefined}
+                hint={!overpaid && billTotal > 0 ? `Due: ${formatCurrency(Math.max(0, billTotal - billPaidNow), booking.currency)}` : undefined}
+              >
+                <Input id="billPaid" type="number" min={0} placeholder="0" {...register('amountPaid')} />
+              </Field>
+              <Field label="Bill date" htmlFor="billDate" className="col-span-2 sm:col-span-1">
                 <Input id="billDate" type="date" {...register('billDate')} />
               </Field>
             </div>
@@ -315,7 +330,7 @@ function BillsTab({ booking }: { booking: Booking }) {
               <Button type="button" variant="outline" onClick={closeForm}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
+              <Button type="submit" disabled={createMutation.isPending || overpaid}>
                 {createMutation.isPending && <Spinner />}
                 {editingBill ? 'Save changes' : 'Add bill'}
               </Button>
@@ -353,13 +368,21 @@ function BillsTab({ booking }: { booking: Booking }) {
                   onClick={() => toggleMutation.mutate(bill)}
                   className={cn(
                     'rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition-opacity hover:opacity-75',
-                    BILL_STATUS_META[bill.status].pill,
+                    billPayment(bill).pill,
                   )}
-                  title="Toggle paid/unpaid"
+                  title={bill.status === 'PAID' ? 'Mark unpaid' : 'Mark fully paid'}
                 >
-                  {BILL_STATUS_META[bill.status].label}
+                  {billPayment(bill).label}
                 </button>
-                <span className="font-medium text-foreground">{formatCurrency(bill.amount, bill.currency)}</span>
+                <span className="text-right">
+                  <span className="block font-medium text-foreground">{formatCurrency(bill.amount, bill.currency)}</span>
+                  {bill.status !== 'PAID' && billPayment(bill).paid > 0 && (
+                    <span className="block text-xs text-muted-foreground">
+                      Paid {formatCurrency(billPayment(bill).paid, bill.currency)} ·{' '}
+                      <span className="font-medium text-amber-600">Due {formatCurrency(billPayment(bill).due, bill.currency)}</span>
+                    </span>
+                  )}
+                </span>
                 <Button variant="ghost" size="icon-sm" aria-label="Edit bill" title="Edit bill" onClick={() => openEdit(bill)}>
                   <Pencil />
                 </Button>

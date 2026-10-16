@@ -825,6 +825,8 @@ model Bill {
   vendorName     String       @map("vendor_name")
   category       BillCategory @default(OTHER)
   amount         Int
+  /// Paid to the vendor so far; due = amount - amountPaid. Status follows it (PAID once fully paid).
+  amountPaid     Int          @default(0) @map("amount_paid")
   currency       String       @default("INR")
   billDate       DateTime     @default(now()) @map("bill_date") @db.Date
   status         BillStatus   @default(UNPAID)
