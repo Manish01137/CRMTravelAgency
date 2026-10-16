@@ -267,6 +267,8 @@ model Organization {
   adPackageMappings         AdPackageMapping[]
   botInteractionLogs        BotInteractionLog[]
 
+  eventLeads EventLead[]
+
   @@map("organizations")
 }
 
@@ -370,6 +372,8 @@ model User {
   sentMessages       Message[]          @relation("MessageSender")
   sentCommunications CommunicationLog[] @relation("CommSender")
 
+  eventLeadsAdded EventLead[] @relation("EventLeadAddedBy")
+
   @@index([organizationId])
   @@map("users")
 }
@@ -435,6 +439,8 @@ model Lead {
   // Phase 4 (Automation) — same additive-back-relation pattern as Phase 3 above.
   followUpAttempts  FollowUpAttempt[]
   botInteractions   BotInteractionLog[]
+
+  eventLeads EventLead[]
 
   @@index([organizationId])
   @@index([organizationId, status])
@@ -617,9 +623,37 @@ model Batch {
   package      Package      @relation(fields: [packageId], references: [id], onDelete: Cascade)
   bookings     Booking[]
 
+  eventLeads EventLead[]
+
   @@index([organizationId])
   @@index([packageId, departureDate])
   @@map("batches")
+}
+
+/// An existing lead assigned to a departure (Batch, shown as an "event" in the
+/// app). Links the original Lead — never a copy — so each lead appears once per
+/// event; bookingId is set once it's converted into a booking for this event.
+model EventLead {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  batchId        String   @map("batch_id") @db.Uuid
+  leadId         String   @map("lead_id") @db.Uuid
+  /// Travellers expected for this lead (defaults to the lead's own count).
+  travelerCount  Int?     @map("traveler_count")
+  bookingId      String?  @map("booking_id") @db.Uuid
+  addedById      String?  @map("added_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batch        Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  addedBy      User?        @relation("EventLeadAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([batchId, leadId])
+  @@index([organizationId])
+  @@index([leadId])
+  @@map("event_leads")
 }
 
 enum EventStatus {
@@ -669,6 +703,8 @@ model Booking {
   // Additive back-relation for Lead.repeatBookingId — same pattern already
   // used throughout (Phase 3/4 relations onto Lead).
   repeatCustomerLeads Lead[]          @relation("RepeatCustomerLead")
+
+  eventLeads EventLead[]
 
   @@unique([organizationId, bookingNumber])
   @@index([organizationId])

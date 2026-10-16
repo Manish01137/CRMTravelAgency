@@ -310,7 +310,7 @@ export function EventsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((e) => {
             const st = STATUS_META[e.status];
-            const soldOut = e.booked >= e.capacity;
+            const soldOut = (e.seatsBooked ?? e.booked) >= e.capacity;
             return (
               <Card key={e.id} className="flex flex-col overflow-hidden p-0">
                 <div className="relative h-36 w-full bg-muted">
@@ -342,9 +342,14 @@ export function EventsPage() {
                     <p className="flex items-center gap-2 text-foreground">
                       <Users className="size-4 text-muted-foreground" />
                       <span className={cn('font-semibold', soldOut && 'text-destructive')}>
-                        {e.booked}/{e.capacity}
+                        {e.seatsBooked ?? e.booked}/{e.capacity}
                       </span>{' '}
-                      <span className="text-muted-foreground">seats</span>
+                      <span className="text-muted-foreground">seats booked</span>
+                      {e.leadCount > 0 && (
+                        <span className="text-muted-foreground">
+                          · {e.leadCount} lead{e.leadCount === 1 ? '' : 's'}
+                        </span>
+                      )}
                     </p>
                     <p className="font-display text-lg font-bold text-foreground">
                       {formatCurrency(e.pricePerPerson, e.priceCurrency)}

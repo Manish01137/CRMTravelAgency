@@ -602,6 +602,10 @@ export interface EventItem {
   status: EventStatus;
   notes: string | null;
   booked: number;
+  /** Travellers on non-cancelled bookings — the seats taken. */
+  seatsBooked: number;
+  /** Existing leads assigned to this event. */
+  leadCount: number;
 }
 
 export interface EventStats {
@@ -633,6 +637,27 @@ export interface EventDetail {
   revenue: number;
   pending: number;
   bookings: EventPassenger[];
+  leads: EventLeadItem[];
+}
+
+/** An existing lead assigned to an event (the original lead record, never a copy). */
+export interface EventLeadItem {
+  id: string;
+  travelerCount: number;
+  addedAt: string;
+  lead: {
+    id: string;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    status: LeadStatus;
+    source: string;
+    destination: string | null;
+    travelerCount: number | null;
+    assignedTo: { id: string; name: string } | null;
+  };
+  /** Set once the lead is booked on this event. */
+  booking: { id: string; bookingNumber: number; status: BookingStatus; travelerCount: number | null } | null;
 }
 
 export interface SightseeingActivity {

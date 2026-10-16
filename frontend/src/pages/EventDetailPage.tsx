@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, CalendarRange, Link2, MapPin, Phone, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, CalendarRange, Link2, MapPin, Phone, UserPlus, Users, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { EventDetail, EventStatus } from '@/types';
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { BOOKING_STATUS_STYLES, bookingRef } from '@/lib/crmMeta';
 import { formatCurrency, formatTravelDate } from '@/lib/format';
 import { brochureUrl, copyToClipboard } from '@/lib/share';
+import { EventLeads } from '@/components/events/EventLeads';
 
 const STATUS_LABEL: Record<EventStatus, string> = {
   DRAFT: 'Draft',
@@ -75,7 +76,7 @@ export function EventDetailPage() {
     );
   }
 
-  const { event: e, seatsBooked, seatsRemaining, revenue, pending, bookings } = query.data;
+  const { event: e, seatsBooked, seatsRemaining, revenue, pending, bookings, leads = [] } = query.data;
   const currency = e.priceCurrency;
   const fill = Math.min(100, e.capacity > 0 ? Math.round((seatsBooked / e.capacity) * 100) : 0);
 
@@ -159,8 +160,13 @@ export function EventDetailPage() {
       <Card className="mt-4 p-4">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium text-foreground">Seats filled</span>
-          <span className="font-semibold text-foreground">
-            {seatsBooked}/{e.capacity} · {seatsRemaining} left
+          <span className="flex items-center gap-3 font-semibold text-foreground">
+            <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <UserPlus className="size-3.5" /> {leads.length} lead{leads.length === 1 ? '' : 's'}
+            </span>
+            <span>
+              {seatsBooked}/{e.capacity} seats booked · {seatsRemaining} left
+            </span>
           </span>
         </div>
         <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-muted">
@@ -175,6 +181,9 @@ export function EventDetailPage() {
         <Stat label="Revenue collected" value={formatCurrency(revenue, currency)} icon={<Wallet />} tint="bg-emerald-100 text-emerald-600" />
         <Stat label="Pending payments" value={formatCurrency(pending, currency)} icon={<Wallet />} tint="bg-red-100 text-red-600" />
       </div>
+
+      {/* Existing leads assigned to this event */}
+      <EventLeads event={e} leads={leads} seatsRemaining={seatsRemaining} />
 
       {/* Passenger / booking list */}
       <h2 className="mb-3 mt-6 font-display text-base font-semibold text-foreground">Passengers ({bookings.length})</h2>

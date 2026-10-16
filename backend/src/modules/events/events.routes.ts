@@ -6,7 +6,8 @@ import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import { withTenant } from '../../lib/prisma';
-import { NotFound, BadRequest } from '../../lib/errors';
+import { AppError, NotFound, BadRequest } from '../../lib/errors';
+import { createBookingFromLeadTx } from '../bookings/bookings.service';
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
@@ -43,6 +44,17 @@ const updateEventSchema = z
   .refine((o) => Object.keys(o).length > 0, { message: 'No fields to update' });
 
 const idParam = z.object({ id: z.string().uuid('Invalid event id') });
+const eventLeadParam = z.object({ id: z.string().uuid('Invalid event id'), leadId: z.string().uuid('Invalid lead id') });
+
+// Assigning existing leads to an event — links the original lead, never a copy.
+const addLeadsSchema = z.object({ leadIds: z.array(z.string().uuid()).min(1, 'Choose at least one lead').max(100) });
+const updateEventLeadSchema = z.object({ travelerCount: z.coerce.number().int().min(1).max(1000) });
+const convertLeadSchema = z.object({
+  travelerCount: z.coerce.number().int().min(1).max(1000),
+  // Defaults to price per person × travellers.
+  totalAmount: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
+  amountPaid: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
+});
 
 const router = Router();
 router.use(requireAuth);
@@ -71,7 +83,26 @@ async function bookedByBatch(tx: Prisma.TransactionClient, batchIds: string[]): 
   return map;
 }
 
-function shapeEvent(b: any, booked: number) {
+/** Travellers on non-cancelled bookings per batch — the seats actually taken (a booking without a count is 1). */
+async function seatsByBatch(tx: Prisma.TransactionClient, batchIds: string[]): Promise<Record<string, number>> {
+  if (batchIds.length === 0) return {};
+  const rows = await tx.booking.findMany({
+    where: { batchId: { in: batchIds }, status: { not: 'CANCELLED' } },
+    select: { batchId: true, travelerCount: true },
+  });
+  const map: Record<string, number> = {};
+  for (const r of rows) if (r.batchId) map[r.batchId] = (map[r.batchId] ?? 0) + (r.travelerCount ?? 1);
+  return map;
+}
+
+/** Leads assigned to each batch. */
+async function leadsByBatch(tx: Prisma.TransactionClient, batchIds: string[]): Promise<Record<string, number>> {
+  if (batchIds.length === 0) return {};
+  const grouped = await tx.eventLead.groupBy({ by: ['batchId'], where: { batchId: { in: batchIds } }, _count: { _all: true } });
+  return Object.fromEntries(grouped.map((g) => [g.batchId, g._count._all]));
+}
+
+function shapeEvent(b: any, booked: number, extra: { seatsBooked?: number; leadCount?: number } = {}) {
   const pkg = b.package;
   return {
     id: b.id,
@@ -92,6 +123,8 @@ function shapeEvent(b: any, booked: number) {
     status: b.status,
     notes: b.notes,
     booked,
+    seatsBooked: extra.seatsBooked ?? 0,
+    leadCount: extra.leadCount ?? 0,
   };
 }
 
@@ -104,8 +137,11 @@ router.get(
         orderBy: { departureDate: 'asc' },
         include: { package: { select: pkgSelect } },
       });
-      const booked = await bookedByBatch(tx, batches.map((b) => b.id));
-      return batches.map((b) => shapeEvent(b, booked[b.id] ?? 0));
+      const ids = batches.map((b) => b.id);
+      const booked = await bookedByBatch(tx, ids);
+      const seats = await seatsByBatch(tx, ids);
+      const leads = await leadsByBatch(tx, ids);
+      return batches.map((b) => shapeEvent(b, booked[b.id] ?? 0, { seatsBooked: seats[b.id] ?? 0, leadCount: leads[b.id] ?? 0 }));
     });
     res.json(data);
   }),
@@ -179,13 +215,53 @@ router.get(
       const revenue = active.reduce((s, b) => s + b.amountPaid, 0);
       const pending = active.reduce((s, b) => s + Math.max(0, b.totalAmount - b.amountPaid), 0);
 
+      // Leads assigned to this event (the original lead records).
+      const links = await tx.eventLead.findMany({
+        where: { batchId: batch.id },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          lead: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+              status: true,
+              source: true,
+              destination: true,
+              travelerCount: true,
+              assignedTo: { select: { id: true, name: true } },
+            },
+          },
+          booking: { select: { id: true, bookingNumber: true, status: true, travelerCount: true } },
+        },
+      });
+      // A lead booked onto this event some other way (e.g. from the Leads page) counts as converted too.
+      const bookingByLead = new Map(
+        (await tx.booking.findMany({
+          where: { batchId: batch.id, leadId: { in: links.map((l) => l.leadId) }, status: { not: 'CANCELLED' } },
+          select: { id: true, bookingNumber: true, status: true, travelerCount: true, leadId: true },
+        })).map((bk) => [bk.leadId!, bk]),
+      );
+      const leads = links.map((l) => {
+        const bk = l.booking && l.booking.status !== 'CANCELLED' ? l.booking : bookingByLead.get(l.leadId) ?? null;
+        return {
+          id: l.id,
+          travelerCount: l.travelerCount ?? l.lead.travelerCount ?? 1,
+          addedAt: l.createdAt,
+          lead: l.lead,
+          booking: bk ? { id: bk.id, bookingNumber: bk.bookingNumber, status: bk.status, travelerCount: bk.travelerCount } : null,
+        };
+      });
+
       return {
-        event: shapeEvent(batch, active.length),
+        event: shapeEvent(batch, active.length, { seatsBooked: booked, leadCount: links.length }),
         seatsBooked: booked,
         seatsRemaining: Math.max(0, batch.capacity - booked),
         revenue,
         pending,
         bookings,
+        leads,
       };
     });
     res.json(data);
@@ -227,6 +303,130 @@ router.delete(
       if (result.count === 0) throw NotFound('Event not found');
     });
     res.json({ ok: true });
+  }),
+);
+
+// --- Leads assigned to an event ---------------------------------------------
+
+/** Add existing leads to the event (already-added ones are skipped — never duplicated). */
+router.post(
+  '/:id/leads',
+  validate({ params: idParam, body: addLeadsSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const organizationId = req.auth!.organizationId;
+    const { leadIds } = req.body as z.infer<typeof addLeadsSchema>;
+    const result = await withTenant(organizationId, async (tx) => {
+      const batch = await tx.batch.findUnique({ where: { id: req.params.id }, select: { id: true } });
+      if (!batch) throw NotFound('Event not found');
+      const unique = [...new Set(leadIds)];
+      const leads = await tx.lead.findMany({ where: { id: { in: unique } }, select: { id: true, travelerCount: true } }); // RLS: this org's only
+      if (leads.length !== unique.length) throw BadRequest('A selected lead was not found in your organization');
+      const created = await tx.eventLead.createMany({
+        data: leads.map((l) => ({ organizationId, batchId: batch.id, leadId: l.id, travelerCount: l.travelerCount, addedById: req.auth!.userId })),
+        skipDuplicates: true,
+      });
+      return { added: created.count, alreadyInEvent: leads.length - created.count };
+    });
+    res.status(201).json(result);
+  }),
+);
+
+/** Change how many travellers a lead is expected to bring. */
+router.patch(
+  '/:id/leads/:leadId',
+  validate({ params: eventLeadParam, body: updateEventLeadSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const updated = await withTenant(req.auth!.organizationId, async (tx) => {
+      const result = await tx.eventLead.updateMany({
+        where: { batchId: req.params.id, leadId: req.params.leadId },
+        data: { travelerCount: (req.body as z.infer<typeof updateEventLeadSchema>).travelerCount },
+      });
+      if (result.count === 0) throw NotFound('This lead is not in the event');
+      return { ok: true };
+    });
+    res.json(updated);
+  }),
+);
+
+/** Remove a lead from the event. The lead itself, and any booking, are untouched. */
+router.delete(
+  '/:id/leads/:leadId',
+  validate({ params: eventLeadParam }),
+  asyncHandler(async (req: Request, res: Response) => {
+    await withTenant(req.auth!.organizationId, async (tx) => {
+      const result = await tx.eventLead.deleteMany({ where: { batchId: req.params.id, leadId: req.params.leadId } });
+      if (result.count === 0) throw NotFound('This lead is not in the event');
+    });
+    res.json({ ok: true });
+  }),
+);
+
+/**
+ * Convert an assigned lead into a confirmed booking for this event: the normal
+ * lead → booking conversion (same booking numbers, linked to the lead, lead
+ * marked Won), pinned to this departure, with a seat check against capacity.
+ */
+router.post(
+  '/:id/leads/:leadId/convert',
+  validate({ params: eventLeadParam, body: convertLeadSchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const organizationId = req.auth!.organizationId;
+    const input = req.body as z.infer<typeof convertLeadSchema>;
+    const booking = await withTenant(organizationId, async (tx) => {
+      const batch = await tx.batch.findUnique({ where: { id: req.params.id }, include: { package: { select: pkgSelect } } });
+      if (!batch) throw NotFound('Event not found');
+      const link = await tx.eventLead.findUnique({ where: { batchId_leadId: { batchId: batch.id, leadId: req.params.leadId } } });
+      if (!link) throw NotFound('Add this lead to the event first');
+      const lead = await tx.lead.findUnique({ where: { id: req.params.leadId } });
+      if (!lead) throw NotFound('Lead not found');
+
+      const existing = await tx.booking.findFirst({
+        where: { batchId: batch.id, leadId: lead.id, status: { not: 'CANCELLED' } },
+        select: { id: true, bookingNumber: true },
+      });
+      if (existing) throw new AppError(409, 'ALREADY_BOOKED', `This lead already has a booking for this event (BK-${String(existing.bookingNumber).padStart(4, '0')})`);
+
+      const seats = (await seatsByBatch(tx, [batch.id]))[batch.id] ?? 0;
+      const left = batch.capacity - seats;
+      if (input.travelerCount > left) {
+        throw BadRequest(left <= 0 ? 'This event is full — no seats left' : `Only ${left} seat${left === 1 ? '' : 's'} left on this event`);
+      }
+
+      const pricePerPerson = batch.pricePerPerson ?? batch.package.priceAmount ?? 0;
+      const created = await createBookingFromLeadTx(tx, organizationId, lead, {
+        batchId: batch.id,
+        packageId: batch.packageId,
+        destination: batch.package.destination,
+        startDate: batch.departureDate,
+        endDate: batch.returnDate ?? undefined,
+        totalAmount: input.totalAmount ?? pricePerPerson * input.travelerCount,
+      });
+      const bookingRow = await tx.booking.update({
+        where: { id: created.id },
+        data: { travelerCount: input.travelerCount, currency: batch.package.priceCurrency, ...(input.amountPaid != null && { amountPaid: input.amountPaid }) },
+        select: { id: true, bookingNumber: true },
+      });
+      await tx.eventLead.update({ where: { id: link.id }, data: { bookingId: bookingRow.id, travelerCount: input.travelerCount } });
+      // The lead's timeline shows it (same entries as a stage move on the Leads page).
+      const actorId = req.auth!.userId ?? null;
+      if (lead.status !== 'WON') {
+        await tx.lead.update({ where: { id: lead.id }, data: { status: 'WON' } });
+        await tx.leadActivity.create({
+          data: { organizationId, leadId: lead.id, type: 'STATUS_CHANGE', fromStatus: lead.status, toStatus: 'WON', createdById: actorId },
+        });
+      }
+      await tx.leadActivity.create({
+        data: {
+          organizationId,
+          leadId: lead.id,
+          type: 'NOTE',
+          message: `Booked on event "${batch.name || batch.package.name}" — BK-${String(bookingRow.bookingNumber).padStart(4, '0')}, ${input.travelerCount} traveller${input.travelerCount === 1 ? '' : 's'}`,
+          createdById: actorId,
+        },
+      });
+      return bookingRow;
+    });
+    res.status(201).json(booking);
   }),
 );
 
