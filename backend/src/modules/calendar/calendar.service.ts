@@ -1,5 +1,6 @@
 import { withTenant } from '../../lib/prisma';
 import { NotFound } from '../../lib/errors';
+import type { Prisma } from '@prisma/client';
 import type { CalendarQuery, CreateEventInput, UpdateEventInput } from './calendar.schemas';
 
 export async function createEvent(organizationId: string, input: CreateEventInput) {
@@ -25,7 +26,7 @@ export async function deleteEvent(organizationId: string, id: string): Promise<v
  * Merged calendar feed for a date range: manual events + booking departures &
  * returns + due tasks. Everything org-scoped through RLS as usual.
  */
-export async function getCalendarFeed(organizationId: string, query: CalendarQuery) {
+export async function getCalendarFeed(organizationId: string, query: CalendarQuery, bookings: Prisma.BookingWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
     const events = await tx.event.findMany({
       where: { date: { gte: query.from, lte: query.to } },
@@ -33,7 +34,7 @@ export async function getCalendarFeed(organizationId: string, query: CalendarQue
     });
 
     const departures = await tx.booking.findMany({
-      where: { startDate: { gte: query.from, lte: query.to }, status: { not: 'CANCELLED' } },
+      where: { AND: [bookings], startDate: { gte: query.from, lte: query.to }, status: { not: 'CANCELLED' } },
       select: {
         id: true,
         bookingNumber: true,
@@ -46,7 +47,7 @@ export async function getCalendarFeed(organizationId: string, query: CalendarQue
     });
 
     const returns = await tx.booking.findMany({
-      where: { endDate: { gte: query.from, lte: query.to }, status: { not: 'CANCELLED' } },
+      where: { AND: [bookings], endDate: { gte: query.from, lte: query.to }, status: { not: 'CANCELLED' } },
       select: {
         id: true,
         bookingNumber: true,

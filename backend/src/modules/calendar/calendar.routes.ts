@@ -4,6 +4,7 @@ import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { requireAuth } from '../../middleware/auth';
 import * as service from './calendar.service';
+import { bookingScope, viewerOf } from '../../lib/visibility';
 import {
   calendarQuerySchema,
   createEventSchema,
@@ -20,7 +21,8 @@ router.get(
   '/',
   validate({ query: calendarQuerySchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    res.json(await service.getCalendarFeed(req.auth!.organizationId, req.query as unknown as CalendarQuery));
+    // An agent's calendar shows only their own bookings' departures and returns.
+    res.json(await service.getCalendarFeed(req.auth!.organizationId, req.query as unknown as CalendarQuery, bookingScope(viewerOf(req))));
   }),
 );
 

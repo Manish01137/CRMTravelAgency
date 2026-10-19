@@ -8,6 +8,7 @@ import { requireAuth } from '../../middleware/auth';
 import { withTenant } from '../../lib/prisma';
 import { AppError, NotFound, BadRequest } from '../../lib/errors';
 import { createBookingFromLeadTx } from '../bookings/bookings.service';
+import { assertLeadVisible, bookingScope, leadScope, seesEverything, viewerOf } from '../../lib/visibility';
 
 const emptyToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
 const emptyToNull = (v: unknown) => (v === '' ? null : v);
@@ -212,12 +213,20 @@ router.get(
 
       const active = bookings.filter((b) => b.status !== 'CANCELLED');
       const booked = active.reduce((s, b) => s + (b.travelerCount ?? 1), 0);
-      const revenue = active.reduce((s, b) => s + b.amountPaid, 0);
-      const pending = active.reduce((s, b) => s + Math.max(0, b.totalAmount - b.amountPaid), 0);
+      // Seats are for the whole event; an agent's passenger list and money are only their own bookings.
+      const viewer = viewerOf(req);
+      const mine = seesEverything(viewer)
+        ? null
+        : new Set((await tx.booking.findMany({ where: { batchId: batch.id, ...bookingScope(viewer) }, select: { id: true } })).map((b) => b.id));
+      const shown = mine ? bookings.filter((b) => mine.has(b.id)) : bookings;
+      const shownActive = shown.filter((b) => b.status !== 'CANCELLED');
+      const revenue = shownActive.reduce((s, b) => s + b.amountPaid, 0);
+      const pending = shownActive.reduce((s, b) => s + Math.max(0, b.totalAmount - b.amountPaid), 0);
 
       // Leads assigned to this event (the original lead records).
       const links = await tx.eventLead.findMany({
-        where: { batchId: batch.id },
+        // An agent sees only their own leads here too (lib/visibility.ts).
+        where: { batchId: batch.id, lead: leadScope(viewerOf(req)) },
         orderBy: { createdAt: 'desc' },
         include: {
           lead: {
@@ -260,7 +269,7 @@ router.get(
         seatsRemaining: Math.max(0, batch.capacity - booked),
         revenue,
         pending,
-        bookings,
+        bookings: shown,
         leads,
       };
     });
@@ -319,7 +328,8 @@ router.post(
       const batch = await tx.batch.findUnique({ where: { id: req.params.id }, select: { id: true } });
       if (!batch) throw NotFound('Event not found');
       const unique = [...new Set(leadIds)];
-      const leads = await tx.lead.findMany({ where: { id: { in: unique } }, select: { id: true, travelerCount: true } }); // RLS: this org's only
+      // RLS: this org's only; an agent can only add their own leads.
+      const leads = await tx.lead.findMany({ where: { id: { in: unique }, ...leadScope(viewerOf(req)) }, select: { id: true, travelerCount: true } });
       if (leads.length !== unique.length) throw BadRequest('A selected lead was not found in your organization');
       const created = await tx.eventLead.createMany({
         data: leads.map((l) => ({ organizationId, batchId: batch.id, leadId: l.id, travelerCount: l.travelerCount, addedById: req.auth!.userId })),
@@ -336,6 +346,7 @@ router.patch(
   '/:id/leads/:leadId',
   validate({ params: eventLeadParam, body: updateEventLeadSchema }),
   asyncHandler(async (req: Request, res: Response) => {
+    await assertLeadVisible(req.auth!.organizationId, viewerOf(req), req.params.leadId);
     const updated = await withTenant(req.auth!.organizationId, async (tx) => {
       const result = await tx.eventLead.updateMany({
         where: { batchId: req.params.id, leadId: req.params.leadId },
@@ -353,6 +364,7 @@ router.delete(
   '/:id/leads/:leadId',
   validate({ params: eventLeadParam }),
   asyncHandler(async (req: Request, res: Response) => {
+    await assertLeadVisible(req.auth!.organizationId, viewerOf(req), req.params.leadId);
     await withTenant(req.auth!.organizationId, async (tx) => {
       const result = await tx.eventLead.deleteMany({ where: { batchId: req.params.id, leadId: req.params.leadId } });
       if (result.count === 0) throw NotFound('This lead is not in the event');
@@ -370,6 +382,7 @@ router.post(
   '/:id/leads/:leadId/convert',
   validate({ params: eventLeadParam, body: convertLeadSchema }),
   asyncHandler(async (req: Request, res: Response) => {
+    await assertLeadVisible(req.auth!.organizationId, viewerOf(req), req.params.leadId);
     const organizationId = req.auth!.organizationId;
     const input = req.body as z.infer<typeof convertLeadSchema>;
     const booking = await withTenant(organizationId, async (tx) => {

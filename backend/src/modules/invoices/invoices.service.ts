@@ -24,9 +24,9 @@ function computeTotals(items: LineItem[], taxPercent: number) {
   return { subtotal, taxAmount, total: subtotal + taxAmount };
 }
 
-export async function listInvoices(organizationId: string, query: ListInvoicesQuery) {
+export async function listInvoices(organizationId: string, query: ListInvoicesQuery, scope: Prisma.InvoiceWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
-    const where: Prisma.InvoiceWhereInput = {};
+    const where: Prisma.InvoiceWhereInput = { AND: [scope] }; // which invoices this user may see (lib/visibility.ts)
     if (query.status) where.status = query.status;
     if (query.search) {
       where.OR = [{ customerName: { contains: query.search, mode: 'insensitive' } }];

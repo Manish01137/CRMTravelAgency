@@ -127,9 +127,10 @@ async function assertRefsInOrg(
   }
 }
 
-export async function listBookings(organizationId: string, query: ListBookingsQuery) {
+export async function listBookings(organizationId: string, query: ListBookingsQuery, scope: Prisma.BookingWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
-    const where: Prisma.BookingWhereInput = {};
+    // `scope`: which bookings this user may see at all (lib/visibility.ts).
+    const where: Prisma.BookingWhereInput = { AND: [scope] };
     if (query.status) where.status = query.status;
     if (query.leadId) where.leadId = query.leadId;
     if (query.search) {
@@ -244,10 +245,10 @@ export async function setItinerary(organizationId: string, bookingId: string, in
   });
 }
 
-export async function getBookingStats(organizationId: string) {
+export async function getBookingStats(organizationId: string, scope: Prisma.BookingWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
-    const total = await tx.booking.count();
-    const grouped = await tx.booking.groupBy({ by: ['status'], _count: { _all: true } });
+    const total = await tx.booking.count({ where: scope });
+    const grouped = await tx.booking.groupBy({ by: ['status'], where: scope, _count: { _all: true } });
     const byStatus: Record<string, number> = {};
     for (const row of grouped) byStatus[row.status] = row._count._all;
 
@@ -255,12 +256,12 @@ export async function getBookingStats(organizationId: string) {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const departingThisMonth = await tx.booking.count({
-      where: { startDate: { gte: monthStart, lt: monthEnd } },
+      where: { AND: [scope], startDate: { gte: monthStart, lt: monthEnd } },
     });
 
     const sums = await tx.booking.aggregate({
       _sum: { totalAmount: true, amountPaid: true },
-      where: { status: { notIn: ['CANCELLED'] } },
+      where: { AND: [scope], status: { notIn: ['CANCELLED'] } },
     });
 
     return {

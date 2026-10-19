@@ -324,7 +324,7 @@ export function InboxPage() {
   const selectedLeadId = (fromThread ?? listed)?.lead?.id ?? selected?.leadId ?? null;
   const selectedTags = (fromThread ?? listed)?.lead?.tags ?? [];
   const selectedAssignee = (fromThread ?? listed)?.lead?.assignedTo ?? null;
-  const { user: me } = useAuth();
+  const { user: me, isAdmin } = useAuth();
 
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
   // WhatsApp templates failing because the Meta account has no payment method.
@@ -357,6 +357,8 @@ export function InboxPage() {
     onSuccess: (_d, assignedToId) => {
       const who = teammates.find((u) => u.id === assignedToId);
       toast.success(assignedToId ? `Assigned to ${assignedToId === me?.id ? 'you' : who?.name ?? 'teammate'}` : 'Unassigned');
+      // An agent only sees their own chats — one handed to someone else leaves their Inbox.
+      if (!isAdmin && assignedToId !== me?.id) setSelectedId(null);
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['leads'] });
@@ -551,7 +553,10 @@ export function InboxPage() {
                   { key: 'mine', label: 'Mine' },
                   { key: 'unassigned', label: 'Unassigned' },
                 ] as const
-              ).map((f) => (
+              )
+                // An agent's Inbox is only their own chats, so "Mine" / "Unassigned" mean nothing there.
+                .filter((f) => isAdmin || (f.key !== 'mine' && f.key !== 'unassigned'))
+                .map((f) => (
                 <button
                   key={f.key}
                   type="button"

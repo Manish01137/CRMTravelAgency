@@ -7,9 +7,9 @@ const billInclude = {
   booking: { select: { id: true, bookingNumber: true, customerName: true } },
 } satisfies Prisma.BillInclude;
 
-export async function listBills(organizationId: string, query: ListBillsQuery) {
+export async function listBills(organizationId: string, query: ListBillsQuery, scope: Prisma.BillWhereInput = {}) {
   return withTenant(organizationId, (tx) => {
-    const where: Prisma.BillWhereInput = {};
+    const where: Prisma.BillWhereInput = { AND: [scope] }; // which bills this user may see (lib/visibility.ts)
     if (query.bookingId) where.bookingId = query.bookingId;
     if (query.status) where.status = query.status;
     return tx.bill.findMany({ where, include: billInclude, orderBy: { billDate: 'desc' }, take: 500 });

@@ -57,9 +57,10 @@ async function autoCreateBookingIfWon(
   await createBookingFromLeadTx(tx, organizationId, lead, { autoCreated: true });
 }
 
-export async function listLeads(organizationId: string, query: ListLeadsQuery) {
+export async function listLeads(organizationId: string, query: ListLeadsQuery, scope: Prisma.LeadWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
-    const where: Prisma.LeadWhereInput = {};
+    // `scope`: which leads this user may see at all (lib/visibility.ts).
+    const where: Prisma.LeadWhereInput = { AND: [scope] };
     if (query.status) {
       where.status = Array.isArray(query.status) ? { in: query.status } : query.status;
     }
@@ -250,16 +251,16 @@ export async function deleteLead(organizationId: string, id: string): Promise<vo
   });
 }
 
-export async function getLeadStats(organizationId: string) {
+export async function getLeadStats(organizationId: string, scope: Prisma.LeadWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    const total = await tx.lead.count();
-    const grouped = await tx.lead.groupBy({ by: ['status'], _count: { _all: true } });
-    const newThisWeek = await tx.lead.count({ where: { createdAt: { gte: sevenDaysAgo } } });
-    const newToday = await tx.lead.count({ where: { createdAt: { gte: startOfToday } } });
+    const total = await tx.lead.count({ where: scope });
+    const grouped = await tx.lead.groupBy({ by: ['status'], where: scope, _count: { _all: true } });
+    const newThisWeek = await tx.lead.count({ where: { ...scope, createdAt: { gte: sevenDaysAgo } } });
+    const newToday = await tx.lead.count({ where: { ...scope, createdAt: { gte: startOfToday } } });
 
     const byStatus: Record<string, number> = {};
     for (const row of grouped) byStatus[row.status] = row._count._all;

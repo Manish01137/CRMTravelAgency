@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { withTenant } from '../../lib/prisma';
 import { decryptJson } from '../../lib/encryption';
 import {
@@ -59,16 +60,22 @@ function documentFilenameFromUrl(url: string): string {
  * business-to-customer conversations only), so there would never be any
  * group conversations to show; a chip for it would just always be empty.
  */
-export async function listConversations(organizationId: string, query: ListConversationsQuery, userId: string) {
+export async function listConversations(
+  organizationId: string,
+  query: ListConversationsQuery,
+  userId: string,
+  scope: Prisma.ConversationWhereInput = {},
+) {
   return withTenant(organizationId, (tx) =>
     tx.conversation.findMany({
       where: {
         organizationId,
+        // `scope`: which chats this user may see at all (lib/visibility.ts).
+        AND: [scope, ...(query.filter === 'unassigned' ? [{ OR: [{ leadId: null }, { lead: { assignedToId: null } }] }] : [])],
         channel: query.channel,
         ...(query.filter === 'unread' ? { unreadCount: { gt: 0 } } : {}),
         ...(query.filter === 'favorites' ? { isFavorite: true } : {}),
         ...(query.filter === 'mine' ? { lead: { assignedToId: userId } } : {}),
-        ...(query.filter === 'unassigned' ? { AND: [{ OR: [{ leadId: null }, { lead: { assignedToId: null } }] }] } : {}),
         ...(query.stage === 'none' ? { leadId: null } : query.stage ? { lead: { status: query.stage } } : {}),
         ...(query.search
           ? {
@@ -87,16 +94,16 @@ export async function listConversations(organizationId: string, query: ListConve
 }
 
 /** How many chats on this channel sit in each lead stage — the counts on the Inbox stage chips. */
-export async function stageCounts(organizationId: string, query: StageCountsQuery) {
+export async function stageCounts(organizationId: string, query: StageCountsQuery, scope: Prisma.ConversationWhereInput = {}) {
   return withTenant(organizationId, async (tx) => {
     // Sequential — an interactive transaction uses one connection.
     const grouped = await tx.lead.groupBy({
       by: ['status'],
-      where: { organizationId, conversations: { some: { channel: query.channel } } },
+      where: { organizationId, conversations: { some: { channel: query.channel, ...scope } } },
       _count: { _all: true },
     });
-    const total = await tx.conversation.count({ where: { organizationId, channel: query.channel } });
-    const noLead = await tx.conversation.count({ where: { organizationId, channel: query.channel, leadId: null } });
+    const total = await tx.conversation.count({ where: { organizationId, channel: query.channel, AND: [scope] } });
+    const noLead = await tx.conversation.count({ where: { organizationId, channel: query.channel, leadId: null, AND: [scope] } });
     const byStage = Object.fromEntries(LEAD_STAGES.map((s) => [s, 0])) as Record<(typeof LEAD_STAGES)[number], number>;
     for (const g of grouped) byStage[g.status] = g._count._all;
     return { total, none: noLead, byStage };

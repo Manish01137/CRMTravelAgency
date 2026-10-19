@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { assertConversationVisible, viewerOf } from '../../lib/visibility';
 import * as service from './ai-agent.service';
 import type { UpdateSettingsInput } from './ai-agent.schemas';
 
@@ -13,12 +14,14 @@ export async function updateSettings(req: Request, res: Response): Promise<void>
 
 export async function suggestReply(req: Request, res: Response): Promise<void> {
   const { conversationId } = req.body as { conversationId: string };
+  await assertConversationVisible(req.auth!.organizationId, viewerOf(req), conversationId);
   const reply = await service.suggestReplyForConversation(req.auth!.organizationId, conversationId);
   res.json({ reply });
 }
 
 export async function summarize(req: Request, res: Response): Promise<void> {
   const { conversationId } = req.body as { conversationId: string };
+  await assertConversationVisible(req.auth!.organizationId, viewerOf(req), conversationId);
   const summary = await service.summarizeConversationById(req.auth!.organizationId, conversationId);
   res.json({ summary });
 }
