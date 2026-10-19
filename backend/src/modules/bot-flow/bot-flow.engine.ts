@@ -21,7 +21,7 @@ import {
 } from './bot-flow.triggers';
 import { updateLead } from '../leads/leads.service';
 import { updateLeadSchema } from '../leads/leads.schemas';
-import { answerWithAi, runAiFollowUp } from './bot-flow.followup';
+import { REQUEST_WORDS, answerWithAi, isRequest, runAiFollowUp } from './bot-flow.followup';
 import { SETTABLE_LEAD_FIELDS } from './bot-flow.schemas';
 
 /**
@@ -128,9 +128,6 @@ function matchesKeyword(message: string, keywords: string[]): string | null {
 
 // --- Requests in the middle of a flow ("send me the Udaipur package") ---------
 
-/** Words that make a message a request or question, not an answer to the bot's question. */
-const REQUEST_WORDS =
-  /\b(send|share|show|give|need|want|details?|package|packages|pkg|itinerary|price|prices|cost|costs|rate|rates|plan|trip|trips|tour|tours|brochure|pdf|info|information|about|how much|kitna|kitne|bhejo|bhej|chahiye|batao)\b|\?/i;
 /** Menu labels too general to be a destination ("Yes", "Other", "Talk to agent"). */
 const GENERIC_LABEL_WORDS = new Set(
   'yes no ok okay other others more back menu main talk to an agent call help package packages tour tours trip trips contact human support team me the a our view see show all details info'.split(' '),
@@ -420,8 +417,10 @@ async function decide(
     if (adPackages.length > 0) return opening;
     const route = await routeTo();
     if (route) return route;
-    // A package the flow doesn't have: the AI sends it, then the flow opens as usual.
-    if ((await namedPackages()).length > 0) await aiAnswered();
+    // Something the flow doesn't have ("I want the Udaipur package"): the AI
+    // answers first — the CRM's package, or a sorry when there isn't one —
+    // then the flow opens as usual.
+    if (isRequest(messageBody)) await aiAnswered();
     return opening;
   }
 
@@ -444,7 +443,7 @@ async function decide(
     // go IS the answer to a destination question, so that one is left alone.
     if (!valid && asking && currentStep.leadField !== 'destination') {
       const named = await namedPackages();
-      const question = answerType !== 'text' && /\?/.test(messageBody);
+      const question = /\?/.test(messageBody);
       if (named.length > 0 || question) {
         const route = await routeTo();
         if (route) return route;

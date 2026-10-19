@@ -21,6 +21,13 @@ import { START_WINDOW_MS } from './bot-flow.triggers';
 
 const CATALOG_LIMIT = 50;
 
+/** Words that make a message a request or question, not an answer to the bot's question. */
+export const REQUEST_WORDS =
+  /\b(send|share|show|give|need|want|details?|package|packages|pkg|itinerary|price|prices|cost|costs|rate|rates|plan|trip|trips|tour|tours|brochure|pdf|info|information|about|how much|kitna|kitne|bhejo|bhej|chahiye|batao)\b|\?/i;
+
+/** A request or question that deserves an answer ("is there any Udaipur package?"), not small talk. */
+export const isRequest = (message: string) => REQUEST_WORDS.test(message) && !isAcknowledgement(message);
+
 function money(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount);
@@ -147,6 +154,11 @@ export async function answerWithAi(
   // Mid-flow small talk or an answer the AI has nothing to add to — the flow handles it.
   const answers = (result.intent === 'package' && result.packageIds.length > 0) || (!!result.reply && (result.intent !== 'other' || result.handoff));
   if (midFlow && !answers) return false;
+  if (!answers && isRequest(messageBody)) {
+    // They asked something real and the AI came back empty — never leave it unanswered.
+    await sendHoldingReply(organizationId, channel, to, conversationId, conversation.leadId, messageBody);
+    return true;
+  }
 
   if (conversation.leadId) await saveLeadDetails(organizationId, conversation.leadId, result.lead);
 
@@ -191,7 +203,6 @@ function isAcknowledgement(message: string): boolean {
 }
 
 const HOLDING_REPLY = 'Thanks for your message! Our team will get back to you shortly 🙏';
-const HOLDING_REPLY_EVERY_MS = 6 * 60 * 60 * 1000;
 
 async function sendHoldingReply(
   organizationId: string,
@@ -201,13 +212,11 @@ async function sendHoldingReply(
   leadId: string | null,
   messageBody: string,
 ): Promise<void> {
-  const recentlySent = await withTenant(organizationId, (tx) =>
-    tx.message.findFirst({
-      where: { conversationId, direction: 'OUTBOUND', body: HOLDING_REPLY, createdAt: { gte: new Date(Date.now() - HOLDING_REPLY_EVERY_MS) } },
-      select: { id: true },
-    }),
+  // Not twice in a row — but every new question after something else gets one.
+  const lastOutbound = await withTenant(organizationId, (tx) =>
+    tx.message.findFirst({ where: { conversationId, direction: 'OUTBOUND' }, orderBy: { createdAt: 'desc' }, select: { body: true } }),
   );
-  if (!recentlySent) await sendText(organizationId, channel, to, conversationId, HOLDING_REPLY);
+  if (lastOutbound?.body !== HOLDING_REPLY) await sendText(organizationId, channel, to, conversationId, HOLDING_REPLY);
   if (leadId) {
     await withTenant(organizationId, (tx) =>
       tx.lead.updateMany({
