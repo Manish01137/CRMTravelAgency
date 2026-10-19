@@ -19,6 +19,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { launchWhatsAppEmbeddedSignup, launchInstagramLoginPopup, startInstagramRedirect, instagramRedirectUri } from '@/lib/metaSignup';
 import type { ConnectInstagramResult } from '@/types';
+import { WhatsAppBillingSection } from '@/components/channels/WhatsAppBilling';
 
 const VERTICAL_LABELS: Record<string, string> = {
   UNDEFINED: 'Not set',
@@ -59,7 +60,9 @@ function OAuthChannelCard({
   connecting,
   onDisconnect,
   disconnecting,
+  children,
 }: {
+  children?: React.ReactNode;
   icon: React.ReactNode;
   title: string;
   description: string;
@@ -91,6 +94,7 @@ function OAuthChannelCard({
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {status.lastError}
           </p>
         )}
+        {status.status === 'CONNECTED' && children}
         {!enabled && status.status !== 'CONNECTED' && (
           <p className="text-xs text-muted-foreground">
             Not configured on this server yet — an admin needs to set up the Meta App first.
@@ -691,7 +695,9 @@ export function ChannelsSettingsPage() {
             connecting={connectingChannel === 'WHATSAPP'}
             onDisconnect={() => disconnectMutation.mutate('WHATSAPP')}
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'WHATSAPP'}
-          />
+          >
+            <WhatsAppBillingSection billingIssue={whatsapp?.billingIssue} />
+          </OAuthChannelCard>
           <OAuthChannelCard
             icon={<Instagram className="size-5 text-pink-600" />}
             title="Instagram"

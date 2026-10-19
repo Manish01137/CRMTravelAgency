@@ -2,7 +2,7 @@ import { systemPrisma, withTenant } from '../../lib/prisma';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
-import { fetchInstagramSenderProfile } from '../../lib/meta';
+import { WHATSAPP_PAYMENT_MESSAGE, fetchInstagramSenderProfile, isMetaPaymentError } from '../../lib/meta';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { sendPackage } from '../bot-flow/bot-send';
 import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
@@ -446,8 +446,11 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       const rawStatus = String(st.status ?? '');
       const mapped = rawStatus === 'sent' ? 'SENT' : rawStatus === 'delivered' ? 'DELIVERED' : rawStatus === 'read' ? 'READ' : rawStatus === 'failed' ? 'FAILED' : null;
       if (messageId && mapped) {
-        const errors = Array.isArray(st.errors) ? (st.errors as { title?: string }[]) : [];
-        await updateOutboundStatus(organizationId, messageId, mapped, errors[0]?.title);
+        const errors = Array.isArray(st.errors) ? (st.errors as { code?: number; title?: string; message?: string }[]) : [];
+        const error = errors[0];
+        // No payment method on their Meta account — say so plainly, it's the agency's to fix.
+        const errorMessage = error && isMetaPaymentError(error.code, `${error.title ?? ''} ${error.message ?? ''}`) ? WHATSAPP_PAYMENT_MESSAGE : error?.title;
+        await updateOutboundStatus(organizationId, messageId, mapped, errorMessage);
       }
     }
   }

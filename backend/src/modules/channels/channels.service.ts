@@ -23,6 +23,7 @@ import {
   refreshInstagramLongLivedToken,
   subscribeInstagramLoginWebhooks,
     isInstagramLoginConfigured,
+  WHATSAPP_PAYMENT_MESSAGE,
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
@@ -77,6 +78,8 @@ export interface ChannelStatus {
   displayName: string | null;
   lastError: string | null;
   connectedAt: Date | null;
+  /** WhatsApp: a message recently failed because the Meta account has no payment method. */
+  billingIssue?: boolean;
 }
 
 const ALL_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'EMAIL'] as const;
@@ -128,6 +131,35 @@ export async function getPlatformConfig() {
 export async function listChannels(organizationId: string): Promise<ChannelStatus[]> {
   return withTenant(organizationId, async (tx) => {
     const rows = await tx.channelConnection.findMany({ where: { organizationId } });
+    // Billing: a WhatsApp send failed for lack of a payment method in the last
+    // week, and no template has been delivered since (adding a card fixes it).
+    let billingIssue = false;
+    if (rows.some((r) => r.channel === 'WHATSAPP' && r.status === 'CONNECTED')) {
+      const failed = await tx.message.findFirst({
+        where: {
+          conversation: { channel: 'WHATSAPP' },
+          direction: 'OUTBOUND',
+          status: 'FAILED',
+          errorMessage: WHATSAPP_PAYMENT_MESSAGE,
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      if (failed) {
+        const deliveredSince = await tx.message.findFirst({
+          where: {
+            conversation: { channel: 'WHATSAPP' },
+            direction: 'OUTBOUND',
+            templateName: { not: null },
+            status: { in: ['DELIVERED', 'READ'] },
+            createdAt: { gt: failed.createdAt },
+          },
+          select: { id: true },
+        });
+        billingIssue = !deliveredSince;
+      }
+    }
     return ALL_CHANNELS.map((channel) => {
       const row = rows.find((r) => r.channel === channel);
       return {
@@ -136,6 +168,7 @@ export async function listChannels(organizationId: string): Promise<ChannelStatu
         displayName: row?.displayName ?? null,
         lastError: row?.lastError ?? null,
         connectedAt: row?.connectedAt ?? null,
+        ...(channel === 'WHATSAPP' && { billingIssue }),
       };
     });
   });

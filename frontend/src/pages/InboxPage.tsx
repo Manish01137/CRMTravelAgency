@@ -41,6 +41,7 @@ import type {
   MessageTemplate,
   User,
   ChatBotState,
+  ChannelStatus,
 } from '@/types';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { useAuth } from '@/context/AuthContext';
@@ -63,6 +64,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { initials, formatSmartTime } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
+import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -325,6 +327,9 @@ export function InboxPage() {
   const { user: me } = useAuth();
 
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
+  // WhatsApp templates failing because the Meta account has no payment method.
+  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => api.get<ChannelStatus[]>('/channels'), staleTime: 60_000 });
+  const whatsappBillingIssue = !!channelsQuery.data?.find((c) => c.channel === 'WHATSAPP')?.billingIssue;
   const teammates = usersQuery.data ?? [];
 
   // The bot on this chat — why it's quiet, and restart / pause.
@@ -405,7 +410,12 @@ export function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Send failed'),
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : 'Send failed');
+      queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      // No payment method on Meta → the banner shows right away.
+      if (err instanceof ApiError && err.code === 'WHATSAPP_PAYMENT_REQUIRED') queryClient.invalidateQueries({ queryKey: ['channels'] });
+    },
   });
 
   const uploadMutation = useMutation({
@@ -930,7 +940,10 @@ export function InboxPage() {
                               {m.direction === 'OUTBOUND' && statusIcon(m.status, wa)}
                             </div>
                             {m.status === 'FAILED' && m.errorMessage && (
-                              <p className={cn('mt-1 text-[11px]', wa ? 'text-red-600' : 'text-red-200')}>{m.errorMessage}</p>
+                              <>
+                                <p className={cn('mt-1 text-[11px]', wa ? 'text-red-600' : 'text-red-200')}>{m.errorMessage}</p>
+                                {isWhatsAppPaymentError(m.errorMessage) && <AddPaymentMethodLink className={wa ? 'text-red-700' : 'text-white'} />}
+                              </>
                             )}
                           </div>
                         </div>
@@ -941,6 +954,7 @@ export function InboxPage() {
               </div>
 
               <div className="border-t border-border p-3" style={channel === 'WHATSAPP' ? { backgroundColor: WA_COMPOSER_BG } : undefined}>
+                {channel === 'WHATSAPP' && whatsappBillingIssue && <WhatsAppBillingBanner />}
                 {igWindow !== 'open' && (
                   <div className={cn('mb-2 rounded-lg px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
                     {igWindow === 'closed'

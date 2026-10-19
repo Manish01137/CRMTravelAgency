@@ -26,11 +26,23 @@ function requireMetaConfigured(): void {
   }
 }
 
+/** Where an agency adds the card Meta charges for their WhatsApp messages. */
+export const META_BILLING_URL = 'https://business.facebook.com/billing_hub/';
+/** Shown wherever a WhatsApp send fails because the agency's Meta account has no payment method. */
+export const WHATSAPP_PAYMENT_MESSAGE =
+  'WhatsApp needs a payment method on your Meta account to send template messages. Add one in Meta Billing & payments (Settings → Channels → WhatsApp → Add payment method).';
+
+/** Meta's "Business eligibility payment issue" (131042) — no valid payment method on the WhatsApp account. */
+export function isMetaPaymentError(code: unknown, text?: string | null): boolean {
+  return Number(code) === 131042 || /eligibility payment|payment (method|issue|account)/i.test(text ?? '');
+}
+
 async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${GRAPH_BASE()}${path}`, init);
-  const data = (await res.json().catch(() => null)) as (T & { error?: { message?: string } }) | null;
+  const data = (await res.json().catch(() => null)) as (T & { error?: { message?: string; code?: number } }) | null;
   if (!res.ok) {
     const message = data?.error?.message ?? `Graph API request failed (${res.status})`;
+    if (isMetaPaymentError(data?.error?.code, message)) throw new AppError(402, 'WHATSAPP_PAYMENT_REQUIRED', WHATSAPP_PAYMENT_MESSAGE);
     throw new AppError(502, 'META_API_ERROR', message);
   }
   return data as T;

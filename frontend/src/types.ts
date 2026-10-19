@@ -708,6 +708,8 @@ export interface ChannelStatus {
   displayName: string | null;
   lastError: string | null;
   connectedAt: string | null;
+  /** WhatsApp: a message recently failed because the Meta account has no payment method. */
+  billingIssue?: boolean;
 }
 
 export interface ChannelsPlatformConfig {
