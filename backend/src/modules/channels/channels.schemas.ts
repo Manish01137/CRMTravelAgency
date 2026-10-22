@@ -15,6 +15,13 @@ export const connectWhatsAppSchema = z.object({
   phoneNumberId: z.string().trim().min(1).optional(),
 });
 
+// Finishing a WhatsApp number Meta left "Pending": a verification code by SMS / voice call, then the code.
+export const requestWhatsAppCodeSchema = z.object({ method: z.enum(['SMS', 'VOICE']) });
+export const verifyWhatsAppCodeSchema = z.object({
+  // "123-456" or "123 456" as typed from the SMS → "123456".
+  code: z.preprocess((v) => (typeof v === 'string' ? v.replace(/[\s-]/g, '') : v), z.string().regex(/^\d{6}$/, 'Enter the 6-digit code')),
+});
+
 export const connectInstagramSchema = z.object({
   code: z.string().trim().min(1, 'Missing authorization code'),
   redirectUri: z.string().trim().url('Invalid redirect URI'),
@@ -76,6 +83,8 @@ export const updateWhatsAppBusinessProfileSchema = z.object({
 
 export type ConnectWhatsAppInput = z.infer<typeof connectWhatsAppSchema>;
 export type ConnectInstagramInput = z.infer<typeof connectInstagramSchema>;
+export type RequestWhatsAppCodeInput = z.infer<typeof requestWhatsAppCodeSchema>;
+export type VerifyWhatsAppCodeInput = z.infer<typeof verifyWhatsAppCodeSchema>;
 export type SelectInstagramPageInput = z.infer<typeof selectInstagramPageSchema>;
 export type ConnectEmailInput = z.infer<typeof connectEmailSchema>;
 export type UpdateWhatsAppBusinessProfileInput = z.infer<typeof updateWhatsAppBusinessProfileSchema>;

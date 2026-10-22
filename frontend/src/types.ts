@@ -700,7 +700,8 @@ export interface InviteResult {
 // --- Phase 3: Communication ---------------------------------------------------
 
 export type ChannelType = 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL';
-export type ChannelConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'FAILED';
+/** PENDING: WhatsApp connected, but Meta hasn't activated the number yet. */
+export type ChannelConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'PENDING' | 'FAILED';
 
 export interface ChannelStatus {
   channel: ChannelType;
@@ -710,6 +711,15 @@ export interface ChannelStatus {
   connectedAt: string | null;
   /** WhatsApp: a message recently failed because the Meta account has no payment method. */
   billingIssue?: boolean;
+  /** WhatsApp connect response: Meta wants the number verified with an SMS / voice code. */
+  needsVerification?: boolean;
+}
+
+/** /channels/whatsapp/resync, /request-code and /verify-code. */
+export interface WhatsAppSyncResult {
+  status: ChannelConnectionStatus;
+  lastError: string | null;
+  needsVerification: boolean;
 }
 
 export interface ChannelsPlatformConfig {

@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { launchWhatsAppEmbeddedSignup, launchInstagramLoginPopup, startInstagramRedirect, instagramRedirectUri } from '@/lib/metaSignup';
 import type { ConnectInstagramResult } from '@/types';
 import { WhatsAppBillingSection } from '@/components/channels/WhatsAppBilling';
+import { WhatsAppPendingSetup, WhatsAppRecheckButton } from '@/components/channels/WhatsAppPendingSetup';
 
 const VERTICAL_LABELS: Record<string, string> = {
   UNDEFINED: 'Not set',
@@ -45,6 +46,7 @@ const VERTICAL_LABELS: Record<string, string> = {
 
 function statusBadge(status: ChannelStatus['status']) {
   if (status === 'CONNECTED') return <Badge variant="success">Connected</Badge>;
+  if (status === 'PENDING') return <Badge variant="warning">Setup pending</Badge>;
   if (status === 'FAILED') return <Badge variant="destructive">Connection failed</Badge>;
   return <Badge variant="muted">Not connected</Badge>;
 }
@@ -86,7 +88,7 @@ function OAuthChannelCard({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {status.status === 'CONNECTED' && status.displayName && (
+        {(status.status === 'CONNECTED' || status.status === 'PENDING') && status.displayName && (
           <p className="text-sm font-medium text-foreground">{status.displayName}</p>
         )}
         {status.status === 'FAILED' && status.lastError && (
@@ -94,14 +96,24 @@ function OAuthChannelCard({
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {status.lastError}
           </p>
         )}
-        {status.status === 'CONNECTED' && children}
+        {status.status === 'PENDING' && status.lastError && (
+          <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {status.lastError}
+          </p>
+        )}
+        {(status.status === 'CONNECTED' || status.status === 'PENDING') && children}
         {!enabled && status.status !== 'CONNECTED' && (
           <p className="text-xs text-muted-foreground">
             Not configured on this server yet — an admin needs to set up the Meta App first.
           </p>
         )}
         <div className="flex gap-2 pt-1">
-          {status.status === 'CONNECTED' ? (
+          {status.status === 'PENDING' && (
+            <Button size="sm" variant="outline" onClick={onConnect} disabled={!enabled || connecting}>
+              {connecting ? <Spinner className="size-4" /> : <Plug className="size-4" />} Connect again
+            </Button>
+          )}
+          {status.status === 'CONNECTED' || status.status === 'PENDING' ? (
             <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)} disabled={disconnecting}>
               {disconnecting ? <Spinner className="size-4" /> : <Unplug className="size-4" />} Disconnect
             </Button>
@@ -593,6 +605,8 @@ function TemplatesCard() {
 export function ChannelsSettingsPage() {
   const queryClient = useQueryClient();
   const [connectingChannel, setConnectingChannel] = useState<ChannelType | null>(null);
+  // Meta wants the WhatsApp number verified with a code (from the last connect / re-check).
+  const [whatsappNeedsVerification, setWhatsappNeedsVerification] = useState(false);
 
   const configQuery = useQuery({ queryKey: ['channels-config'], queryFn: () => api.get<ChannelsPlatformConfig>('/channels/config') });
   const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => api.get<ChannelStatus[]>('/channels') });
@@ -625,10 +639,13 @@ export function ChannelsSettingsPage() {
       // never appears, the flow died inside launchWhatsAppEmbeddedSignup
       // (see metaSignup.ts logs) before ever getting here.
       console.log('[ChannelsSettingsPage] calling POST /channels/whatsapp/connect with payload:', result);
-      const response = await api.post('/channels/whatsapp/connect', result);
+      const response = await api.post<ChannelStatus>('/channels/whatsapp/connect', result);
       console.log('[ChannelsSettingsPage] POST /channels/whatsapp/connect succeeded — response body:', response);
       invalidate();
-      toast.success('WhatsApp connected');
+      setWhatsappNeedsVerification(!!response.needsVerification);
+      // Connected through Meta, but the number may not be live yet (Meta's "Pending").
+      if (response.status === 'PENDING') toast.warning('WhatsApp connected, but Meta hasn’t activated the number yet — finish the steps on the WhatsApp card');
+      else toast.success('WhatsApp connected');
     } catch (err) {
       // Log the FULL error object (status/code/details for ApiError, or the
       // raw error otherwise) — not just the message string used for the toast.
@@ -696,7 +713,25 @@ export function ChannelsSettingsPage() {
             onDisconnect={() => disconnectMutation.mutate('WHATSAPP')}
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'WHATSAPP'}
           >
-            <WhatsAppBillingSection billingIssue={whatsapp?.billingIssue} />
+            {whatsapp?.status === 'PENDING' ? (
+              <WhatsAppPendingSetup
+                needsVerification={whatsappNeedsVerification}
+                onResult={(r) => {
+                  setWhatsappNeedsVerification(r.needsVerification);
+                  invalidate();
+                }}
+              />
+            ) : (
+              <>
+                <WhatsAppBillingSection billingIssue={whatsapp?.billingIssue} />
+                <WhatsAppRecheckButton
+                  onResult={(r) => {
+                    setWhatsappNeedsVerification(r.needsVerification);
+                    invalidate();
+                  }}
+                />
+              </>
+            )}
           </OAuthChannelCard>
           <OAuthChannelCard
             icon={<Instagram className="size-5 text-pink-600" />}

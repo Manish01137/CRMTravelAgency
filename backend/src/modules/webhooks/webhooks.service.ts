@@ -348,7 +348,11 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
   const wabaId = String(entry.id ?? '');
   if (!wabaId) return;
   const organizationId = await findConnectionOrgId('WHATSAPP', wabaId);
-  if (!organizationId) return; // no organization has connected this WABA — nothing to do, nothing leaked
+  if (!organizationId) {
+    // No CONNECTED org for this WABA (not ours, still PENDING, or a different WABA than the one stored).
+    console.warn('[webhooks] WhatsApp webhook for a WABA with no CONNECTED connection:', wabaId);
+    return;
+  }
 
   const changes = Array.isArray(entry.changes) ? entry.changes : [];
   for (const change of changes) {
@@ -363,6 +367,8 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       }
       continue;
     }
+    // account_update, phone_number_quality_update, … — nothing to record as a message.
+    if (field !== 'messages') continue;
 
     const contacts = Array.isArray(value.contacts) ? (value.contacts as { wa_id?: string; profile?: { name?: string } }[]) : [];
     const messages = Array.isArray(value.messages) ? (value.messages as Record<string, unknown>[]) : [];

@@ -41,6 +41,7 @@ export function OwnerChannelHealthPage() {
               const counts = data.summary[channel] ?? {};
               const connected = counts.CONNECTED ?? 0;
               const failed = counts.FAILED ?? 0;
+              const pending = counts.PENDING ?? 0;
               return (
                 <Card key={channel} className="p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft">
                   <div className="flex items-center gap-2.5">
@@ -55,6 +56,13 @@ export function OwnerChannelHealthPage() {
                       <span className="text-lg font-bold">{connected}</span>
                       <span className="text-xs text-muted-foreground">connected</span>
                     </div>
+                    {pending > 0 && (
+                      <div className="flex items-center gap-1.5 text-amber-600">
+                        <XCircle className="size-4" />
+                        <span className="text-lg font-bold">{pending}</span>
+                        <span className="text-xs text-muted-foreground">setup pending</span>
+                      </div>
+                    )}
                     {failed > 0 && (
                       <div className="flex items-center gap-1.5 text-destructive">
                         <XCircle className="size-4" />

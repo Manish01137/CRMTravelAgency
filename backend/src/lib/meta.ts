@@ -37,13 +37,27 @@ export function isMetaPaymentError(code: unknown, text?: string | null): boolean
   return Number(code) === 131042 || /eligibility payment|payment (method|issue|account)/i.test(text ?? '');
 }
 
+/** Meta's own error code / subcode, kept on a thrown META_API_ERROR as `details` (e.g. 133005 = two-step PIN mismatch). */
+export interface MetaErrorDetails {
+  metaCode?: number;
+  metaSubcode?: number;
+}
+
+/** Meta's error code from an error graphFetch threw, if any. */
+export function metaErrorCode(err: unknown): number | undefined {
+  return err instanceof AppError ? (err.details as MetaErrorDetails | undefined)?.metaCode : undefined;
+}
+
 async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${GRAPH_BASE()}${path}`, init);
-  const data = (await res.json().catch(() => null)) as (T & { error?: { message?: string; code?: number } }) | null;
+  const data = (await res.json().catch(() => null)) as
+    | (T & { error?: { message?: string; code?: number; error_subcode?: number } })
+    | null;
   if (!res.ok) {
     const message = data?.error?.message ?? `Graph API request failed (${res.status})`;
     if (isMetaPaymentError(data?.error?.code, message)) throw new AppError(402, 'WHATSAPP_PAYMENT_REQUIRED', WHATSAPP_PAYMENT_MESSAGE);
-    throw new AppError(502, 'META_API_ERROR', message);
+    const details: MetaErrorDetails = { metaCode: data?.error?.code, metaSubcode: data?.error?.error_subcode };
+    throw new AppError(502, 'META_API_ERROR', message, details);
   }
   return data as T;
 }
@@ -257,6 +271,99 @@ export async function subscribeWabaWebhook(wabaId: string, accessToken: string):
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+}
+
+/**
+ * Activates the number on the Cloud API. Embedded Signup only adds it to the
+ * WABA — until this runs, Meta shows it as "Pending" and it can't send or
+ * receive. `pin` becomes the number's two-step verification PIN.
+ */
+export async function registerWhatsAppPhoneNumber(phoneNumberId: string, accessToken: string, pin: string): Promise<void> {
+  try {
+    await graphFetch(`/${phoneNumberId}/register`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', pin }),
+    });
+  } catch (err) {
+    // Registering a number that is already registered is the outcome we wanted.
+    if (err instanceof AppError && /already (been )?registered/i.test(err.message)) return;
+    throw err;
+  }
+}
+
+export interface WhatsAppPhoneNumberStatus {
+  /** CONNECTED once live on the Cloud API; PENDING, DISCONNECTED, FLAGGED, RESTRICTED, … otherwise. */
+  status: string | null;
+  /** VERIFIED, NOT_VERIFIED or EXPIRED — whether the number passed its SMS/voice code check. */
+  codeVerificationStatus: string | null;
+  /** Display name review: APPROVED, PENDING_REVIEW, DECLINED, … */
+  nameStatus: string | null;
+  /** CLOUD_API once registered on the Cloud API. */
+  platformType: string | null;
+  displayPhoneNumber: string | null;
+}
+
+/** Meta's real state of the number — what WhatsApp Manager shows, not what we last saved. */
+export async function fetchWhatsAppPhoneNumberStatus(phoneNumberId: string, accessToken: string): Promise<WhatsAppPhoneNumberStatus> {
+  const data = await graphFetch<{
+    status?: string;
+    code_verification_status?: string;
+    name_status?: string;
+    platform_type?: string;
+    display_phone_number?: string;
+  }>(`/${phoneNumberId}?fields=status,code_verification_status,name_status,platform_type,display_phone_number`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return {
+    status: data.status ?? null,
+    codeVerificationStatus: data.code_verification_status ?? null,
+    nameStatus: data.name_status ?? null,
+    platformType: data.platform_type ?? null,
+    displayPhoneNumber: data.display_phone_number ?? null,
+  };
+}
+
+/** Sends the number a verification code by SMS or voice call. */
+export async function requestWhatsAppVerificationCode(phoneNumberId: string, accessToken: string, method: 'SMS' | 'VOICE'): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/request_code`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code_method: method, language: 'en' }),
+  });
+}
+
+/** Confirms the code the number received (see requestWhatsAppVerificationCode). */
+export async function verifyWhatsAppCode(phoneNumberId: string, accessToken: string, code: string): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/verify_code`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** The phone numbers on one WhatsApp Business Account. */
+export async function listWabaPhoneNumbers(wabaId: string, accessToken: string): Promise<{ id: string; displayPhoneNumber: string | null }[]> {
+  const data = await graphFetch<{ data: { id: string; display_phone_number?: string }[] }>(`/${wabaId}/phone_numbers`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return (data.data ?? []).map((p) => ({ id: p.id, displayPhoneNumber: p.display_phone_number ?? null }));
+}
+
+/**
+ * Embedded Signup can leave more than one WABA behind — make sure the number
+ * really sits on the WABA we're about to store, since inbound webhooks are
+ * routed by WABA id.
+ */
+export async function assertPhoneBelongsToWaba(wabaId: string, phoneNumberId: string, accessToken: string): Promise<void> {
+  const numbers = await listWabaPhoneNumbers(wabaId, accessToken);
+  if (!numbers.some((n) => n.id === phoneNumberId)) {
+    throw new AppError(
+      409,
+      'WHATSAPP_NUMBER_NOT_ON_WABA',
+      `This phone number isn't part of WhatsApp Business Account ${wabaId} — please connect again and pick the account that holds the number`,
+    );
+  }
 }
 
 /**

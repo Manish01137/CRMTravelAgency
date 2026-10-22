@@ -12,7 +12,9 @@ import {
   connectEmailSchema,
   connectInstagramSchema,
   connectWhatsAppSchema,
+  requestWhatsAppCodeSchema,
   selectInstagramPageSchema,
+  verifyWhatsAppCodeSchema,
   updateWhatsAppBusinessProfileSchema,
 } from './channels.schemas';
 
@@ -39,6 +41,21 @@ router.post(
   requireRole('ADMIN'),
   validate({ body: connectWhatsAppSchema }),
   asyncHandler(controller.connectWhatsApp),
+);
+// A number Meta left "Pending": re-check Meta's real status (registering it if
+// needed), or finish its SMS / voice code verification.
+router.post('/whatsapp/resync', requireRole('ADMIN'), asyncHandler(controller.resyncWhatsApp));
+router.post(
+  '/whatsapp/request-code',
+  requireRole('ADMIN'),
+  validate({ body: requestWhatsAppCodeSchema }),
+  asyncHandler(controller.requestWhatsAppCode),
+);
+router.post(
+  '/whatsapp/verify-code',
+  requireRole('ADMIN'),
+  validate({ body: verifyWhatsAppCodeSchema }),
+  asyncHandler(controller.verifyWhatsAppCode),
 );
 router.post(
   '/instagram/connect',

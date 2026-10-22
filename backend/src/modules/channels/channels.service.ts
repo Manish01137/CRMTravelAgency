@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import { systemPrisma, withTenant } from '../../lib/prisma';
 import { forgetChannelCredentials } from '../bot-flow/bot-send';
 import { encryptJson, decryptJson } from '../../lib/encryption';
@@ -6,8 +7,14 @@ import {
   isWhatsAppConfigured,
   exchangeWhatsAppCode,
   discoverWhatsAppWabaAndPhoneNumber,
-  fetchWhatsAppPhoneNumber,
   subscribeWabaWebhook,
+  registerWhatsAppPhoneNumber,
+  fetchWhatsAppPhoneNumberStatus,
+  requestWhatsAppVerificationCode,
+  verifyWhatsAppCode,
+  listWabaPhoneNumbers,
+  assertPhoneBelongsToWaba,
+  metaErrorCode,
   exchangeFacebookUserCode,
   exchangeLongLivedUserToken,
   fetchManagedFacebookPages,
@@ -25,7 +32,7 @@ import {
     isInstagramLoginConfigured,
   WHATSAPP_PAYMENT_MESSAGE,
 } from '../../lib/meta';
-import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput } from '../../lib/meta';
+import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput, WhatsAppPhoneNumberStatus } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
 import type {
   ConnectEmailInput,
@@ -38,6 +45,8 @@ export interface WhatsAppCredentials {
   accessToken: string;
   phoneNumberId: string;
   wabaId: string;
+  /** Two-step verification PIN we set when registering the number on the Cloud API (6 digits). Never logged or returned. */
+  registrationPin?: string;
 }
 /**
  * `accessToken` is now a Facebook Page Access Token (doesn't expire) and
@@ -74,7 +83,7 @@ export type ConnectInstagramResult =
 /** Public-safe shape — credentials are NEVER included. */
 export interface ChannelStatus {
   channel: 'WHATSAPP' | 'INSTAGRAM' | 'EMAIL';
-  status: 'NOT_CONNECTED' | 'CONNECTED' | 'FAILED';
+  status: 'NOT_CONNECTED' | 'CONNECTED' | 'PENDING' | 'FAILED';
   displayName: string | null;
   lastError: string | null;
   connectedAt: Date | null;
@@ -186,13 +195,28 @@ async function markFailed(organizationId: string, channel: (typeof ALL_CHANNELS)
   forgetChannelCredentials(organizationId);
 }
 
-export async function connectWhatsApp(organizationId: string, input: ConnectWhatsAppInput): Promise<ChannelStatus> {
+export async function connectWhatsApp(
+  organizationId: string,
+  input: ConnectWhatsAppInput,
+): Promise<ChannelStatus & { needsVerification: boolean }> {
   try {
     const { accessToken } = await exchangeWhatsAppCode(input.code);
 
     let wabaId = input.wabaId;
     let phoneNumberId = input.phoneNumberId;
-    if (!wabaId || !phoneNumberId) {
+    if (wabaId && !phoneNumberId) {
+      // Popup told us the WABA but not the number (FINISH_ONLY_WABA) — look on that WABA only.
+      const numbers = await listWabaPhoneNumbers(wabaId, accessToken);
+      if (numbers.length === 0) {
+        throw new AppError(502, 'WABA_DISCOVERY_FAILED', 'No phone number found on this WhatsApp Business Account — add one in Meta and connect again');
+      }
+      if (numbers.length > 1) {
+        throw new AppError(409, 'WABA_NEEDS_SELECTION', 'This WhatsApp Business Account has several phone numbers — contact support to complete setup', {
+          reason: `WhatsApp Business Account has ${numbers.length} phone numbers — can't tell which one to connect`,
+        });
+      }
+      phoneNumberId = numbers[0].id;
+    } else if (!wabaId || !phoneNumberId) {
       // Client couldn't capture these from the popup (see connectWhatsAppSchema's
       // comment) — fall back to discovering them ourselves from the token.
       const discovered = await discoverWhatsAppWabaAndPhoneNumber(accessToken);
@@ -208,35 +232,18 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
       phoneNumberId = discovered.phoneNumberId;
     }
 
-    const { displayPhoneNumber } = await fetchWhatsAppPhoneNumber(phoneNumberId, accessToken);
-    await subscribeWabaWebhook(wabaId, accessToken);
+    // Inbound messages are routed by WABA id — it has to be the one holding the number.
+    await assertPhoneBelongsToWaba(wabaId, phoneNumberId, accessToken);
 
-    const credentials: WhatsAppCredentials = { accessToken, phoneNumberId, wabaId };
-    const row = await withTenant(organizationId, (tx) =>
-      tx.channelConnection.upsert({
-        where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
-        create: {
-          organizationId,
-          channel: 'WHATSAPP',
-          status: 'CONNECTED',
-          displayName: displayPhoneNumber,
-          externalId: wabaId,
-          credentials: encryptJson(credentials),
-          connectedAt: new Date(),
-          lastError: null,
-        },
-        update: {
-          status: 'CONNECTED',
-          displayName: displayPhoneNumber,
-          externalId: wabaId,
-          credentials: encryptJson(credentials),
-          connectedAt: new Date(),
-          lastError: null,
-        },
-      }),
-    );
-    forgetChannelCredentials(organizationId);
-    return toStatus(row);
+    // Reconnecting the same number keeps its PIN (Meta rejects a different one once set).
+    const existing = await storedWhatsAppCredentials(organizationId);
+    const registrationPin = existing?.phoneNumberId === phoneNumberId && existing.registrationPin ? existing.registrationPin : newRegistrationPin();
+    const credentials: WhatsAppCredentials = { accessToken, phoneNumberId, wabaId, registrationPin };
+
+    // Every Graph call first, then one database write.
+    const activation = await activateWhatsAppNumber(credentials, { register: true });
+    const row = await saveWhatsAppActivation(organizationId, credentials, activation);
+    return { ...toStatus(row), needsVerification: activation.needsVerification };
   } catch (err) {
     console.error(err);
     const message = err instanceof AppError ? err.message : 'Could not connect WhatsApp — please try again';
@@ -247,6 +254,162 @@ export async function connectWhatsApp(organizationId: string, input: ConnectWhat
     if (err instanceof AppError) throw err;
     throw new AppError(502, 'CHANNEL_CONNECT_FAILED', message);
   }
+}
+
+// --- Activating the WhatsApp number on the Cloud API --------------------------
+//
+// Embedded Signup only adds the number to the WABA. It stays "Pending" in
+// WhatsApp Manager — and can't send or receive — until it's registered
+// (POST /{id}/register with a two-step PIN), and registering needs the number
+// to have passed its SMS/voice code check. The connection is only CONNECTED
+// once Meta itself says the number is; otherwise PENDING with the reason.
+
+export interface WhatsAppSyncResult {
+  status: ChannelStatus['status'];
+  lastError: string | null;
+  /** Meta wants the number verified with an SMS / voice code before it can be registered. */
+  needsVerification: boolean;
+}
+
+interface WhatsAppActivation {
+  connected: boolean;
+  lastError: string | null;
+  needsVerification: boolean;
+  displayPhoneNumber: string | null;
+}
+
+/** Meta error codes from /register with a clear next step. */
+const REGISTER_HINTS: Record<number, string> = {
+  133005: 'This number already has a two-step verification PIN. Turn two-step verification off for it in WhatsApp Manager (Phone numbers → Settings), then press Re-check status.',
+  133006: 'Meta needs the number verified with a code first — request a code below.',
+  133008: 'Too many PIN attempts — wait a few hours, then press Re-check status.',
+  133009: 'PIN attempts too fast — wait a minute, then press Re-check status.',
+  133016: 'Too many registration attempts for this number — wait a few hours, then press Re-check status.',
+};
+
+const UNVERIFIED = new Set(['NOT_VERIFIED', 'EXPIRED']);
+
+function newRegistrationPin(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/** The org's stored WhatsApp credentials, whatever the connection's status (null if there are none). */
+async function storedWhatsAppCredentials(organizationId: string): Promise<WhatsAppCredentials | null> {
+  const row = await withTenant(organizationId, (tx) =>
+    tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } }, select: { credentials: true } }),
+  );
+  if (!row?.credentials) return null;
+  try {
+    return decryptJson<WhatsAppCredentials>(row.credentials);
+  } catch {
+    return null; // unreadable (e.g. ENCRYPTION_KEY rotated) — treat as none
+  }
+}
+
+/** Reads Meta's view of the number into our CONNECTED / PENDING terms. */
+function describeNumberStatus(status: WhatsAppPhoneNumberStatus, registerError: unknown): WhatsAppActivation {
+  const connected = status.status === 'CONNECTED';
+  const code = metaErrorCode(registerError);
+  const needsVerification = !connected && (UNVERIFIED.has(status.codeVerificationStatus ?? '') || code === 133006);
+  if (connected) return { connected, lastError: null, needsVerification: false, displayPhoneNumber: status.displayPhoneNumber };
+
+  const parts = [
+    `Meta shows this number as ${status.status ?? 'not activated'}`,
+    status.codeVerificationStatus && `verification: ${status.codeVerificationStatus}`,
+    status.nameStatus && `display name: ${status.nameStatus}`,
+  ].filter(Boolean);
+  let lastError = `${parts.join(' · ')}.`;
+  if (registerError) {
+    const text = registerError instanceof Error ? registerError.message : 'Registration failed';
+    lastError += ` Registration failed: ${text}${code ? ` (code ${code})` : ''}.`;
+    if (code && REGISTER_HINTS[code]) lastError += ` ${REGISTER_HINTS[code]}`;
+  } else if (needsVerification) {
+    lastError += ` ${REGISTER_HINTS[133006]}`;
+  }
+  return { connected, lastError: lastError.slice(0, 1000), needsVerification, displayPhoneNumber: status.displayPhoneNumber };
+}
+
+/**
+ * Graph calls only (no database): registers the number (unless `register` is
+ * false or Meta already shows it CONNECTED), makes sure our webhook is
+ * subscribed, then reads Meta's real status. A failed registration doesn't
+ * throw — its reason ends up in lastError.
+ */
+async function activateWhatsAppNumber(creds: WhatsAppCredentials, options: { register: boolean }): Promise<WhatsAppActivation> {
+  const before = await fetchWhatsAppPhoneNumberStatus(creds.phoneNumberId, creds.accessToken);
+  let registerError: unknown = null;
+  if (options.register && before.status !== 'CONNECTED') {
+    try {
+      await registerWhatsAppPhoneNumber(creds.phoneNumberId, creds.accessToken, creds.registrationPin!);
+    } catch (err) {
+      if (!(err instanceof AppError)) throw err;
+      registerError = err;
+    }
+  }
+  await subscribeWabaWebhook(creds.wabaId, creds.accessToken);
+  const after = options.register && before.status !== 'CONNECTED' ? await fetchWhatsAppPhoneNumberStatus(creds.phoneNumberId, creds.accessToken) : before;
+  return describeNumberStatus(after, registerError);
+}
+
+/** The one database write after activation: CONNECTED or PENDING with the reason. */
+async function saveWhatsAppActivation(organizationId: string, credentials: WhatsAppCredentials, activation: WhatsAppActivation) {
+  const status = activation.connected ? 'CONNECTED' : 'PENDING';
+  const data = {
+    status,
+    displayName: activation.displayPhoneNumber,
+    externalId: credentials.wabaId,
+    credentials: encryptJson(credentials),
+    lastError: activation.lastError,
+  } as const;
+  const row = await withTenant(organizationId, async (tx) => {
+    const current = await tx.channelConnection.findUnique({
+      where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
+      select: { connectedAt: true, status: true },
+    });
+    // connectedAt = when the number went live; kept across re-checks.
+    const connectedAt = activation.connected ? (current?.status === 'CONNECTED' && current.connectedAt ? current.connectedAt : new Date()) : null;
+    return tx.channelConnection.upsert({
+      where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
+      create: { organizationId, channel: 'WHATSAPP', ...data, connectedAt },
+      update: { ...data, connectedAt },
+    });
+  });
+  forgetChannelCredentials(organizationId);
+  return row;
+}
+
+/** The org's stored WhatsApp credentials, with a registration PIN (a new one if none was stored yet). */
+async function whatsAppCredentialsForSync(organizationId: string): Promise<WhatsAppCredentials> {
+  const creds = await storedWhatsAppCredentials(organizationId);
+  if (!creds) throw new AppError(400, 'WHATSAPP_NOT_CONNECTED', 'Connect WhatsApp first');
+  return { ...creds, registrationPin: creds.registrationPin ?? newRegistrationPin() };
+}
+
+async function syncWhatsApp(organizationId: string, creds: WhatsAppCredentials, register: boolean): Promise<WhatsAppSyncResult> {
+  // A connection saved before this check existed may hold the wrong WABA (Embedded Signup can leave two).
+  await assertPhoneBelongsToWaba(creds.wabaId, creds.phoneNumberId, creds.accessToken);
+  const activation = await activateWhatsAppNumber(creds, { register });
+  const row = await saveWhatsAppActivation(organizationId, creds, activation);
+  return { status: row.status as ChannelStatus['status'], lastError: row.lastError, needsVerification: activation.needsVerification };
+}
+
+/** "Re-check status": Meta's real status; registers the number if it isn't live yet. */
+export async function resyncWhatsApp(organizationId: string): Promise<WhatsAppSyncResult> {
+  return syncWhatsApp(organizationId, await whatsAppCredentialsForSync(organizationId), true);
+}
+
+/** Sends the verification code to the number, then refreshes the status (no registration — it needs the code first). */
+export async function requestWhatsAppCode(organizationId: string, method: 'SMS' | 'VOICE'): Promise<WhatsAppSyncResult> {
+  const creds = await whatsAppCredentialsForSync(organizationId);
+  await requestWhatsAppVerificationCode(creds.phoneNumberId, creds.accessToken, method);
+  return syncWhatsApp(organizationId, creds, false);
+}
+
+/** Confirms the code, then registers the number and refreshes the status. */
+export async function verifyWhatsAppNumberCode(organizationId: string, code: string): Promise<WhatsAppSyncResult> {
+  const creds = await whatsAppCredentialsForSync(organizationId);
+  await verifyWhatsAppCode(creds.phoneNumberId, creds.accessToken, code);
+  return syncWhatsApp(organizationId, creds, true);
 }
 
 /** Persists the chosen Page's token + linked Instagram account as this org's Instagram connection. */

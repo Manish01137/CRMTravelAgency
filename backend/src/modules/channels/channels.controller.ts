@@ -5,7 +5,9 @@ import type {
   ConnectEmailInput,
   ConnectInstagramInput,
   ConnectWhatsAppInput,
+  RequestWhatsAppCodeInput,
   SelectInstagramPageInput,
+  VerifyWhatsAppCodeInput,
   UpdateWhatsAppBusinessProfileInput,
 } from './channels.schemas';
 
@@ -20,6 +22,20 @@ export async function list(req: Request, res: Response): Promise<void> {
 export async function connectWhatsApp(req: Request, res: Response): Promise<void> {
   const body = req.body as ConnectWhatsAppInput;
   res.json(await service.connectWhatsApp(req.auth!.organizationId, body));
+}
+
+export async function resyncWhatsApp(req: Request, res: Response): Promise<void> {
+  res.json(await service.resyncWhatsApp(req.auth!.organizationId));
+}
+
+export async function requestWhatsAppCode(req: Request, res: Response): Promise<void> {
+  const { method } = req.body as RequestWhatsAppCodeInput;
+  res.json(await service.requestWhatsAppCode(req.auth!.organizationId, method));
+}
+
+export async function verifyWhatsAppCode(req: Request, res: Response): Promise<void> {
+  const { code } = req.body as VerifyWhatsAppCodeInput;
+  res.json(await service.verifyWhatsAppNumberCode(req.auth!.organizationId, code));
 }
 
 export async function connectInstagram(req: Request, res: Response): Promise<void> {

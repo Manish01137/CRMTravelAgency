@@ -142,6 +142,8 @@ enum ChannelType {
 enum ChannelConnectionStatus {
   NOT_CONNECTED
   CONNECTED
+  /// WhatsApp: connected through Embedded Signup, but Meta hasn't activated the number yet (not registered / not verified).
+  PENDING
   FAILED
 }
 

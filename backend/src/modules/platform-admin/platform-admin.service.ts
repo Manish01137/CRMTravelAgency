@@ -308,7 +308,7 @@ export async function getChannelHealth() {
   const [byChannelStatus, failedConnections] = await Promise.all([
     systemPrisma.channelConnection.groupBy({ by: ['channel', 'status'], _count: { _all: true } }),
     systemPrisma.channelConnection.findMany({
-      where: { status: 'FAILED' },
+      where: { status: { in: ['FAILED', 'PENDING'] } },
       orderBy: { updatedAt: 'desc' },
       take: 50,
       select: {
