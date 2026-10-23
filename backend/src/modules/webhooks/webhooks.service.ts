@@ -1,3 +1,4 @@
+import type { MessageStatus } from '@prisma/client';
 import { systemPrisma, withTenant } from '../../lib/prisma';
 import { findRepeatCustomerBooking } from '../../lib/leadBookingLinking';
 import { decryptJson } from '../../lib/encryption';
@@ -286,10 +287,31 @@ async function recordInbound(params: {
 }
 
 /** Best-effort delivery/read status update for a message WE sent. Silently no-ops if unknown. */
+/** Ticks only move forward — a late "sent" never overwrites "delivered" or "read". */
+const EARLIER_STATUSES: Record<'SENT' | 'DELIVERED' | 'READ' | 'FAILED', MessageStatus[]> = {
+  SENT: ['QUEUED'],
+  DELIVERED: ['QUEUED', 'SENT'],
+  READ: ['QUEUED', 'SENT', 'DELIVERED'],
+  FAILED: ['QUEUED', 'SENT', 'DELIVERED'],
+};
+
 async function updateOutboundStatus(organizationId: string, externalMessageId: string, status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED', errorMessage?: string) {
-  await withTenant(organizationId, async (tx) => {
-    await tx.message.updateMany({ where: { organizationId, externalMessageId }, data: { status, errorMessage } });
-  });
+  const update = () =>
+    withTenant(organizationId, (tx) =>
+      tx.message.updateMany({
+        where: { organizationId, externalMessageId, status: { in: EARLIER_STATUSES[status] } },
+        data: { status, ...(errorMessage !== undefined && { errorMessage }) },
+      }),
+    );
+  const result = await update();
+  if (result.count > 0) return;
+  // Meta can report "delivered" before the Inbox has saved Meta's id on the
+  // message (inbox.service.ts sendMessage, step 3) — look once more shortly after.
+  // (Nothing matching at all — not one of ours, or already further along — is fine.)
+  const known = await withTenant(organizationId, (tx) => tx.message.count({ where: { organizationId, externalMessageId } }));
+  if (known > 0) return;
+  await new Promise((r) => setTimeout(r, 3000));
+  await update();
 }
 
 /** Best-effort template-approval status sync. Silently no-ops if we don't recognize the template id. */

@@ -10,7 +10,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (res.headersSent) return;
 
   if (err instanceof AppError) {
@@ -33,8 +33,13 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     }
   }
 
+  // Message + stack so it shows up in `docker compose logs` — never the request body or headers (tokens).
   // eslint-disable-next-line no-console
-  console.error('Unhandled error:', err);
+  console.error(
+    `Unhandled error on ${req.method} ${req.path}:`,
+    err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err),
+    err instanceof Prisma.PrismaClientKnownRequestError ? `(Prisma ${err.code})` : '',
+  );
   res.status(500).json({
     error: {
       code: 'INTERNAL',

@@ -398,23 +398,54 @@ export function InboxPage() {
   }, [selected, channel]);
   const composerBlocked = (outsideWindow && !templateName) || igWindow === 'closed';
 
+  type SendVars = { body?: string; mediaUrl?: string; templateName?: string };
+  type Thread = { conversation: Conversation; messages: ChannelMessage[] };
   const sendMutation = useMutation({
-    mutationFn: () =>
-      api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, {
-        body: draft.trim() || undefined,
-        mediaUrl: pendingMedia?.url || undefined,
-        templateName: templateName || undefined,
-      }),
-    onSuccess: () => {
+    mutationFn: (vars: SendVars) => api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, vars),
+    // The bubble shows straight away (clock icon) while it goes out; the server's
+    // copy replaces it — SENT, or FAILED with the reason, which stays in the chat.
+    onMutate: async (vars) => {
+      const key = ['messages', selectedId];
+      await queryClient.cancelQueries({ queryKey: key });
+      const draftBefore = draft;
+      queryClient.setQueryData<Thread>(key, (old) =>
+        old
+          ? {
+              ...old,
+              messages: [
+                ...old.messages,
+                {
+                  id: `sending-${Date.now()}`,
+                  conversationId: selectedId!,
+                  direction: 'OUTBOUND',
+                  externalMessageId: null,
+                  body: vars.body ?? (vars.templateName ? `Template: ${vars.templateName}` : null),
+                  mediaUrl: vars.mediaUrl ?? null,
+                  templateName: vars.templateName ?? null,
+                  status: 'QUEUED',
+                  errorMessage: null,
+                  sentById: me?.id ?? null,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : old,
+      );
       setDraft('');
       setTemplateName(null);
       setPendingMedia(null);
+      return { draftBefore };
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
     },
-    onError: (err) => {
+    onError: (err, _vars, context) => {
       toast.error(err instanceof ApiError ? err.message : 'Send failed');
+      // Text back in the box, so it can be fixed and sent again.
+      if (context?.draftBefore) setDraft((d) => d || context.draftBefore);
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
       // No payment method on Meta → the banner shows right away.
       if (err instanceof ApiError && err.code === 'WHATSAPP_PAYMENT_REQUIRED') queryClient.invalidateQueries({ queryKey: ['channels'] });
     },
@@ -1082,7 +1113,13 @@ export function InboxPage() {
                     className={channel === 'WHATSAPP' ? 'text-white hover:opacity-90' : undefined}
                     style={channel === 'WHATSAPP' ? { backgroundColor: WA_SEND } : undefined}
                     disabled={(!draft.trim() && !pendingMedia) || sendMutation.isPending || composerBlocked}
-                    onClick={() => sendMutation.mutate()}
+                    onClick={() =>
+                      sendMutation.mutate({
+                        body: draft.trim() || undefined,
+                        mediaUrl: pendingMedia?.url || undefined,
+                        templateName: templateName || undefined,
+                      })
+                    }
                     aria-label="Send message"
                   >
                     {sendMutation.isPending ? <Spinner className="size-4" /> : <Send className="size-4" />}

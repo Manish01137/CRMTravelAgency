@@ -12,7 +12,7 @@ import {
   createWhatsAppTemplate,
   metaErrorText,
 } from '../../lib/meta';
-import { BadRequest, NotFound } from '../../lib/errors';
+import { AppError, BadRequest, NotFound } from '../../lib/errors';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import { LEAD_STAGES, type CreateTemplateInput, type ListConversationsQuery, type SendMessageInput, type StageCountsQuery } from './inbox.schemas';
 
@@ -132,13 +132,30 @@ export async function listMessages(organizationId: string, conversationId: strin
   });
 }
 
+/** What phase 1 hands to the Meta call — everything it needs, so the send itself touches no database. */
+type SendPlan =
+  | { channel: 'WHATSAPP'; creds: WhatsAppCredentials; to: string; template: { name: string; language: string; params: string[]; paramNames: (string | null)[] } | null }
+  | { channel: 'INSTAGRAM'; creds: InstagramCredentials; to: string; humanAgent: boolean };
+
+/**
+ * Sends an agent's message in three steps, with the network call to Meta in
+ * none of the database transactions (a slow database used to let the
+ * transaction expire AFTER Meta had delivered the message — the customer got
+ * it, the agent saw "Something went wrong" and no bubble):
+ *   1. a short transaction checks the chat and saves the message as QUEUED;
+ *   2. Meta is called, outside any transaction;
+ *   3. a short transaction marks it SENT (with Meta's message id) or FAILED
+ *      (with the reason). A failed send never removes the message row.
+ * A send is never retried automatically — that could deliver it twice.
+ */
 export async function sendMessage(
   organizationId: string,
   conversationId: string,
   userId: string,
   input: SendMessageInput,
 ) {
-  return withTenant(organizationId, async (tx) => {
+  // --- 1. checks + QUEUED message -------------------------------------------
+  const { message: queued, plan } = await withTenant(organizationId, async (tx) => {
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
     if (!conversation) throw NotFound('Conversation not found');
 
@@ -162,113 +179,129 @@ export async function sendMessage(
     if (conversation.channel === 'INSTAGRAM' && igSinceInbound > INSTAGRAM_HUMAN_AGENT_WINDOW_MS) {
       throw BadRequest(INSTAGRAM_WINDOW_HELP);
     }
-    const igOptions = { humanAgent: conversation.channel === 'INSTAGRAM' && igSinceInbound > INSTAGRAM_WINDOW_MS };
+    if (conversation.channel === 'INSTAGRAM' && input.mediaUrl && isPdfUrl(input.mediaUrl)) {
+      throw BadRequest('Instagram DMs only support photos, not documents');
+    }
+
+    let plan: SendPlan;
+    if (conversation.channel === 'WHATSAPP') {
+      let template: Extract<SendPlan, { channel: 'WHATSAPP' }>['template'] = null;
+      if (input.templateName) {
+        const row = await tx.messageTemplate.findFirst({ where: { organizationId, name: input.templateName, status: 'APPROVED' } });
+        if (!row) throw BadRequest('That template was not found or is not yet approved');
+        // Fill the template's variables: the first one is the contact's name.
+        // Other values aren't guessed — a template needing more is refused.
+        const variables = templateBodyVariables(row.bodyText);
+        if (variables.length > 1) {
+          throw BadRequest(`This template needs ${variables.length} values; only the contact name is supported right now`);
+        }
+        template = {
+          name: row.name,
+          language: row.language,
+          params: variables.length === 1 ? [conversation.contactName?.trim() || 'there'] : [],
+          paramNames: variables.map((v) => (v.named ? v.key : null)),
+        };
+      }
+      plan = { channel: 'WHATSAPP', creds: decryptJson<WhatsAppCredentials>(connection.credentials), to: conversation.externalContactId, template };
+    } else {
+      plan = {
+        channel: 'INSTAGRAM',
+        creds: decryptJson<InstagramCredentials>(connection.credentials),
+        to: conversation.externalContactId,
+        humanAgent: igSinceInbound > INSTAGRAM_WINDOW_MS,
+      };
+    }
 
     const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : (input.body ?? '');
-
-    try {
-      let externalMessageId: string;
-      if (conversation.channel === 'WHATSAPP') {
-        const creds = decryptJson<WhatsAppCredentials>(connection.credentials);
-        if (input.templateName) {
-          const template = await tx.messageTemplate.findFirst({
-            where: { organizationId, name: input.templateName, status: 'APPROVED' },
-          });
-          if (!template) throw BadRequest('That template was not found or is not yet approved');
-          // Fill the template's variables: the first one is the contact's name.
-          // Other values aren't guessed — a template needing more is refused.
-          const variables = templateBodyVariables(template.bodyText);
-          if (variables.length > 1) {
-            throw BadRequest(`This template needs ${variables.length} values; only the contact name is supported right now`);
-          }
-          const bodyParams = variables.length === 1 ? [conversation.contactName?.trim() || 'there'] : [];
-          const bodyParamNames = variables.map((v) => (v.named ? v.key : null));
-          const sent = await sendWhatsAppTemplate(
-            creds.phoneNumberId,
-            creds.accessToken,
-            conversation.externalContactId,
-            template.name,
-            template.language,
-            bodyParams,
-            bodyParamNames,
-          );
-          externalMessageId = sent.externalMessageId;
-        } else if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
-          const sent = await sendWhatsAppDocument(
-            creds.phoneNumberId,
-            creds.accessToken,
-            conversation.externalContactId,
-            input.mediaUrl,
-            documentFilenameFromUrl(input.mediaUrl),
-            input.body?.trim() || undefined,
-          );
-          externalMessageId = sent.externalMessageId;
-        } else if (input.mediaUrl) {
-          // WhatsApp supports a caption on the image itself — one message, not two.
-          const sent = await sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.mediaUrl, input.body?.trim() || undefined);
-          externalMessageId = sent.externalMessageId;
-        } else {
-          const sent = await sendWhatsAppText(creds.phoneNumberId, creds.accessToken, conversation.externalContactId, input.body!);
-          externalMessageId = sent.externalMessageId;
-        }
-      } else {
-        const creds = decryptJson<InstagramCredentials>(connection.credentials);
-        if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
-          throw BadRequest('Instagram DMs only support photos, not documents');
-        } else if (input.mediaUrl) {
-          // Instagram's attachment message has no caption field — any typed
-          // text alongside a photo is dropped rather than silently sent as a
-          // separate, unlabeled second message.
-          const sent = await sendInstagramImage(creds.igUserId, creds.accessToken, conversation.externalContactId, input.mediaUrl, igOptions).catch(explainInstagramWindow);
-          externalMessageId = sent.externalMessageId;
-        } else {
-          const sent = await sendInstagramText(creds.igUserId, creds.accessToken, conversation.externalContactId, input.body!, igOptions).catch(explainInstagramWindow);
-          externalMessageId = sent.externalMessageId;
-        }
-      }
-
-      const message = await tx.message.create({
-        data: {
-          organizationId,
-          conversationId,
-          direction: 'OUTBOUND',
-          externalMessageId,
-          body: input.body || null,
-          mediaUrl: input.mediaUrl,
-          templateName: input.templateName,
-          status: 'SENT',
-          sentById: userId,
-        },
-      });
-      await tx.conversation.update({
-        where: { id: conversationId },
-        data: { lastMessageAt: new Date(), lastMessagePreview: preview.slice(0, 200) },
-      });
-      return message;
-    } catch (err) {
-      // Send failures are almost always AppError (Graph API 4xx/5xx) — the
-      // global error handler skips console.error for those on purpose (they're
-      // "expected" client-facing errors), which meant the real Graph API
-      // failure reason was only ever visible in the stored message row, never
-      // in server logs. Same gap already fixed in channels.service.ts.
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : 'Send failed';
-      await tx.message.create({
-        data: {
-          organizationId,
-          conversationId,
-          direction: 'OUTBOUND',
-          body: input.body || null,
-          mediaUrl: input.mediaUrl,
-          templateName: input.templateName,
-          status: 'FAILED',
-          errorMessage,
-          sentById: userId,
-        },
-      });
-      throw err;
-    }
+    const message = await tx.message.create({
+      data: {
+        organizationId,
+        conversationId,
+        direction: 'OUTBOUND',
+        body: input.body || null,
+        mediaUrl: input.mediaUrl,
+        templateName: input.templateName,
+        status: 'QUEUED',
+        sentById: userId,
+      },
+    });
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date(), lastMessagePreview: preview.slice(0, 200) },
+    });
+    return { message, plan };
   });
+
+  // --- 2. Meta, outside any transaction --------------------------------------
+  let externalMessageId: string;
+  try {
+    externalMessageId = (await sendThroughMeta(plan, input).catch(asSendError)).externalMessageId;
+  } catch (err) {
+    // The real reason belongs in the server logs too, not only on the message.
+    console.error('[inbox] send failed', { messageId: queued.id, error: err instanceof Error ? err.message : err });
+    // --- 3a. FAILED, with the reason (already in plain words — lib/metaErrors.ts)
+    const errorMessage = (err instanceof Error ? err.message : 'Send failed').slice(0, 1000);
+    await withTenant(organizationId, (tx) => tx.message.update({ where: { id: queued.id }, data: { status: 'FAILED', errorMessage } })).catch(
+      (saveErr) => console.error('[inbox] could not mark the message FAILED', { messageId: queued.id, error: saveErr instanceof Error ? saveErr.message : saveErr }),
+    );
+    throw err;
+  }
+
+  // --- 3b. SENT + Meta's message id (the delivery / read webhooks find it by this id)
+  const markSent = () =>
+    withTenant(organizationId, (tx) => tx.message.update({ where: { id: queued.id }, data: { status: 'SENT', externalMessageId } }));
+  try {
+    return await markSent();
+  } catch (firstErr) {
+    console.error('[inbox] message sent but saving it failed — retrying once', {
+      messageId: queued.id,
+      wamid: externalMessageId,
+      error: firstErr instanceof Error ? firstErr.message : firstErr,
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 1000));
+      return await markSent();
+    } catch (secondErr) {
+      // Meta delivered it — never show the agent an error for a message the customer has.
+      console.error('[inbox] message sent but could not be saved as SENT', {
+        messageId: queued.id,
+        wamid: externalMessageId,
+        error: secondErr instanceof Error ? secondErr.message : secondErr,
+      });
+      return { ...queued, status: 'SENT' as const, externalMessageId };
+    }
+  }
+}
+
+/** Anything that isn't already one of our errors (e.g. an odd Meta reply) — in words, not a bare 500. */
+function asSendError(err: unknown): never {
+  if (err instanceof AppError) throw err;
+  console.error('[inbox] unexpected send error', err);
+  throw new AppError(502, 'SEND_FAILED', "Meta gave an unexpected reply, so this message may not have been sent — check WhatsApp/Instagram before sending it again.");
+}
+
+/** The one network call of a send — no database access in here. */
+async function sendThroughMeta(plan: SendPlan, input: SendMessageInput): Promise<{ externalMessageId: string }> {
+  if (plan.channel === 'WHATSAPP') {
+    const { creds, to, template } = plan;
+    if (template) {
+      return sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, to, template.name, template.language, template.params, template.paramNames);
+    }
+    if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
+      return sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, documentFilenameFromUrl(input.mediaUrl), input.body?.trim() || undefined);
+    }
+    if (input.mediaUrl) {
+      // WhatsApp supports a caption on the image itself — one message, not two.
+      return sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, input.body?.trim() || undefined);
+    }
+    return sendWhatsAppText(creds.phoneNumberId, creds.accessToken, to, input.body!);
+  }
+  const { creds, to, humanAgent } = plan;
+  // Instagram's attachment message has no caption field — any typed text
+  // alongside a photo is dropped rather than silently sent as a separate,
+  // unlabeled second message.
+  if (input.mediaUrl) return sendInstagramImage(creds.igUserId, creds.accessToken, to, input.mediaUrl, { humanAgent }).catch(explainInstagramWindow);
+  return sendInstagramText(creds.igUserId, creds.accessToken, to, input.body!, { humanAgent }).catch(explainInstagramWindow);
 }
 
 /**
