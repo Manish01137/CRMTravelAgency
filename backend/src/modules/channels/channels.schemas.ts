@@ -68,10 +68,9 @@ export const WHATSAPP_VERTICALS = [
   'NOT_A_BIZ',
 ] as const;
 
-// NOTE: unlike most forms in this app, an empty string here is NOT treated as
-// "omit this field" — this is a full profile editor, so clearing a field in
-// the form must actually clear it on Meta's side (see updateWhatsAppBusinessProfile
-// in lib/meta.ts, which only skips a key when it's genuinely `undefined`).
+// Empty strings are accepted here, but updateWhatsAppBusinessProfile in
+// lib/meta.ts leaves empty fields out of the request — Meta rejects blank
+// values, so a field is replaced by typing a new value, not cleared.
 export const updateWhatsAppBusinessProfileSchema = z.object({
   about: z.string().trim().max(139, 'Keep it under 139 characters').optional(),
   description: z.string().trim().max(512, 'Keep it under 512 characters').optional(),

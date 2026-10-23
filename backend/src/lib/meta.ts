@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { env } from '../env';
 import { AppError } from './errors';
+import { TRANSIENT_META_CODES, friendlyMetaError } from './metaErrors';
 
 /**
  * Meta Graph API client — WhatsApp Business Platform + Instagram Messaging.
@@ -37,10 +38,30 @@ export function isMetaPaymentError(code: unknown, text?: string | null): boolean
   return Number(code) === 131042 || /eligibility payment|payment (method|issue|account)/i.test(text ?? '');
 }
 
-/** Meta's own error code / subcode, kept on a thrown META_API_ERROR as `details` (e.g. 133005 = two-step PIN mismatch). */
+/** Meta's own error code / subcode / text, kept on a thrown META_API_ERROR as `details` (e.g. 133005 = two-step PIN mismatch). */
 export interface MetaErrorDetails {
   metaCode?: number;
   metaSubcode?: number;
+  /** Meta's original message — the AppError's own message is the friendly one (lib/metaErrors.ts). */
+  metaMessage?: string;
+}
+
+/** Meta's original error text from an error graphFetch threw (falls back to the error's message). */
+export function metaErrorText(err: unknown): string {
+  if (!(err instanceof Error)) return '';
+  const details = err instanceof AppError ? (err.details as MetaErrorDetails | undefined) : undefined;
+  return details?.metaMessage ?? err.message;
+}
+
+type MetaErrorBody = { error?: { message?: string; code?: number; error_subcode?: number; error_user_msg?: string } };
+
+/** A failed Graph reply as an AppError with a message people can act on (see lib/metaErrors.ts). */
+function metaApiError(status: number, data: MetaErrorBody | null): AppError {
+  const e = data?.error;
+  const metaMessage = e?.message ?? `Graph API request failed (${status})`;
+  if (isMetaPaymentError(e?.code, metaMessage)) return new AppError(402, 'WHATSAPP_PAYMENT_REQUIRED', WHATSAPP_PAYMENT_MESSAGE);
+  const details: MetaErrorDetails = { metaCode: e?.code, metaSubcode: e?.error_subcode, metaMessage };
+  return new AppError(502, 'META_API_ERROR', friendlyMetaError(e?.code, metaMessage, e?.error_user_msg), details);
 }
 
 /** Meta's error code from an error graphFetch threw, if any. */
@@ -48,16 +69,17 @@ export function metaErrorCode(err: unknown): number | undefined {
   return err instanceof AppError ? (err.details as MetaErrorDetails | undefined)?.metaCode : undefined;
 }
 
-async function graphFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function graphFetch<T>(path: string, init?: RequestInit, attempt = 1): Promise<T> {
   const res = await fetch(`${GRAPH_BASE()}${path}`, init);
-  const data = (await res.json().catch(() => null)) as
-    | (T & { error?: { message?: string; code?: number; error_subcode?: number } })
-    | null;
+  const data = (await res.json().catch(() => null)) as (T & MetaErrorBody) | null;
   if (!res.ok) {
-    const message = data?.error?.message ?? `Graph API request failed (${res.status})`;
-    if (isMetaPaymentError(data?.error?.code, message)) throw new AppError(402, 'WHATSAPP_PAYMENT_REQUIRED', WHATSAPP_PAYMENT_MESSAGE);
-    const details: MetaErrorDetails = { metaCode: data?.error?.code, metaSubcode: data?.error?.error_subcode };
-    throw new AppError(502, 'META_API_ERROR', message, details);
+    // A read can safely be asked again once when Meta has a passing hiccup (a send can't — it might have gone out).
+    const isRead = !init?.method || init.method === 'GET';
+    if (isRead && attempt === 1 && TRANSIENT_META_CODES.has(Number(data?.error?.code))) {
+      await new Promise((r) => setTimeout(r, 700));
+      return graphFetch<T>(path, init, 2);
+    }
+    throw metaApiError(res.status, data);
   }
   return data as T;
 }
@@ -76,11 +98,8 @@ const INSTAGRAM_GRAPH_BASE = 'https://graph.instagram.com';
 
 async function instagramGraphFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${INSTAGRAM_GRAPH_BASE}${path}`, init);
-  const data = (await res.json().catch(() => null)) as (T & { error?: { message?: string } }) | null;
-  if (!res.ok) {
-    const message = data?.error?.message ?? `Instagram Graph API request failed (${res.status})`;
-    throw new AppError(502, 'META_API_ERROR', message);
-  }
+  const data = (await res.json().catch(() => null)) as (T & MetaErrorBody) | null;
+  if (!res.ok) throw metaApiError(res.status, data);
   return data as T;
 }
 
@@ -287,7 +306,7 @@ export async function registerWhatsAppPhoneNumber(phoneNumberId: string, accessT
     });
   } catch (err) {
     // Registering a number that is already registered is the outcome we wanted.
-    if (err instanceof AppError && /already (been )?registered/i.test(err.message)) return;
+    if (err instanceof AppError && /already (been )?registered/i.test(metaErrorText(err))) return;
     throw err;
   }
 }
@@ -754,20 +773,32 @@ export async function updateWhatsAppBusinessProfile(
   accessToken: string,
   input: UpdateWhatsAppBusinessProfileInput,
 ): Promise<void> {
-  await graphFetch(`/${phoneNumberId}/whatsapp_business_profile`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      ...(input.about !== undefined ? { about: input.about } : {}),
-      ...(input.address !== undefined ? { address: input.address } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.email !== undefined ? { email: input.email } : {}),
-      ...(input.websites !== undefined ? { websites: input.websites } : {}),
-      ...(input.vertical !== undefined ? { vertical: input.vertical } : {}),
-      ...(input.profilePictureHandle ? { profile_picture_handle: input.profilePictureHandle } : {}),
-    }),
-  });
+  const send = () =>
+    graphFetch(`/${phoneNumberId}/whatsapp_business_profile`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        // Empty values are left out, not sent blank: Meta rejects an empty
+        // "about" (1–139 characters) and can fail the whole save on other
+        // blank fields with a bare "(#131000) Something went wrong".
+        ...(input.about ? { about: input.about } : {}),
+        ...(input.address ? { address: input.address } : {}),
+        ...(input.description ? { description: input.description } : {}),
+        ...(input.email ? { email: input.email } : {}),
+        ...(input.websites?.length ? { websites: input.websites } : {}),
+        ...(input.vertical ? { vertical: input.vertical } : {}),
+        ...(input.profilePictureHandle ? { profile_picture_handle: input.profilePictureHandle } : {}),
+      }),
+    });
+  try {
+    await send();
+  } catch (err) {
+    // Saving the same profile twice is harmless — ask once more when Meta had a passing hiccup.
+    if (!TRANSIENT_META_CODES.has(Number(metaErrorCode(err)))) throw err;
+    await new Promise((r) => setTimeout(r, 700));
+    await send();
+  }
 }
 
 /**
@@ -790,9 +821,9 @@ export async function uploadWhatsAppProfilePhotoHandle(buffer: Buffer, mimeType:
     `${GRAPH_BASE()}/${appId}/uploads?file_length=${buffer.length}&file_type=${encodeURIComponent(mimeType)}&access_token=${encodeURIComponent(accessToken)}`,
     { method: 'POST' },
   );
-  const startData = (await startRes.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+  const startData = (await startRes.json().catch(() => null)) as ({ id?: string } & MetaErrorBody) | null;
   if (!startRes.ok || !startData?.id) {
-    throw new AppError(502, 'META_API_ERROR', startData?.error?.message ?? 'Could not start the photo upload');
+    throw startData?.error ? metaApiError(startRes.status, startData) : new AppError(502, 'META_API_ERROR', 'Could not start the photo upload — please try again');
   }
 
   const putRes = await fetch(`${GRAPH_BASE()}/${startData.id}`, {
@@ -800,9 +831,9 @@ export async function uploadWhatsAppProfilePhotoHandle(buffer: Buffer, mimeType:
     headers: { Authorization: `OAuth ${accessToken}`, file_offset: '0' },
     body: buffer,
   });
-  const putData = (await putRes.json().catch(() => null)) as { h?: string; error?: { message?: string } } | null;
+  const putData = (await putRes.json().catch(() => null)) as ({ h?: string } & MetaErrorBody) | null;
   if (!putRes.ok || !putData?.h) {
-    throw new AppError(502, 'META_API_ERROR', putData?.error?.message ?? 'Could not upload the photo');
+    throw putData?.error ? metaApiError(putRes.status, putData) : new AppError(502, 'META_API_ERROR', 'Could not upload the photo — please try again');
   }
   return putData.h;
 }

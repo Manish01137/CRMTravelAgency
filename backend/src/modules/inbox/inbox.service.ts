@@ -10,6 +10,7 @@ import {
   sendInstagramText,
   sendInstagramImage,
   createWhatsAppTemplate,
+  metaErrorText,
 } from '../../lib/meta';
 import { BadRequest, NotFound } from '../../lib/errors';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
@@ -34,7 +35,7 @@ const CONVERSATION_LEAD_SELECT = {
 
 /** Instagram's own "sent outside of allowed window" error, in words the agent can act on. */
 function explainInstagramWindow(err: unknown): never {
-  if (err instanceof Error && /allowed window|outside.*window|human.?agent/i.test(err.message)) throw BadRequest(INSTAGRAM_WINDOW_HELP);
+  if (err instanceof Error && /allowed window|outside.*window|human.?agent/i.test(`${metaErrorText(err)} ${err.message}`)) throw BadRequest(INSTAGRAM_WINDOW_HELP);
   throw err;
 }
 

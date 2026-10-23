@@ -321,7 +321,7 @@ function describeNumberStatus(status: WhatsAppPhoneNumberStatus, registerError: 
   let lastError = `${parts.join(' · ')}.`;
   if (registerError) {
     const text = registerError instanceof Error ? registerError.message : 'Registration failed';
-    lastError += ` Registration failed: ${text}${code ? ` (code ${code})` : ''}.`;
+    lastError += ` Registration failed: ${text}`; // already ends with "(Meta code X)" — lib/metaErrors.ts
     if (code && REGISTER_HINTS[code]) lastError += ` ${REGISTER_HINTS[code]}`;
   } else if (needsVerification) {
     lastError += ` ${REGISTER_HINTS[133006]}`;
@@ -655,11 +655,27 @@ export async function getWhatsAppBusinessProfile(organizationId: string): Promis
   return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
 }
 
+/**
+ * Meta only accepts profile changes for a number that's live on the Cloud API —
+ * a "Pending" number answers with a bare "(#131000) Something went wrong".
+ * Say what's actually wrong (and how to fix it) instead.
+ */
+async function assertWhatsAppNumberLive(creds: WhatsAppCredentials): Promise<void> {
+  const status = await fetchWhatsAppPhoneNumberStatus(creds.phoneNumberId, creds.accessToken);
+  if (status.status === 'CONNECTED') return;
+  throw new AppError(
+    409,
+    'WHATSAPP_NUMBER_NOT_LIVE',
+    `Meta hasn't activated this WhatsApp number yet (it shows as ${status.status ?? 'not activated'}), so the Business Profile can't be saved. Go to Settings → Channels → WhatsApp and press "Re-check status with Meta".`,
+  );
+}
+
 export async function updateWhatsAppBusinessProfile(
   organizationId: string,
   input: UpdateWhatsAppBusinessProfileInput,
 ): Promise<WhatsAppBusinessProfile> {
   const creds = await getConnectedWhatsAppCredentials(organizationId);
+  await assertWhatsAppNumberLive(creds);
   await pushWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken, input);
   return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
 }
@@ -670,6 +686,7 @@ export async function uploadWhatsAppProfilePhoto(
   mimeType: string,
 ): Promise<WhatsAppBusinessProfile> {
   const creds = await getConnectedWhatsAppCredentials(organizationId);
+  await assertWhatsAppNumberLive(creds);
   const handle = await uploadWhatsAppProfilePhotoHandle(buffer, mimeType, creds.accessToken);
   await pushWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken, { profilePictureHandle: handle });
   return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
