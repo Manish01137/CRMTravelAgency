@@ -42,6 +42,7 @@ import type {
   User,
   ChatBotState,
   ChannelStatus,
+  QuickReply,
 } from '@/types';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { useAuth } from '@/context/AuthContext';
@@ -64,7 +65,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { initials, formatSmartTime } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
+import { toWhatsAppImage } from '@/lib/whatsappImage';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
+import {
+  ManageQuickRepliesDialog,
+  QuickRepliesButton,
+  QuickReplySuggestions,
+  fillQuickReply,
+  insertQuickReply,
+  matchQuickReplies,
+  slashQuery,
+  useQuickReplies,
+} from '@/components/inbox/QuickReplies';
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -483,12 +495,45 @@ export function InboxPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not summarize'),
   });
 
+  // Quick replies: typing "/" shows saved messages (like WhatsApp Business).
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const quickReplies = useQuickReplies().data ?? [];
+  const [manageQuickReplies, setManageQuickReplies] = useState(false);
+  const [qrIndex, setQrIndex] = useState(0);
+  const [qrDismissedFor, setQrDismissedFor] = useState<string | null>(null);
+  const qrQuery = slashQuery(draft);
+  const qrMatches = qrQuery === null ? [] : matchQuickReplies(quickReplies, qrQuery).slice(0, 8);
+  const qrOpen = qrQuery !== null && qrDismissedFor !== draft;
+  const pickQuickReply = (reply: QuickReply, fromSlash: boolean) => {
+    const text = fillQuickReply(reply.message, selected?.contactName);
+    setDraft((d) => (fromSlash ? insertQuickReply(d, text) : d.trim() ? `${d.trimEnd()}\n${text}` : text));
+    setQrIndex(0);
+    composerRef.current?.focus();
+  };
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!qrOpen) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setQrDismissedFor(draft);
+    } else if (qrMatches.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      setQrIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : qrMatches.length - 1)) % qrMatches.length);
+    } else if (qrMatches.length > 0 && (e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+      e.preventDefault();
+      pickQuickReply(qrMatches[Math.min(qrIndex, qrMatches.length - 1)], true);
+    }
+  };
+
   const imageInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const handleImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // let picking the same file twice in a row still fire onChange
-    if (file) uploadMutation.mutate({ file, kind: 'image' });
+    if (!file) return;
+    // WhatsApp only shows JPG / PNG up to 5 MB — convert anything else first.
+    toWhatsAppImage(file)
+      .then((ready) => uploadMutation.mutate({ file: ready, kind: 'image' }))
+      .catch((err: Error) => toast.error(err.message));
   };
   const handleDocumentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -507,6 +552,7 @@ export function InboxPage() {
   return (
     <div className={cn(full && 'fixed inset-0 z-40 flex flex-col bg-background p-3 sm:p-4')}>
       {!full && <PageHeader title="Inbox" description="WhatsApp and Instagram conversations — auto-created from incoming messages." />}
+      <ManageQuickRepliesDialog open={manageQuickReplies} onOpenChange={setManageQuickReplies} />
 
       <div className={cn('flex flex-wrap items-center justify-between gap-2', full ? 'mb-3' : 'mb-4')}>
       {/* Channel switcher */}
@@ -1080,9 +1126,24 @@ export function InboxPage() {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  <QuickRepliesButton disabled={composerBlocked} onPick={(r) => pickQuickReply(r, false)} onManage={() => setManageQuickReplies(true)} />
+                  <div className="relative flex-1">
+                  {qrOpen && !composerBlocked && (
+                    <QuickReplySuggestions
+                      matches={qrMatches}
+                      activeIndex={Math.min(qrIndex, Math.max(0, qrMatches.length - 1))}
+                      onPick={(r) => pickQuickReply(r, true)}
+                      onManage={() => setManageQuickReplies(true)}
+                    />
+                  )}
                   <Textarea
+                    ref={composerRef}
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={handleComposerKeyDown}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      setQrIndex(0);
+                    }}
                     placeholder={
                       outsideWindow
                         ? 'Template message…'
@@ -1098,6 +1159,7 @@ export function InboxPage() {
                     className="resize-none"
                     disabled={composerBlocked || (pendingMedia?.kind === 'image' && channel === 'INSTAGRAM')}
                   />
+                  </div>
                   <Button
                     variant="outline"
                     size="icon"

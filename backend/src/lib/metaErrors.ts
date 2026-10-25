@@ -40,7 +40,7 @@ const FRIENDLY: Record<number, string> = {
   131047: "It's been more than 24 hours since the customer's last message — send an approved template instead.",
   131051: "WhatsApp doesn't support this kind of message.",
   131052: "Couldn't download the customer's file from WhatsApp — ask them to send it again.",
-  131053: "WhatsApp couldn't use this file — check its type and size (photos: JPG/PNG up to 5 MB).",
+  131053: "WhatsApp couldn't load this file — photos must be JPG or PNG (up to 5 MB), and the file link must be reachable. The bot re-sends its text without the file.",
   132000: "The template's variables don't match what was sent — check the template.",
   132001: "This template doesn't exist in that language, or isn't approved yet.",
   132005: 'The template text is too long once its variables are filled in.',

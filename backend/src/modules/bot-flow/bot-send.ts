@@ -200,6 +200,22 @@ function pdfName(media: StepMedia): string {
 }
 
 /** WhatsApp: the media with `caption` under it (one message). */
+/**
+ * WhatsApp only takes JPG/PNG photos. Meta accepts a message with a WebP / GIF /
+ * SVG photo at first, then fails it a few seconds later (code 131053) — so the
+ * customer gets nothing at all. Such a photo is left out (or another one used)
+ * before sending instead. Links without a file extension are assumed fine.
+ */
+const NOT_FOR_WHATSAPP = /\.(webp|gif|svg|avif|heic|heif|bmp|tiff?)(?:[?#]|$)/i;
+export const whatsappCanShowImage = (url: string | null | undefined): url is string => !!url && /^https?:\/\//.test(url) && !NOT_FOR_WHATSAPP.test(url);
+
+/** A step's photo, unless WhatsApp can't show it (then the step goes out without it). */
+function whatsappMedia(media: StepMedia | undefined): StepMedia | undefined {
+  if (!media || media.type !== 'image' || whatsappCanShowImage(media.url)) return media;
+  console.warn('[bot-send] skipping a photo WhatsApp cannot show (use JPG or PNG):', media.url);
+  return undefined;
+}
+
 async function sendWhatsAppMedia(organizationId: string, to: string, media: StepMedia, caption: string): Promise<SendResult | null> {
   const credentials = await credentialsFor(organizationId, 'WHATSAPP');
   if (!credentials) return null;
@@ -227,6 +243,12 @@ export async function sendMediaMessage(
   media: StepMedia,
   text: string,
 ): Promise<SendResult | null> {
+  if (channel === 'WHATSAPP' && !whatsappMedia(media)) {
+    // A photo WhatsApp can't show — just the text.
+    const result = await attemptSend(organizationId, channel, to, text);
+    await recordOutbound(organizationId, conversationId, text, result);
+    return result;
+  }
   if (channel === 'WHATSAPP') {
     const result = await sendWhatsAppMedia(organizationId, to, media, text);
     if (result?.ok) {
@@ -287,6 +309,7 @@ export async function sendChoices(
   media?: StepMedia,
 ): Promise<SendResult | null> {
   const asText = numberedChoices(question, choices);
+  if (channel === 'WHATSAPP') media = whatsappMedia(media);
   if (channel === 'WHATSAPP' && choices.length > 0 && choices.length <= 10) {
     const credentials = await credentialsFor(organizationId, channel);
     if (!credentials) return null;
@@ -398,7 +421,7 @@ function packageBlurb(pkg: PackageRow): string {
 }
 
 /** The picture that represents a package: WhatsApp banner, banner, gallery, then any day/sightseeing photo. */
-function packageImage(pkg: PackageRow): string | null {
+function packageImage(pkg: PackageRow, channel: BotChannel = 'INSTAGRAM'): string | null {
   const itinerary = (Array.isArray(pkg.itinerary) ? pkg.itinerary : []) as {
     images?: string[];
     activityBlocks?: { imageUrl?: string }[];
@@ -409,7 +432,8 @@ function packageImage(pkg: PackageRow): string | null {
     ...(Array.isArray(pkg.galleryImages) ? (pkg.galleryImages as string[]) : []),
     ...itinerary.flatMap((d) => [...(d.images ?? []), ...(d.activityBlocks ?? []).map((b) => b.imageUrl)]),
   ];
-  return candidates.find((u): u is string => !!u && /^https?:\/\//.test(u)) ?? null;
+  // WhatsApp: the first photo it can actually show (JPG / PNG).
+  return candidates.find((u): u is string => (channel === 'WHATSAPP' ? whatsappCanShowImage(u) : !!u && /^https?:\/\//.test(u))) ?? null;
 }
 
 /** Full package message: title, duration & price, description, link. Fits a WhatsApp image caption (1024). */
@@ -443,7 +467,7 @@ export async function sendPackage(
   const [pkg] = await loadPackages(organizationId, [packageId]);
   if (!pkg) return null;
   const caption = packageCaption(pkg);
-  const image = packageImage(pkg);
+  const image = packageImage(pkg, channel);
 
   if (channel === 'WHATSAPP' && image) {
     const credentials = await credentialsFor(organizationId, channel);
@@ -506,10 +530,10 @@ export async function sendPackageCarousel(
 
   if (channel === 'WHATSAPP') {
     const org = await withTenant(organizationId, (tx) => tx.organization.findUnique({ where: { id: organizationId }, select: { logoUrl: true } }));
-    const fallbackImage = org?.logoUrl && /^https?:\/\//.test(org.logoUrl) ? org.logoUrl : null;
+    const fallbackImage = whatsappCanShowImage(org?.logoUrl) ? org!.logoUrl : null;
     const cards: WhatsAppCarouselCard[] = [];
     for (const p of packages) {
-      const imageUrl = packageImage(p) ?? fallbackImage;
+      const imageUrl = packageImage(p, 'WHATSAPP') ?? fallbackImage;
       if (!imageUrl) break; // WhatsApp requires a photo on every card
       cards.push({ imageUrl, text: cardText(p), buttonText: 'View package', url: packageUrl(p.id) });
     }
@@ -568,4 +592,38 @@ async function sendInstagramPackageCards(
   const summary = packages.map((p) => `• ${packageTitle(p)} — ${durationAndPrice(p)} — ${packageUrl(p.id)}`).join('\n');
   await recordOutbound(organizationId, conversationId, summary, result, cards[0]?.imageUrl);
   return result;
+}
+
+// --- Media that Meta failed after accepting ------------------------------------
+
+/** Meta's "couldn't get / use the media" codes — the message itself never reached the customer. */
+const MEDIA_FAILURE_CODES = new Set([131053, 131052]);
+
+/**
+ * Meta accepts a message with a photo / video / PDF, fetches the file a few
+ * seconds later, and only then fails it (the failed-status webhook) — e.g. a
+ * WebP photo, or our file storage refusing the download. The customer got
+ * nothing, so a bot message is sent once more as plain text, without the
+ * media: the menu still arrives (numbered, so "1" / "2" works as an answer).
+ * Agents' own messages aren't resent — they see the reason on the message.
+ */
+export async function resendBotMessageWithoutMedia(organizationId: string, externalMessageId: string, metaCode: number | undefined): Promise<void> {
+  if (!metaCode || !MEDIA_FAILURE_CODES.has(metaCode)) return;
+  const failed = await withTenant(organizationId, (tx) =>
+    tx.message.findFirst({
+      where: { externalMessageId, direction: 'OUTBOUND', sentById: null, mediaUrl: { not: null } },
+      include: { conversation: { select: { id: true, channel: true, externalContactId: true } } },
+    }),
+  );
+  const text = failed?.body?.trim();
+  if (!failed || !text || (failed.conversation.channel !== 'WHATSAPP' && failed.conversation.channel !== 'INSTAGRAM')) return;
+  // Once only: skip if this text already went out again after the failed one.
+  const alreadyResent = await withTenant(organizationId, (tx) =>
+    tx.message.count({ where: { conversationId: failed.conversationId, direction: 'OUTBOUND', body: text, mediaUrl: null, createdAt: { gt: failed.createdAt } } }),
+  );
+  if (alreadyResent > 0) return;
+  console.warn('[bot-send] media failed after sending — resending the text without it', { messageId: failed.id, metaCode, mediaUrl: failed.mediaUrl });
+  const result = await attemptSend(organizationId, failed.conversation.channel, failed.conversation.externalContactId, text);
+  await recordOutbound(organizationId, failed.conversationId, text, result);
+  await flushOutbound(failed.conversationId);
 }

@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { FileText, Image as ImageIcon, Link2, Upload, Video, X } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { toWhatsAppImage } from '@/lib/whatsappImage';
 import { cn } from '@/lib/utils';
 import type { BotFlowStepMedia } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,8 @@ type MediaType = BotFlowStepMedia['type'];
 
 // WhatsApp's own limits for media sent by link.
 const KINDS: Record<MediaType, { label: string; icon: typeof ImageIcon; accept: string; endpoint: string; maxMb: number; hint: string }> = {
-  image: { label: 'Photo', icon: ImageIcon, accept: 'image/jpeg,image/png', endpoint: '/uploads', maxMb: 5, hint: 'JPG or PNG, up to 5 MB.' },
+  // Any photo is accepted and turned into a JPG before upload (lib/whatsappImage.ts) — WhatsApp only shows JPG / PNG.
+  image: { label: 'Photo', icon: ImageIcon, accept: 'image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,image/avif', endpoint: '/uploads', maxMb: 25, hint: 'JPG, PNG or WebP — sent to WhatsApp as a JPG.' },
   video: { label: 'Video', icon: Video, accept: 'video/mp4', endpoint: '/uploads/video', maxMb: 16, hint: 'MP4 only, up to 16 MB (WhatsApp’s limit).' },
   document: { label: 'PDF', icon: FileText, accept: 'application/pdf', endpoint: '/uploads/document', maxMb: 16, hint: 'PDF up to 16 MB — e.g. a brochure or itinerary.' },
 };
@@ -36,6 +38,12 @@ export function StepMediaPicker({ value, onChange }: { value: BotFlowStepMedia |
     if (!file) return;
     if (!k.accept.split(',').includes(file.type)) return toast.error(`${k.label}: ${k.hint}`);
     if (file.size > k.maxMb * 1024 * 1024) return toast.error(`That file is over ${k.maxMb} MB. ${k.hint}`);
+    if (kind === 'image') {
+      toWhatsAppImage(file)
+        .then((ready) => upload.mutate(ready))
+        .catch((err: Error) => toast.error(err.message));
+      return;
+    }
     upload.mutate(file);
   };
 

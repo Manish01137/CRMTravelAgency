@@ -13,6 +13,7 @@ import hotelsRoutes from './modules/hotels/hotels.routes';
 import sightseeingRoutes from './modules/sightseeing/sightseeing.routes';
 import eventsRoutes from './modules/events/events.routes';
 import linktreeCategoriesRoutes from './modules/linktree-categories/linktree-categories.routes';
+import quickRepliesRoutes from './modules/quick-replies/quick-replies.routes';
 import hostReviewsRoutes from './modules/host-reviews/host-reviews.routes';
 import publicRoutes from './modules/public/public.routes';
 import uploadsRoutes from './modules/uploads/uploads.routes';
@@ -55,6 +56,7 @@ router.use('/ai', aiRoutes);
 router.use('/channels', channelsRoutes);
 router.use('/webhooks', webhooksRoutes);
 router.use('/inbox', inboxRoutes);
+router.use('/quick-replies', quickRepliesRoutes);
 router.use('/communications', communicationsRoutes);
 router.use('/call-log', callLogRoutes);
 // Phase 4 — Automation & AI

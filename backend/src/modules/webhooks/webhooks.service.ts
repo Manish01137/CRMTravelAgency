@@ -6,7 +6,7 @@ import { uploadBufferToStorage } from '../../lib/storage';
 import { WHATSAPP_PAYMENT_MESSAGE, fetchInstagramSenderProfile, isMetaPaymentError } from '../../lib/meta';
 import { friendlyMetaError } from '../../lib/metaErrors';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
-import { sendPackage } from '../bot-flow/bot-send';
+import { resendBotMessageWithoutMedia, sendPackage } from '../bot-flow/bot-send';
 import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
 import { triggerBotFlowNow } from '../bot-flow/bot-flow.runner';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
@@ -485,6 +485,12 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
             ? WHATSAPP_PAYMENT_MESSAGE
             : friendlyMetaError(error.code, error.message ?? error.title);
         await updateOutboundStatus(organizationId, messageId, mapped, errorMessage);
+        // A bot message whose photo / PDF Meta couldn't use never reached the customer — send its text again.
+        if (mapped === 'FAILED') {
+          await resendBotMessageWithoutMedia(organizationId, messageId, error?.code).catch((err) =>
+            console.error('[webhooks] resend without media failed:', err instanceof Error ? err.message : err),
+          );
+        }
       }
     }
   }

@@ -269,7 +269,8 @@ model Organization {
   adPackageMappings         AdPackageMapping[]
   botInteractionLogs        BotInteractionLog[]
 
-  eventLeads EventLead[]
+  eventLeads   EventLead[]
+  quickReplies QuickReply[]
 
   @@map("organizations")
 }
@@ -374,7 +375,8 @@ model User {
   sentMessages       Message[]          @relation("MessageSender")
   sentCommunications CommunicationLog[] @relation("CommSender")
 
-  eventLeadsAdded EventLead[] @relation("EventLeadAddedBy")
+  eventLeadsAdded     EventLead[]  @relation("EventLeadAddedBy")
+  quickRepliesCreated QuickReply[] @relation("QuickReplyCreatedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -1448,4 +1450,22 @@ model PlatformExpense {
 
   @@index([expenseDate])
   @@map("platform_expenses")
+}
+
+/// Saved messages agents insert in the Inbox by typing "/" + the shortcut (like WhatsApp Business quick replies).
+model QuickReply {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Lower-case, no spaces, without the "/" — e.g. "price".
+  shortcut       String
+  message        String
+  createdById    String?  @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("QuickReplyCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, shortcut])
+  @@map("quick_replies")
 }

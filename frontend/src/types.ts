@@ -1036,3 +1036,12 @@ export interface AdPackageLink {
   createdAt: string;
   packages: { id: string; name: string; destination: string; isActive: boolean }[];
 }
+
+/** Inbox quick reply — inserted by typing "/" + shortcut. */
+export interface QuickReply {
+  id: string;
+  shortcut: string;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+}
