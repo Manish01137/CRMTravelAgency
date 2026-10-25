@@ -10,11 +10,13 @@ import {
   Clock,
   FileText,
   Image as ImageIcon,
+  ArrowLeft,
+  MoreVertical,
+  Plus,
   Inbox as InboxIcon,
   Instagram,
   MessageCircle,
   MailOpen,
-  Paperclip,
   Pause,
   Phone,
   RotateCcw,
@@ -47,9 +49,7 @@ import type {
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { useAuth } from '@/context/AuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -63,7 +63,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { initials, formatSmartTime } from '@/lib/format';
+import { initials } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 import { toWhatsAppImage } from '@/lib/whatsappImage';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
@@ -80,20 +80,12 @@ import {
 
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-// WhatsApp's own green — used only for the WhatsApp thread (header, bubbles,
-// send button, wallpaper), so switching to the Instagram tab doesn't end up
-// wearing WhatsApp's skin. Instagram keeps this app's existing neutral look.
-const WA_HEADER = '#075E54';
-const WA_SEND = '#00A884';
-const WA_OUTBOUND_BUBBLE = '#D9FDD3';
-const WA_COMPOSER_BG = '#F0F2F5';
-
-/** A subtle tiled doodle, evoking (not copying) WhatsApp's chat wallpaper. */
+/** WhatsApp's chat wallpaper: warm beige with a faint doodle. */
 const WA_WALLPAPER_STYLE: React.CSSProperties = {
-  backgroundColor: '#E5DDD5',
+  backgroundColor: '#efeae2',
   backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23000000' stroke-opacity='0.06' stroke-width='1.5'%3E%3Ccircle cx='20' cy='24' r='3'/%3E%3Cpath d='M88 92q10-18 20 0q-10 18-20 0'/%3E%3Cpath d='M34 78q8-14 16 0q-8 14-16 0'/%3E%3Ccircle cx='96' cy='28' r='2.5'/%3E%3Cpath d='M60 10v14M53 17h14'/%3E%3C/g%3E%3C/svg%3E\")",
-  backgroundSize: '120px 120px',
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='none' stroke='%23000000' stroke-opacity='0.045' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='22' cy='26' r='4'/%3E%3Cpath d='M112 118q12-20 24 0q-12 20-24 0'/%3E%3Cpath d='M40 104q9-15 18 0q-9 15-18 0'/%3E%3Ccircle cx='128' cy='34' r='3'/%3E%3Cpath d='M80 12v16M72 20h16'/%3E%3Cpath d='M18 146l10-10 10 10'/%3E%3Crect x='92' y='64' width='14' height='10' rx='2'/%3E%3Cpath d='M58 52c6-6 14-6 20 0'/%3E%3C/g%3E%3C/svg%3E\")",
+  backgroundSize: '160px 160px',
 };
 
 /** No separate "media kind" column — a document is just a mediaUrl ending in
@@ -125,21 +117,60 @@ function fillTemplatePreview(bodyText: string, contactName: string | null | unde
   return bodyText.replace(new RegExp(`\\{\\{\\s*${first}\\s*\\}\\}`, 'g'), name);
 }
 
-function statusIcon(status: ChannelMessage['status'], whatsapp: boolean) {
-  const dim = whatsapp ? 'text-black/40' : 'text-white/70';
-  const read = whatsapp ? 'text-sky-600' : 'text-sky-300';
-  const failed = whatsapp ? 'text-red-600' : 'text-red-300';
+// --- Look & feel ----------------------------------------------------------------
+// Each channel wears its own app's skin: the WhatsApp tab looks like WhatsApp
+// Web, the Instagram tab like Instagram's DMs.
+
+/** Today → "6:33 pm"; yesterday → "Yesterday"; this week → "Monday"; older → "12/10/26". */
+function listTime(iso: string): string {
+  const d = new Date(iso);
+  const days = Math.floor((startOfDay(new Date()).getTime() - startOfDay(d).getTime()) / 86_400_000);
+  if (days <= 0) return clockTime(iso);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return d.toLocaleDateString('en-IN', { weekday: 'long' });
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+/** Instagram's short "ago": "now", "5m", "3h", "2d", "4w". */
+function agoShort(iso: string): string {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  if (mins < 60 * 24) return `${Math.floor(mins / 60)}h`;
+  if (mins < 60 * 24 * 7) return `${Math.floor(mins / (60 * 24))}d`;
+  return `${Math.floor(mins / (60 * 24 * 7))}w`;
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+const clockTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+const dayKey = (iso: string) => startOfDay(new Date(iso)).getTime();
+
+/** "Today", "Yesterday", "Monday", or "12 October 2026" — WhatsApp's date pills. */
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const days = Math.floor((startOfDay(new Date()).getTime() - startOfDay(d).getTime()) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return d.toLocaleDateString('en-IN', { weekday: 'long' });
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** WhatsApp's ticks: clock → ✓ → ✓✓ → blue ✓✓ (read), or a red mark when it failed. */
+function WaTicks({ status }: { status: ChannelMessage['status'] }) {
   switch (status) {
     case 'QUEUED':
-      return <Clock className={cn('size-3.5', dim)} />;
+      return <Clock className="size-3 text-[#667781]" />;
     case 'SENT':
-      return <Check className={cn('size-3.5', dim)} />;
+      return <Check className="size-4 text-[#667781]" strokeWidth={2.2} />;
     case 'DELIVERED':
-      return <CheckCheck className={cn('size-3.5', dim)} />;
+      return <CheckCheck className="size-4 text-[#667781]" strokeWidth={2.2} />;
     case 'READ':
-      return <CheckCheck className={cn('size-3.5', read)} />;
+      return <CheckCheck className="size-4 text-[#53bdeb]" strokeWidth={2.2} />;
     case 'FAILED':
-      return <AlertCircle className={cn('size-3.5', failed)} />;
+      return <AlertCircle className="size-3.5 text-[#ea0038]" />;
   }
 }
 
@@ -162,20 +193,35 @@ const VIEW_OPTIONS: { key: InboxView; label: string; icon: typeof Maximize2 }[] 
   { key: 'full', label: 'Full screen', icon: Maximize2 },
 ];
 
+function ContactAvatar({ c, className, fallbackClassName }: { c: Pick<Conversation, 'contactAvatarUrl' | 'contactName' | 'contactPhone' | 'externalContactId'>; className?: string; fallbackClassName?: string }) {
+  const label = c.contactName || c.contactPhone || c.externalContactId;
+  return (
+    <Avatar className={className}>
+      {c.contactAvatarUrl && <AvatarImage src={c.contactAvatarUrl} alt="" className="object-cover" />}
+      <AvatarFallback className={fallbackClassName}>{initials(label)}</AvatarFallback>
+    </Avatar>
+  );
+}
+
 function ConversationRow({
   c,
+  channel,
   active,
   onClick,
   onToggleFavorite,
   compact,
 }: {
   c: Conversation;
+  channel: ConversationChannel;
   active: boolean;
   onClick: () => void;
   onToggleFavorite: () => void;
   compact?: boolean;
 }) {
   const label = c.contactName || c.contactPhone || c.externalContactId;
+  const unread = c.unreadCount > 0;
+  const wa = channel === 'WHATSAPP';
+
   if (compact) {
     // Compact list: just the picture, with the unread count on it.
     return (
@@ -184,66 +230,220 @@ function ConversationRow({
         onClick={onClick}
         title={`${label}${c.lastMessagePreview ? ` — ${c.lastMessagePreview}` : ''}`}
         aria-label={label}
-        className={cn('relative flex w-full justify-center border-b border-border py-2.5 transition-colors hover:bg-muted/60', active && 'bg-primary/10')}
+        className={cn('relative flex w-full justify-center py-2.5 transition-colors', active ? (wa ? 'bg-[#f0f2f5]' : 'bg-[#efefef]') : 'hover:bg-black/[0.03]')}
       >
-        <Avatar>
-          {c.contactAvatarUrl && <AvatarImage src={c.contactAvatarUrl} alt="" />}
-          <AvatarFallback>{initials(label)}</AvatarFallback>
-        </Avatar>
-        {c.unreadCount > 0 && (
-          <span className="absolute right-2.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+        <ContactAvatar c={c} className="size-11" fallbackClassName={wa ? 'bg-[#dfe5e7] text-[#54656f]' : 'bg-[#efefef] text-[#262626]'} />
+        {unread && (
+          <span className={cn('absolute right-2 top-1.5 flex min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white', wa ? 'bg-[#25d366]' : 'bg-[#0095f6]')}>
             {c.unreadCount > 9 ? '9+' : c.unreadCount}
           </span>
         )}
       </button>
     );
   }
+
+  const favorite = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleFavorite();
+      }}
+      aria-label={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      title={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      className={cn('absolute bottom-3 right-3 rounded-full p-1 transition-opacity', c.isFavorite ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100')}
+    >
+      <Star className={cn('size-3.5', c.isFavorite ? 'fill-amber-400 text-amber-400' : wa ? 'text-[#8696a0]' : 'text-[#737373]')} />
+    </button>
+  );
+
+  const badges = (
+    <>
+      {c.lead && <StagePill status={c.lead.status} className="shrink-0" />}
+      {c.lead?.assignedTo && (
+        <span
+          title={`Assigned to ${c.lead.assignedTo.name}`}
+          className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-slate-200 text-[8px] font-bold text-slate-700"
+        >
+          {initials(c.lead.assignedTo.name)}
+        </span>
+      )}
+    </>
+  );
+
+  if (wa) {
+    // WhatsApp Web's chat row.
+    return (
+      <div className="group relative">
+        <button
+          type="button"
+          onClick={onClick}
+          className={cn('flex w-full items-center gap-3 pl-3 text-left transition-colors', active ? 'bg-[#f0f2f5]' : 'hover:bg-[#f5f6f6]')}
+        >
+          <ContactAvatar c={c} className="size-[49px]" fallbackClassName="bg-[#dfe5e7] text-sm text-[#54656f]" />
+          <div className="flex min-w-0 flex-1 flex-col justify-center border-b border-[#e9edef] py-3 pr-3 group-last:border-b-transparent">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="truncate text-[16px] leading-[21px] text-[#111b21]">{label}</p>
+              {c.lastMessageAt && (
+                <span className={cn('shrink-0 text-xs', unread ? 'font-medium text-[#1fa855]' : 'text-[#667781]')}>{listTime(c.lastMessageAt)}</span>
+              )}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 pr-5">
+              <p className={cn('min-w-0 flex-1 truncate text-[14px] leading-5', unread ? 'text-[#111b21]' : 'text-[#667781]')}>
+                {c.lastMessagePreview || 'No messages yet'}
+              </p>
+              {badges}
+              {unread && (
+                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#25d366] px-1.5 text-[11px] font-semibold text-white">
+                  {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </button>
+        {favorite}
+      </div>
+    );
+  }
+
+  // Instagram's DM row: big round photo (story ring when unread), bold when unread, blue dot.
   return (
-    <div className={cn('group relative border-b border-border', active && 'bg-primary/5')}>
-      <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-4 py-3 pr-9 text-left transition-colors hover:bg-muted/60">
-        <Avatar>
-          {c.contactAvatarUrl && <AvatarImage src={c.contactAvatarUrl} alt="" />}
-          <AvatarFallback>{initials(label)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-foreground">{label}</p>
-            {c.lastMessageAt && <span className="shrink-0 text-[11px] text-muted-foreground">{formatSmartTime(c.lastMessageAt)}</span>}
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{c.lastMessagePreview || 'No messages yet'}</p>
-            {c.lead?.assignedTo && (
-              <span
-                title={`Assigned to ${c.lead.assignedTo.name}`}
-                className="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-700"
-              >
-                {initials(c.lead.assignedTo.name)}
-              </span>
-            )}
-            {c.lead && <StagePill status={c.lead.status} className="shrink-0" />}
-            {c.unreadCount > 0 && (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                {c.unreadCount > 9 ? '9+' : c.unreadCount}
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
+    <div className="group relative">
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleFavorite();
-        }}
-        aria-label={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-        title={c.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        onClick={onClick}
+        className={cn('flex w-full items-center gap-3 px-4 py-2 text-left transition-colors sm:px-5', active ? 'bg-[#efefef]' : 'hover:bg-[#fafafa]')}
+      >
+        <span className={cn('shrink-0 rounded-full p-[2px]', unread ? 'bg-gradient-to-tr from-[#feda75] via-[#d62976] to-[#4f5bd5]' : 'bg-transparent')}>
+          <span className="block rounded-full bg-white p-[2px]">
+            <ContactAvatar c={c} className="size-[50px]" fallbackClassName="bg-[#efefef] text-sm text-[#262626]" />
+          </span>
+        </span>
+        <div className="min-w-0 flex-1 pr-6">
+          <p className={cn('truncate text-sm text-[#000]', unread && 'font-semibold')}>{label}</p>
+          <div className="flex items-center gap-1 text-xs">
+            <p className={cn('min-w-0 truncate', unread ? 'font-semibold text-[#000]' : 'text-[#737373]')}>{c.lastMessagePreview || 'No messages yet'}</p>
+            {c.lastMessageAt && <span className="shrink-0 text-[#737373]">· {agoShort(c.lastMessageAt)}</span>}
+          </div>
+          {c.lead && <div className="mt-1 flex items-center gap-1">{badges}</div>}
+        </div>
+        {unread && <span className="absolute right-4 top-1/2 size-2 -translate-y-1/2 rounded-full bg-[#0095f6]" />}
+      </button>
+      {!unread && favorite}
+    </div>
+  );
+}
+
+/** WhatsApp's little bubble tail (top corner of the first bubble in a run). */
+function BubbleTail({ outbound }: { outbound: boolean }) {
+  return outbound ? (
+    <svg viewBox="0 0 8 13" width="8" height="13" className="absolute -right-2 top-0 text-[#d9fdd3]" aria-hidden>
+      <path fill="currentColor" d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 8 13" width="8" height="13" className="absolute -left-2 top-0 text-white" aria-hidden>
+      <path fill="currentColor" d="M2.812 1H8v11.193L1.533 3.568C.474 2.156 1.042 1 2.812 1z" />
+    </svg>
+  );
+}
+
+/** A photo / video / PDF inside a bubble. */
+function MessageMedia({ m, rounded }: { m: ChannelMessage; rounded: string }) {
+  if (!m.mediaUrl) return null;
+  if (isPdfUrl(m.mediaUrl)) {
+    return (
+      <a href={m.mediaUrl} target="_blank" rel="noreferrer" className={cn('mb-1 flex min-w-[200px] items-center gap-2.5 bg-black/[0.06] p-2.5 transition-colors hover:bg-black/[0.1]', rounded)}>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#ff5c5c] text-[10px] font-bold text-white">PDF</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{documentNameFromUrl(m.mediaUrl)}</span>
+      </a>
+    );
+  }
+  if (isVideoUrl(m.mediaUrl)) {
+    return <video src={m.mediaUrl} controls preload="metadata" className={cn('mb-1 block max-h-72 w-full bg-black', rounded)} />;
+  }
+  return (
+    <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="mb-1 block">
+      <img src={m.mediaUrl} alt="" className={cn('max-h-80 w-full object-cover', rounded)} />
+    </a>
+  );
+}
+
+function FailedNote({ m, className }: { m: ChannelMessage; className?: string }) {
+  if (m.status !== 'FAILED' || !m.errorMessage) return null;
+  return (
+    <div className={cn('mt-1 max-w-[85%] text-[11.5px] leading-4 text-[#ea0038] sm:max-w-[65%]', className)}>
+      <p>{m.errorMessage}</p>
+      {isWhatsAppPaymentError(m.errorMessage) && <AddPaymentMethodLink className="text-[#ea0038]" />}
+    </div>
+  );
+}
+
+/** One WhatsApp message: green (sent) or white (received), tail on the first of a run, time + ticks inside. */
+function WaBubble({ m, first }: { m: ChannelMessage; first: boolean }) {
+  const out = m.direction === 'OUTBOUND';
+  const meta = (
+    <span className="float-right ml-2.5 mt-[3px] flex translate-y-[5px] items-center gap-[3px] text-[11px] leading-none text-[#667781]">
+      {clockTime(m.createdAt)}
+      {out && <WaTicks status={m.status} />}
+    </span>
+  );
+  return (
+    <div className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
+      <div
         className={cn(
-          'absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 transition-opacity',
-          c.isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          'relative max-w-[85%] rounded-[7.5px] px-[9px] pb-2 pt-1.5 text-[14.2px] leading-[19px] text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] sm:max-w-[65%]',
+          out ? 'bg-[#d9fdd3]' : 'bg-white',
+          first && (out ? 'rounded-tr-none' : 'rounded-tl-none'),
+          m.mediaUrl && !isPdfUrl(m.mediaUrl) && 'p-[3px] pb-1.5',
         )}
       >
-        <Star className={cn('size-4', c.isFavorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} />
-      </button>
+        {first && <BubbleTail outbound={out} />}
+        {m.templateName && <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#008069]">Template · {m.templateName}</p>}
+        <MessageMedia m={m} rounded="rounded-[6px]" />
+        <div className={cn('after:block after:clear-both after:content-[""]', m.mediaUrl && !isPdfUrl(m.mediaUrl) && 'px-1.5')}>
+          {m.body && <span className="whitespace-pre-wrap break-words">{m.body}</span>}
+          {meta}
+        </div>
+      </div>
+      <FailedNote m={m} className={out ? 'text-right' : undefined} />
+    </div>
+  );
+}
+
+/**
+ * One Instagram message: blue (sent) or grey (received) rounded bubbles that
+ * join up in a run, their small photo beside the last of a run.
+ */
+function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; first: boolean; last: boolean; contact: Conversation; showStatus: boolean }) {
+  const out = m.direction === 'OUTBOUND';
+  const mediaOnly = !!m.mediaUrl && !m.body && !isPdfUrl(m.mediaUrl);
+  const corners = out
+    ? cn('rounded-[22px]', !first && 'rounded-tr-[6px]', !last && 'rounded-br-[6px]')
+    : cn('rounded-[22px]', !first && 'rounded-tl-[6px]', !last && 'rounded-bl-[6px]');
+  return (
+    <div className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
+      <div className={cn('flex max-w-full items-end gap-2', out && 'flex-row-reverse')}>
+        {!out && (last ? <ContactAvatar c={contact} className="size-7" fallbackClassName="bg-[#efefef] text-[10px] text-[#262626]" /> : <span className="w-7 shrink-0" />)}
+        <div
+          title={clockTime(m.createdAt)}
+          className={cn(
+            'max-w-[78vw] text-[15px] leading-5 sm:max-w-[60%]',
+            m.mediaUrl && isPdfUrl(m.mediaUrl) && 'min-w-[244px]',
+            mediaOnly ? 'overflow-hidden' : 'px-3 py-2',
+            mediaOnly ? corners : cn(corners, out ? 'bg-[#3797f0] text-white' : 'bg-[#efefef] text-[#000]'),
+            m.status === 'QUEUED' && 'opacity-70',
+          )}
+        >
+          {m.templateName && <p className="mb-0.5 text-[11px] font-semibold opacity-80">Template · {m.templateName}</p>}
+          <MessageMedia m={m} rounded={mediaOnly ? corners : 'rounded-[14px]'} />
+          {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+        </div>
+        {out && m.status === 'FAILED' && <AlertCircle className="mb-2 size-4 shrink-0 text-[#ed4956]" />}
+      </div>
+      <FailedNote m={m} className={cn('text-[#ed4956]', out ? 'text-right' : 'ml-9')} />
+      {showStatus && m.status !== 'FAILED' && (
+        <p className="mr-1 mt-1 text-[11px] text-[#737373]">{m.status === 'READ' ? 'Seen' : m.status === 'QUEUED' ? 'Sending…' : 'Sent'}</p>
+      )}
     </div>
   );
 }
@@ -251,9 +451,9 @@ function ConversationRow({
 export function InboxPage() {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ConversationChannel>('WHATSAPP');
-  const [wideScreen, setWideScreen] = useState(() => window.matchMedia('(min-width: 640px)').matches);
+  const [wideScreen, setWideScreen] = useState(() => window.matchMedia('(min-width: 768px)').matches);
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 640px)');
+    const mq = window.matchMedia('(min-width: 768px)');
     const onChange = () => setWideScreen(mq.matches);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -549,6 +749,113 @@ export function InboxPage() {
 
   const full = view === 'full';
   const compact = view === 'compact' && wideScreen; // phones stack list and chat — no compact list there
+  const wa = channel === 'WHATSAPP';
+
+  // Phones: the list fills the screen and a chat opens over it, like the real
+  // apps — the phone's own back button closes the chat again.
+  const openChat = (id: string) => {
+    setSelectedId(id);
+    if (!wideScreen) window.history.pushState({ inboxChat: id }, '');
+  };
+  const closeChat = () => {
+    if (!wideScreen && (window.history.state as { inboxChat?: string } | null)?.inboxChat) window.history.back();
+    else setSelectedId(null);
+  };
+  useEffect(() => {
+    const onPop = () => setSelectedId(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const chatOverPhone = !wideScreen && !!selected;
+  useEffect(() => {
+    if (!chatOverPhone) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [chatOverPhone]);
+
+  // The message box grows with the text (up to ~6 lines).
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [draft, selectedId]);
+
+  // Newest message in view when a chat opens or a message arrives — and kept
+  // there while photos load, unless the agent has scrolled up to read.
+  const threadRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottom = useRef(true);
+  const autoScrollTop = useRef<number | null>(null);
+  const scrollToBottom = () => {
+    const el = threadRef.current;
+    if (!el || !pinnedToBottom.current) return;
+    el.scrollTop = el.scrollHeight;
+    autoScrollTop.current = el.scrollTop;
+  };
+  const messageCount = threadQuery.data?.messages.length ?? 0;
+  useEffect(() => {
+    pinnedToBottom.current = true;
+  }, [selectedId]);
+  useEffect(() => {
+    scrollToBottom();
+  }, [selectedId, messageCount]);
+  // Photos load after the text — follow the list as it grows.
+  const threadContentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const content = threadContentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => scrollToBottom());
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [selectedId, threadQuery.isLoading]);
+
+  const canSend = (!!draft.trim() || !!pendingMedia) && !sendMutation.isPending && !composerBlocked;
+  const sendNow = () => {
+    if (!canSend) return;
+    sendMutation.mutate({
+      body: draft.trim() || undefined,
+      mediaUrl: pendingMedia?.url || undefined,
+      templateName: templateName || undefined,
+    });
+  };
+  // Enter sends, Shift+Enter is a new line (like WhatsApp Web) — on a computer; phones keep Enter for new lines.
+  const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    handleComposerKeyDown(e);
+    if (e.defaultPrevented || e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+    e.preventDefault();
+    sendNow();
+  };
+
+  const messages = threadQuery.data?.messages ?? [];
+  const lastOutboundId = [...messages].reverse().find((m) => m.direction === 'OUTBOUND')?.id;
+  const label = selected ? selected.contactName || selected.contactPhone || selected.externalContactId : '';
+
+  // Header controls — styled for a light header (WhatsApp Web grey / Instagram white).
+  const headerIconBtn = cn(
+    'inline-flex size-10 items-center justify-center rounded-full transition-colors disabled:opacity-50',
+    wa ? 'text-[#54656f] hover:bg-black/[0.06]' : 'text-[#000] hover:bg-black/[0.05]',
+  );
+  const headerPill = cn(
+    'inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-60',
+    wa ? 'bg-white text-[#3b4a54] shadow-[0_1px_1px_rgba(11,20,26,0.06)] ring-1 ring-[#e9edef] hover:bg-[#f5f6f6]' : 'bg-[#efefef] text-[#000] hover:bg-[#e3e3e3]',
+  );
+
+  const filterChips = (
+    [
+      { key: 'all', label: 'All' },
+      { key: 'unread', label: 'Unread' },
+      { key: 'favorites', label: 'Favourites' },
+      { key: 'mine', label: 'Mine' },
+      { key: 'unassigned', label: 'Unassigned' },
+    ] as const
+  )
+    // An agent's Inbox is only their own chats, so "Mine" / "Unassigned" mean nothing there.
+    .filter((f) => isAdmin || (f.key !== 'mine' && f.key !== 'unassigned'));
+
   return (
     <div className={cn(full && 'fixed inset-0 z-40 flex flex-col bg-background p-3 sm:p-4')}>
       {!full && <PageHeader title="Inbox" description="WhatsApp and Instagram conversations — auto-created from incoming messages." />}
@@ -559,104 +866,109 @@ export function InboxPage() {
       />
 
       <div className={cn('flex flex-wrap items-center justify-between gap-2', full ? 'mb-3' : 'mb-4')}>
-      {/* Channel switcher */}
-      <div className="inline-flex rounded-lg border border-border bg-card p-1">
-        <button
-          type="button"
-          onClick={() => setChannel('WHATSAPP')}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors',
-            channel === 'WHATSAPP' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <MessageCircle className="size-4" /> WhatsApp
-        </button>
-        <button
-          type="button"
-          onClick={() => setChannel('INSTAGRAM')}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors',
-            channel === 'INSTAGRAM' ? 'bg-pink-600 text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Instagram className="size-4" /> Instagram
-        </button>
-      </div>
-
-      {/* Inbox size */}
-      <div className="inline-flex rounded-lg border border-border bg-card p-1" role="group" aria-label="Inbox size">
-        {VIEW_OPTIONS.map((o) => (
+        {/* Channel switcher */}
+        <div className="inline-flex rounded-full border border-border bg-card p-1 shadow-sm">
           <button
-            key={o.key}
             type="button"
-            onClick={() => setView(o.key)}
-            aria-pressed={view === o.key}
-            aria-label={o.label}
-            title={o.key === 'full' ? 'Full screen (Esc to exit)' : o.label}
+            onClick={() => setChannel('WHATSAPP')}
             className={cn(
-              'size-8 items-center justify-center rounded-md transition-colors',
-              o.key === 'compact' ? 'hidden sm:flex' : 'flex',
-              view === o.key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              'flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold transition-all',
+              wa ? 'bg-[#00a884] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <o.icon className="size-4" />
+            <MessageCircle className="size-4" /> WhatsApp
           </button>
-        ))}
-      </div>
+          <button
+            type="button"
+            onClick={() => setChannel('INSTAGRAM')}
+            className={cn(
+              'flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold transition-all',
+              !wa ? 'bg-gradient-to-r from-[#f58529] via-[#dd2a7b] to-[#8134af] text-white shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Instagram className="size-4" /> Instagram
+          </button>
+        </div>
+
+        {/* Inbox size */}
+        <div className="hidden rounded-full border border-border bg-card p-1 shadow-sm md:inline-flex" role="group" aria-label="Inbox size">
+          {VIEW_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => setView(o.key)}
+              aria-pressed={view === o.key}
+              aria-label={o.label}
+              title={o.key === 'full' ? 'Full screen (Esc to exit)' : o.label}
+              className={cn(
+                'flex size-8 items-center justify-center rounded-full transition-colors',
+                view === o.key ? 'bg-foreground text-background shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              <o.icon className="size-4" />
+            </button>
+          ))}
+        </div>
       </div>
 
       <div
         className={cn(
-          'grid grid-cols-1 overflow-hidden rounded-xl border border-border bg-card shadow-card',
-          full ? 'min-h-0 flex-1' : 'h-[calc(100dvh-230px)] min-h-[520px]',
-          compact ? 'grid-cols-[76px_1fr]' : 'sm:grid-cols-[300px_1fr]',
+          'grid grid-cols-1 overflow-hidden rounded-2xl border shadow-[0_8px_30px_rgba(15,23,42,0.06)]',
+          wa ? 'border-[#e9edef] bg-white' : 'border-[#dbdbdb] bg-white',
+          full ? 'min-h-0 flex-1' : 'h-[calc(100dvh-210px)] min-h-[560px]',
+          compact ? 'md:grid-cols-[76px_1fr]' : 'md:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr]',
         )}
       >
-        {/* Conversation list */}
-        <div className="flex min-h-0 flex-col border-b border-border sm:border-b-0 sm:border-r">
-          <div className={cn('border-b border-border p-3', compact && 'hidden')}>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search conversations…"
-                className="pl-9"
-                aria-label="Search conversations"
-              />
+        {/* ---------------- Chat list ---------------- */}
+        <div className={cn('flex min-h-0 flex-col md:border-r', wa ? 'border-[#e9edef]' : 'border-[#dbdbdb]')}>
+          <div className={cn(compact && 'hidden')}>
+            <div className="flex items-center justify-between px-4 pb-2 pt-4">
+              <h2 className={cn('text-[22px] font-bold tracking-tight', wa ? 'text-[#111b21]' : 'text-[#000]')}>{wa ? 'Chats' : 'Messages'}</h2>
+              {stageCounts && <span className={cn('text-xs', wa ? 'text-[#667781]' : 'text-[#737373]')}>{stageCounts.total} chats</span>}
             </div>
-            <div className="mt-2.5 flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
-              {(
-                [
-                  { key: 'all', label: 'All' },
-                  { key: 'unread', label: 'Unread' },
-                  { key: 'favorites', label: 'Favorites' },
-                  { key: 'mine', label: 'Mine' },
-                  { key: 'unassigned', label: 'Unassigned' },
-                ] as const
-              )
-                // An agent's Inbox is only their own chats, so "Mine" / "Unassigned" mean nothing there.
-                .filter((f) => isAdmin || (f.key !== 'mine' && f.key !== 'unassigned'))
-                .map((f) => (
+            <div className="px-3 pb-2">
+              <div className="relative">
+                <Search className={cn('pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2', wa ? 'text-[#54656f]' : 'text-[#737373]')} />
+                <input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder={wa ? 'Search or start a new chat' : 'Search'}
+                  aria-label="Search conversations"
+                  className={cn(
+                    'h-9 w-full rounded-lg pl-10 pr-3 text-sm outline-none transition-shadow placeholder:text-[#667781] focus:ring-2',
+                    wa ? 'bg-[#f0f2f5] text-[#111b21] focus:ring-[#00a884]/30' : 'bg-[#efefef] text-[#000] placeholder:text-[#737373] focus:ring-[#0095f6]/25',
+                  )}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 overflow-x-auto px-3 pb-2 [scrollbar-width:none]">
+              {filterChips.map((f) => (
                 <button
                   key={f.key}
                   type="button"
                   onClick={() => setFilter(f.key)}
                   className={cn(
-                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                    filter === f.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
+                    'shrink-0 rounded-full px-3 py-1 text-[13px] font-medium transition-colors',
+                    wa
+                      ? filter === f.key
+                        ? 'bg-[#d9fdd3] text-[#008069]'
+                        : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+                      : filter === f.key
+                        ? 'bg-[#000] text-white'
+                        : 'bg-[#efefef] text-[#000] hover:bg-[#e3e3e3]',
                   )}
                 >
                   {f.label}
                 </button>
               ))}
             </div>
-            <div className="-mx-3 mt-2 flex gap-1.5 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none]" role="group" aria-label="Filter by lead stage">
+            {/* Lead stages */}
+            <div className="flex gap-1.5 overflow-x-auto px-3 pb-2.5 [scrollbar-width:none]" role="group" aria-label="Filter by lead stage">
               <button
                 type="button"
                 onClick={() => setStage(null)}
                 className={cn(
-                  'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors',
+                  'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset transition-colors',
                   stage === null ? 'bg-foreground text-background ring-foreground' : 'bg-card text-muted-foreground ring-border hover:text-foreground',
                 )}
               >
@@ -670,10 +982,7 @@ export function InboxPage() {
                     key={value}
                     type="button"
                     onClick={() => setStage(stage === value ? null : value)}
-                    className={cn(
-                      'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
-                      stage === value ? style.chipActive : style.chipIdle,
-                    )}
+                    className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors', stage === value ? style.chipActive : style.chipIdle)}
                   >
                     {style.label} · {count}
                   </button>
@@ -684,7 +993,7 @@ export function InboxPage() {
                   type="button"
                   onClick={() => setStage(stage === 'none' ? null : 'none')}
                   className={cn(
-                    'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset transition-colors',
+                    'shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ring-1 ring-inset transition-colors',
                     stage === 'none' ? 'bg-slate-600 text-white ring-slate-600' : 'bg-card text-muted-foreground ring-border hover:text-foreground',
                   )}
                 >
@@ -692,12 +1001,20 @@ export function InboxPage() {
                 </button>
               )}
             </div>
+            <div className={cn('border-b', wa ? 'border-[#e9edef]' : 'border-[#efefef]')} />
           </div>
+
           <div className="min-h-0 flex-1 overflow-y-auto">
             {conversationsQuery.isLoading ? (
-              <div className="space-y-2 p-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 rounded-lg" />
+              <div className="space-y-1 p-3">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 px-1 py-2">
+                    <Skeleton className="size-12 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3.5 w-1/2" />
+                      <Skeleton className="h-3 w-3/4" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : conversations.length === 0 ? (
@@ -708,26 +1025,26 @@ export function InboxPage() {
                     ? `No chats in ${stage === 'none' ? 'No lead' : LEAD_STATUS_STYLES[stage].label}`
                     : filter === 'mine'
                       ? 'No chats assigned to you'
-                    : filter === 'unassigned'
-                      ? 'Every chat is assigned'
-                    : filter === 'favorites'
-                      ? 'No favorites yet'
-                      : filter === 'unread'
-                        ? 'No unread conversations'
-                        : 'No conversations yet'
+                      : filter === 'unassigned'
+                        ? 'Every chat is assigned'
+                        : filter === 'favorites'
+                          ? 'No favourites yet'
+                          : filter === 'unread'
+                            ? 'No unread chats'
+                            : 'No conversations yet'
                 }
                 description={
                   stage
                     ? 'Try another stage, or All stages.'
                     : filter === 'mine'
-                    ? 'Chats your team assigns to you show up here.'
-                    : filter === 'unassigned'
-                    ? 'Nothing waiting for an owner.'
-                    : filter === 'favorites'
-                    ? 'Star a conversation to pin it here.'
-                    : filter === 'unread'
-                      ? "You're all caught up."
-                      : `Incoming ${channel === 'WHATSAPP' ? 'WhatsApp messages' : 'Instagram DMs'} will show up here automatically.`
+                      ? 'Chats your team assigns to you show up here.'
+                      : filter === 'unassigned'
+                        ? 'Nothing waiting for an owner.'
+                        : filter === 'favorites'
+                          ? 'Star a chat to pin it here.'
+                          : filter === 'unread'
+                            ? "You're all caught up."
+                            : `Incoming ${wa ? 'WhatsApp messages' : 'Instagram DMs'} will show up here automatically.`
                 }
                 className="border-none"
               />
@@ -736,8 +1053,9 @@ export function InboxPage() {
                 <ConversationRow
                   key={c.id}
                   c={c}
+                  channel={channel}
                   active={c.id === selectedId}
-                  onClick={() => setSelectedId(c.id)}
+                  onClick={() => openChat(c.id)}
                   onToggleFavorite={() => favoriteMutation.mutate({ id: c.id, isFavorite: !c.isFavorite })}
                   compact={compact}
                 />
@@ -746,53 +1064,62 @@ export function InboxPage() {
           </div>
         </div>
 
-        {/* Thread */}
-        <div className="flex min-h-0 flex-col">
+        {/* ---------------- Chat ---------------- */}
+        <div
+          className={cn(
+            'min-h-0 flex-col',
+            // Phones: the open chat covers the screen; no chat → just the list.
+            selected ? 'flex' : 'hidden md:flex',
+            chatOverPhone && 'fixed inset-0 z-50 bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]',
+          )}
+        >
           {!selected ? (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <EmptyState icon={<InboxIcon />} title="Select a conversation" description="Pick a conversation from the list to view messages." className="border-none" />
+            <div className={cn('flex flex-1 flex-col items-center justify-center px-8 text-center', wa ? 'bg-[#f0f2f5]' : 'bg-white')}>
+              {wa ? (
+                <>
+                  <span className="flex size-24 items-center justify-center rounded-full bg-[#d9fdd3]">
+                    <MessageCircle className="size-11 text-[#00a884]" strokeWidth={1.6} />
+                  </span>
+                  <h3 className="mt-6 text-[28px] font-light text-[#41525d]">WhatsApp Inbox</h3>
+                  <p className="mt-3 max-w-sm text-sm leading-6 text-[#667781]">
+                    Pick a chat to reply. Messages go out from your connected WhatsApp Business number — the bot, quick replies and AI suggestions work right here.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className="flex size-24 items-center justify-center rounded-full border-2 border-[#000]">
+                    <Send className="size-10 -rotate-12 text-[#000]" strokeWidth={1.5} />
+                  </span>
+                  <h3 className="mt-5 text-xl font-semibold text-[#000]">Your messages</h3>
+                  <p className="mt-1.5 max-w-xs text-sm text-[#737373]">Pick a chat to reply to your Instagram DMs.</p>
+                </>
+              )}
             </div>
           ) : (
             <>
+              {/* Header */}
               <div
-                className={cn('flex items-center justify-between gap-2 px-4 py-2.5', channel === 'WHATSAPP' ? 'text-white' : 'border-b border-border')}
-                style={channel === 'WHATSAPP' ? { backgroundColor: WA_HEADER } : undefined}
+                className={cn(
+                  'flex shrink-0 items-center gap-2 px-2 sm:px-4',
+                  wa ? 'h-[60px] border-b border-[#d1d7db] bg-[#f0f2f5]' : 'h-[68px] border-b border-[#dbdbdb] bg-white',
+                )}
               >
-                <div className="flex min-w-0 items-center gap-3">
-                  <Avatar className={channel === 'WHATSAPP' ? 'border border-white/25' : undefined}>
-                    {selected.contactAvatarUrl && <AvatarImage src={selected.contactAvatarUrl} alt="" />}
-                    <AvatarFallback className={channel === 'WHATSAPP' ? 'bg-white/15 text-white' : undefined}>
-                      {initials(selected.contactName || selected.contactPhone || selected.externalContactId)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <p className={cn('truncate font-semibold', channel !== 'WHATSAPP' && 'text-foreground')}>
-                      {selected.contactName || selected.contactPhone || selected.externalContactId}
-                    </p>
-                    {selected.contactPhone && selected.contactName && (
-                      <p className={cn('truncate text-xs', channel === 'WHATSAPP' ? 'text-white/70' : 'text-muted-foreground')}>{selected.contactPhone}</p>
-                    )}
-                    {selectedTags.length > 0 && (
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {selectedTags.slice(0, 4).map((t) => (
-                          <span
-                            key={t}
-                            className={cn(
-                              'rounded-full px-1.5 py-px text-[10px] font-medium',
-                              channel === 'WHATSAPP' ? 'bg-white/15 text-white' : 'bg-primary/10 text-primary',
-                            )}
-                          >
-                            {t}
-                          </span>
-                        ))}
-                        {selectedTags.length > 4 && (
-                          <span className={cn('text-[10px]', channel === 'WHATSAPP' ? 'text-white/70' : 'text-muted-foreground')}>+{selectedTags.length - 4}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                <button type="button" onClick={closeChat} className={cn(headerIconBtn, 'md:hidden')} aria-label="Back to chats">
+                  <ArrowLeft className="size-5" />
+                </button>
+                <ContactAvatar
+                  c={selected}
+                  className={wa ? 'size-10' : 'size-11'}
+                  fallbackClassName={wa ? 'bg-[#dfe5e7] text-[#54656f]' : 'bg-[#efefef] text-[#262626]'}
+                />
+                <div className="min-w-0 flex-1 pl-1">
+                  <p className={cn('truncate text-[16px] leading-tight', wa ? 'text-[#111b21]' : 'font-semibold text-[#000]')}>{label}</p>
+                  <p className={cn('truncate text-[13px] leading-tight', wa ? 'text-[#667781]' : 'text-[#737373]')}>
+                    {[selected.contactName && selected.contactPhone ? selected.contactPhone : null, ...selectedTags.slice(0, 3)].filter(Boolean).join(' · ') ||
+                      (wa ? 'WhatsApp' : 'Instagram')}
+                  </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
                   {bot && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -811,10 +1138,7 @@ export function InboxPage() {
                                     ? `Flow “${bot.flowName}” — finished`
                                     : `Flow “${bot.flowName}” — running`
                           }
-                          className={cn(
-                            'inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-60',
-                            channel === 'WHATSAPP' ? 'bg-white/10 text-white hover:bg-white/20' : 'border border-border text-foreground hover:bg-muted',
-                          )}
+                          className={headerPill}
                         >
                           {botMutation.isPending ? <Spinner className="size-3.5" /> : <Bot className="size-3.5" />}
                           <span className="hidden xl:inline">
@@ -823,16 +1147,14 @@ export function InboxPage() {
                           <span
                             className={cn(
                               'size-1.5 rounded-full',
-                              bot.state === 'waiting' || bot.state === 'running' ? 'bg-emerald-400' : bot.state === 'paused' ? 'bg-amber-400' : 'bg-slate-400',
+                              bot.state === 'waiting' || bot.state === 'running' ? 'bg-emerald-500' : bot.state === 'paused' ? 'bg-amber-400' : 'bg-slate-400',
                             )}
                           />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-72">
                         <DropdownMenuLabel className="font-normal">
-                          <span className="block text-sm font-medium text-foreground">
-                            {bot.state === 'off' ? 'Bot hasn’t run here' : `Flow: ${bot.flowName}`}
-                          </span>
+                          <span className="block text-sm font-medium text-foreground">{bot.state === 'off' ? 'Bot hasn’t run here' : `Flow: ${bot.flowName}`}</span>
                           <span className="block text-xs text-muted-foreground">
                             {bot.state === 'waiting' && `Waiting for an answer to “${bot.question ?? ''}” — whatever they type next is taken as the answer.`}
                             {bot.state === 'running' && 'Running.'}
@@ -860,8 +1182,8 @@ export function InboxPage() {
                           type="button"
                           disabled={stageMutation.isPending}
                           className={cn(
-                            'mr-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm transition-colors disabled:opacity-60',
-                            selectedStatus ? LEAD_STATUS_STYLES[selectedStatus].solid : 'bg-white/90 text-foreground',
+                            'inline-flex h-7 items-center gap-0.5 rounded-full px-2 text-[11px] font-medium shadow-sm transition-colors disabled:opacity-60 sm:h-8 sm:gap-1 sm:px-2.5 sm:text-xs',
+                            selectedStatus ? LEAD_STATUS_STYLES[selectedStatus].solid : 'bg-white text-foreground',
                           )}
                           aria-label="Change lead stage"
                           title="Change lead stage"
@@ -892,24 +1214,16 @@ export function InboxPage() {
                           disabled={assignMutation.isPending}
                           aria-label="Assign chat"
                           title={selectedAssignee ? `Assigned to ${selectedAssignee.name} — change` : 'Assign to a teammate'}
-                          className={cn(
-                            'inline-flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors disabled:opacity-60',
-                            channel === 'WHATSAPP' ? 'text-white/90 hover:bg-white/10' : 'border border-border text-foreground hover:bg-muted',
-                          )}
+                          className={cn(headerIconBtn, 'hidden w-auto gap-1.5 px-2 text-xs font-medium sm:inline-flex')}
                         >
                           {assignMutation.isPending ? (
                             <Spinner className="size-4" />
                           ) : selectedAssignee ? (
-                            <span
-                              className={cn(
-                                'flex size-6 items-center justify-center rounded-full text-[10px] font-bold',
-                                channel === 'WHATSAPP' ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary',
-                              )}
-                            >
+                            <span className="flex size-7 items-center justify-center rounded-full bg-[#dfe5e7] text-[10px] font-bold text-[#3b4a54]">
                               {initials(selectedAssignee.name)}
                             </span>
                           ) : (
-                            <UserPlus className="size-4" />
+                            <UserPlus className="size-5" />
                           )}
                           <span className="hidden max-w-[7rem] truncate lg:inline">
                             {selectedAssignee ? (selectedAssignee.id === me?.id ? 'You' : selectedAssignee.name.split(' ')[0]) : 'Assign'}
@@ -940,98 +1254,126 @@ export function InboxPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
-                  {channel === 'WHATSAPP' && selected.contactPhone && (
+                  {wa && selected.contactPhone && (
                     <a
                       href={`tel:${selected.contactPhone}`}
                       onClick={() => logCallMutation.mutate()}
-                      className="inline-flex size-9 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-white/10"
+                      className={cn(headerIconBtn, 'hidden sm:inline-flex')}
                       aria-label="Call"
                       title={`Call ${selected.contactPhone}`}
                     >
-                      <Phone className="size-4" />
+                      <Phone className="size-5" />
                     </a>
                   )}
-                  <Button
-                    variant={channel === 'WHATSAPP' ? 'ghost' : 'outline'}
-                    size="sm"
-                    className={channel === 'WHATSAPP' ? 'text-white hover:bg-white/10 hover:text-white' : undefined}
-                    disabled={summarizeMutation.isPending || (threadQuery.data?.messages.length ?? 0) === 0}
+                  <button
+                    type="button"
+                    className={cn(headerIconBtn, 'hidden sm:inline-flex')}
+                    disabled={summarizeMutation.isPending || messages.length === 0}
                     onClick={() => summarizeMutation.mutate()}
+                    aria-label="Summarize this chat"
+                    title="Summarize this chat (AI)"
                   >
-                    {summarizeMutation.isPending ? <Spinner className="size-4" /> : <FileText className="size-4" />} Summarize
-                  </Button>
+                    {summarizeMutation.isPending ? <Spinner className="size-4" /> : <FileText className="size-5" />}
+                  </button>
+                  {/* Phones: the rest of the actions in one menu, so the name stays readable. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button type="button" className={cn(headerIconBtn, 'sm:hidden')} aria-label="More">
+                        {summarizeMutation.isPending || assignMutation.isPending ? <Spinner className="size-4" /> : <MoreVertical className="size-5" />}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuItem disabled={messages.length === 0} onSelect={() => summarizeMutation.mutate()}>
+                        <FileText className="size-4" /> Summarize chat
+                      </DropdownMenuItem>
+                      {wa && selected.contactPhone && (
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            logCallMutation.mutate();
+                            window.location.href = `tel:${selected.contactPhone}`;
+                          }}
+                        >
+                          <Phone className="size-4" /> Call {selected.contactPhone}
+                        </DropdownMenuItem>
+                      )}
+                      {selectedLeadId && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuLabel>Assign this chat to</DropdownMenuLabel>
+                          {teammates.map((u) => (
+                            <DropdownMenuItem key={u.id} disabled={u.id === selectedAssignee?.id} onSelect={() => assignMutation.mutate(u.id)}>
+                              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold">{initials(u.name)}</span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {u.name}
+                                {u.id === me?.id && <span className="text-muted-foreground"> (you)</span>}
+                              </span>
+                              {u.id === selectedAssignee?.id && <Check className="size-3.5" />}
+                            </DropdownMenuItem>
+                          ))}
+                          {selectedAssignee && (
+                            <DropdownMenuItem onSelect={() => assignMutation.mutate(null)}>
+                              <X className="size-4" /> Unassign
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-5" style={channel === 'WHATSAPP' ? WA_WALLPAPER_STYLE : undefined}>
+              {/* Messages */}
+              <div
+                ref={threadRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  // Our own jump to the bottom isn't the agent scrolling up.
+                  if (autoScrollTop.current !== null && Math.abs(el.scrollTop - autoScrollTop.current) < 2) return;
+                  autoScrollTop.current = null;
+                  pinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+                }}
+                className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain', wa ? 'px-3 pb-3 pt-2 sm:px-[6%]' : 'bg-white px-3 pb-3 pt-2 sm:px-5')}
+                style={wa ? WA_WALLPAPER_STYLE : undefined}
+              >
                 {threadQuery.isLoading ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className={cn('h-12 max-w-[70%] rounded-2xl', i % 2 === 0 ? '' : 'ml-auto')} />
+                  <div className="space-y-3 pt-4">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className={cn('h-10 max-w-[60%]', wa ? 'rounded-lg' : 'rounded-[22px]', i % 2 === 0 ? '' : 'ml-auto')} />
                     ))}
                   </div>
+                ) : messages.length === 0 ? (
+                  <p className={cn('mx-auto mt-10 w-fit rounded-lg px-3 py-1.5 text-xs', wa ? 'bg-[#ffeecd] text-[#54656f]' : 'text-[#737373]')}>
+                    No messages yet — say hello 👋
+                  </p>
                 ) : (
-                  <div className="space-y-3">
-                    {(threadQuery.data?.messages ?? []).map((m) => {
-                      const wa = channel === 'WHATSAPP';
-                      const outboundTint = wa ? 'text-black/50' : 'text-white/70';
+                  <div ref={threadContentRef} className="pb-1">
+                    {messages.map((m, i) => {
+                      const prev = messages[i - 1];
+                      const next = messages[i + 1];
+                      const newDay = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
+                      const gapBefore = prev ? new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() : Infinity;
+                      const gapAfter = next ? new Date(next.createdAt).getTime() - new Date(m.createdAt).getTime() : Infinity;
+                      const first = newDay || !prev || prev.direction !== m.direction || gapBefore > 10 * 60_000;
+                      const last = !next || next.direction !== m.direction || dayKey(next.createdAt) !== dayKey(m.createdAt) || gapAfter > 10 * 60_000;
+                      // Instagram shows a centred time whenever a while has passed.
+                      const igTime = !wa && (newDay || gapBefore > 60 * 60_000);
                       return (
-                        <div key={m.id} className={cn('flex', m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start')}>
-                          <div
-                            className={cn(
-                              'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm shadow-sm',
-                              m.direction === 'OUTBOUND' ? 'rounded-br-sm' : 'rounded-bl-sm',
-                              m.direction === 'OUTBOUND'
-                                ? wa
-                                  ? 'text-[#111B21]'
-                                  : 'bg-primary text-primary-foreground'
-                                : wa
-                                  ? 'bg-white text-[#111B21]'
-                                  : 'bg-muted text-foreground',
-                            )}
-                            style={m.direction === 'OUTBOUND' && wa ? { backgroundColor: WA_OUTBOUND_BUBBLE } : undefined}
-                          >
-                            {m.templateName && (
-                              <p className={cn('mb-1 text-[10px] font-semibold uppercase tracking-wide', m.direction === 'OUTBOUND' ? outboundTint : 'text-muted-foreground')}>
-                                Template: {m.templateName}
-                              </p>
-                            )}
-                            {m.mediaUrl && isPdfUrl(m.mediaUrl) ? (
-                              <a
-                                href={m.mediaUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={cn(
-                                  '-mx-1 -mt-1 mb-1 flex items-center gap-2.5 rounded-lg p-2.5',
-                                  m.direction === 'OUTBOUND' ? 'bg-black/5' : 'bg-muted/60',
-                                )}
-                              >
-                                <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-red-500/15 text-red-600">
-                                  <FileText className="size-5" />
-                                </span>
-                                <span className="min-w-0 truncate text-xs font-medium">{documentNameFromUrl(m.mediaUrl)}</span>
-                              </a>
-                            ) : m.mediaUrl && isVideoUrl(m.mediaUrl) ? (
-                              <video src={m.mediaUrl} controls preload="metadata" className="-mx-1 -mt-1 mb-1 block max-h-64 w-[calc(100%+0.5rem)] rounded-lg bg-black" />
-                            ) : (
-                              m.mediaUrl && (
-                                <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="-mx-1 -mt-1 mb-1 block">
-                                  <img src={m.mediaUrl} alt="" className="max-h-64 w-full rounded-lg object-cover" />
-                                </a>
-                              )
-                            )}
-                            {m.body && <p className="whitespace-pre-line">{m.body}</p>}
-                            <div className={cn('mt-1 flex items-center gap-1.5 text-[10px]', m.direction === 'OUTBOUND' ? cn('justify-end', outboundTint) : 'text-muted-foreground')}>
-                              {formatSmartTime(m.createdAt)}
-                              {m.direction === 'OUTBOUND' && statusIcon(m.status, wa)}
+                        <div key={m.id}>
+                          {wa && newDay && (
+                            <div className="my-3 flex justify-center">
+                              <span className="rounded-lg bg-white px-3 py-1.5 text-[12.5px] text-[#54656f] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">{dayLabel(m.createdAt)}</span>
                             </div>
-                            {m.status === 'FAILED' && m.errorMessage && (
-                              <>
-                                <p className={cn('mt-1 text-[11px]', wa ? 'text-red-600' : 'text-red-200')}>{m.errorMessage}</p>
-                                {isWhatsAppPaymentError(m.errorMessage) && <AddPaymentMethodLink className={wa ? 'text-red-700' : 'text-white'} />}
-                              </>
-                            )}
-                          </div>
+                          )}
+                          {igTime && (
+                            <p className="my-4 text-center text-xs font-medium text-[#737373]">
+                              {dayLabel(m.createdAt)} {clockTime(m.createdAt)}
+                            </p>
+                          )}
+                          {wa ? (
+                            <WaBubble m={m} first={first} />
+                          ) : (
+                            <IgBubble m={m} first={first} last={last} contact={selected} showStatus={m.id === lastOutboundId} />
+                          )}
                         </div>
                       );
                     })}
@@ -1039,21 +1381,22 @@ export function InboxPage() {
                 )}
               </div>
 
-              <div className="border-t border-border p-3" style={channel === 'WHATSAPP' ? { backgroundColor: WA_COMPOSER_BG } : undefined}>
-                {channel === 'WHATSAPP' && whatsappBillingIssue && <WhatsAppBillingBanner />}
+              {/* Composer */}
+              <div className={cn('shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white')}>
+                {wa && whatsappBillingIssue && <WhatsAppBillingBanner />}
                 {igWindow !== 'open' && (
-                  <div className={cn('mb-2 rounded-lg px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
+                  <div className={cn('mb-2 rounded-xl px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
                     {igWindow === 'closed'
                       ? 'Their last message was over 7 days ago — Instagram won’t deliver a reply until they message you again.'
                       : 'Over 24 hours since their last message — Instagram only accepts a personal reply from your team now (up to 7 days). Your message is sent as a team reply.'}
                   </div>
                 )}
                 {outsideWindow && (
-                  <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="mb-2 rounded-xl bg-[#fff8e1] px-3 py-2 text-xs text-[#6b5a1e] ring-1 ring-[#f6e3a3]">
                     Outside the 24-hour window — send an approved template to restart the conversation.
                     {approvedTemplates.length > 0 ? (
                       <select
-                        className="mt-1.5 block w-full rounded-md border border-amber-200 bg-white px-2 py-1.5 text-xs"
+                        className="mt-1.5 block w-full rounded-lg border border-[#f6e3a3] bg-white px-2 py-1.5 text-xs"
                         value={templateName ?? ''}
                         onChange={(e) => {
                           if (e.target.value) {
@@ -1077,31 +1420,28 @@ export function InboxPage() {
                   </div>
                 )}
                 {(pendingMedia || uploadMutation.isPending) && (
-                  <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-card p-2">
+                  <div className="mb-2 flex items-center gap-3 rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/5">
                     {uploadMutation.isPending ? (
-                      <div className="flex size-14 items-center justify-center rounded-md bg-muted">
+                      <div className="flex size-14 items-center justify-center rounded-lg bg-muted">
                         <Spinner className="size-4" />
                       </div>
                     ) : pendingMedia!.kind === 'image' ? (
-                      <img src={pendingMedia!.url} alt="" className="size-14 rounded-md object-cover" />
+                      <img src={pendingMedia!.url} alt="" className="size-14 rounded-lg object-cover" />
                     ) : (
-                      <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-red-500/10 text-red-600">
-                        <FileText className="size-6" />
-                      </span>
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-[#ff5c5c] text-xs font-bold text-white">PDF</span>
                     )}
                     <p className="flex-1 truncate text-xs text-muted-foreground">
                       {uploadMutation.isPending ? 'Uploading…' : pendingMedia!.kind === 'image' ? 'Photo ready to send' : pendingMedia!.name}
                     </p>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-7"
+                    <button
+                      type="button"
+                      className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted disabled:opacity-50"
                       disabled={uploadMutation.isPending}
                       onClick={() => setPendingMedia(null)}
                       aria-label="Remove attachment"
                     >
                       <X className="size-4" />
-                    </Button>
+                    </button>
                   </div>
                 )}
                 {!composerBlocked && !outsideWindow && (
@@ -1112,92 +1452,139 @@ export function InboxPage() {
                     onNew={() => setManageQuickReplies('new')}
                   />
                 )}
-                <div className="flex items-end gap-2">
-                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
-                  <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        disabled={uploadMutation.isPending || composerBlocked}
-                        aria-label="Attach"
-                        title="Attach a photo or document"
-                      >
-                        <Paperclip className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top">
-                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                        <ImageIcon className="text-blue-500" /> Photo
-                      </DropdownMenuItem>
-                      {channel === 'WHATSAPP' && (
-                        <DropdownMenuItem onSelect={() => documentInputRef.current?.click()}>
-                          <FileText className="text-red-500" /> Document (PDF)
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
+                <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
+
+                {wa ? (
+                  // WhatsApp Web: + attach, white rounded box, round green send.
+                  <div className="flex items-end gap-1 sm:gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={uploadMutation.isPending || composerBlocked}
+                          aria-label="Attach"
+                          title="Attach a photo or document"
+                          className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06] disabled:opacity-40"
+                        >
+                          <Plus className="size-6" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" side="top" className="w-48">
+                        <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#007bfc] text-white">
+                            <ImageIcon className="size-3.5" />
+                          </span>
+                          Photo
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => documentInputRef.current?.click()}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#7f66ff] text-white">
+                            <FileText className="size-3.5" />
+                          </span>
+                          Document (PDF)
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <div className="relative min-w-0 flex-1">
+                      {qrOpen && !composerBlocked && (
+                        <QuickReplySuggestions
+                          matches={qrMatches}
+                          activeIndex={Math.min(qrIndex, Math.max(0, qrMatches.length - 1))}
+                          onPick={(r) => pickQuickReply(r, true)}
+                          onManage={() => setManageQuickReplies('list')}
+                        />
                       )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <div className="relative flex-1">
-                  {qrOpen && !composerBlocked && (
-                    <QuickReplySuggestions
-                      matches={qrMatches}
-                      activeIndex={Math.min(qrIndex, Math.max(0, qrMatches.length - 1))}
-                      onPick={(r) => pickQuickReply(r, true)}
-                      onManage={() => setManageQuickReplies('list')}
-                    />
-                  )}
-                  <Textarea
-                    ref={composerRef}
-                    value={draft}
-                    onKeyDown={handleComposerKeyDown}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      setQrIndex(0);
-                    }}
-                    placeholder={
-                      outsideWindow
-                        ? 'Template message…'
-                        : pendingMedia?.kind === 'image'
-                          ? channel === 'INSTAGRAM'
-                            ? "Instagram photos can't have a caption"
-                            : 'Add a caption…'
-                          : pendingMedia?.kind === 'document'
-                            ? 'Add a caption…'
-                            : 'Type a message…'
-                    }
-                    rows={2}
-                    className="resize-none"
-                    disabled={composerBlocked || (pendingMedia?.kind === 'image' && channel === 'INSTAGRAM')}
-                  />
+                      <Textarea
+                        ref={composerRef}
+                        value={draft}
+                        onKeyDown={onComposerKeyDown}
+                        onChange={(e) => {
+                          setDraft(e.target.value);
+                          setQrIndex(0);
+                        }}
+                        placeholder={outsideWindow ? 'Template message…' : pendingMedia ? 'Add a caption' : 'Type a message'}
+                        rows={1}
+                        className="min-h-[42px] resize-none rounded-lg border-0 bg-white px-3 py-[10px] text-[15px] leading-[21px] text-[#111b21] shadow-none placeholder:text-[#667781] focus-visible:ring-0 focus-visible:ring-offset-0"
+                        disabled={composerBlocked}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={suggestMutation.isPending || composerBlocked}
+                      onClick={() => suggestMutation.mutate()}
+                      aria-label="Suggest a reply"
+                      title="Suggest a reply with AI — you can edit before sending"
+                      className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06] disabled:opacity-40"
+                    >
+                      {suggestMutation.isPending ? <Spinner className="size-4" /> : <Sparkles className="size-5" />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canSend}
+                      onClick={sendNow}
+                      aria-label="Send message"
+                      title="Send (Enter)"
+                      className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all hover:bg-[#008f72] active:scale-95 disabled:bg-[#00a884]/40"
+                    >
+                      {sendMutation.isPending ? <Spinner className="size-4" /> : <Send className="size-[18px] translate-x-px" />}
+                    </button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    disabled={suggestMutation.isPending || composerBlocked}
-                    onClick={() => suggestMutation.mutate()}
-                    aria-label="Suggest a reply"
-                    title="Suggest a reply — you can edit before sending"
-                  >
-                    {suggestMutation.isPending ? <Spinner className="size-4" /> : <Sparkles className="size-4" />}
-                  </Button>
-                  <Button
-                    size="icon"
-                    className={channel === 'WHATSAPP' ? 'text-white hover:opacity-90' : undefined}
-                    style={channel === 'WHATSAPP' ? { backgroundColor: WA_SEND } : undefined}
-                    disabled={(!draft.trim() && !pendingMedia) || sendMutation.isPending || composerBlocked}
-                    onClick={() =>
-                      sendMutation.mutate({
-                        body: draft.trim() || undefined,
-                        mediaUrl: pendingMedia?.url || undefined,
-                        templateName: templateName || undefined,
-                      })
-                    }
-                    aria-label="Send message"
-                  >
-                    {sendMutation.isPending ? <Spinner className="size-4" /> : <Send className="size-4" />}
-                  </Button>
-                </div>
+                ) : (
+                  // Instagram: one rounded pill — text, photo button, blue "Send".
+                  <div className="relative flex items-end gap-1 rounded-[22px] border border-[#dbdbdb] bg-white py-1 pl-4 pr-1.5 focus-within:border-[#a8a8a8]">
+                    {qrOpen && !composerBlocked && (
+                      <QuickReplySuggestions
+                        matches={qrMatches}
+                        activeIndex={Math.min(qrIndex, Math.max(0, qrMatches.length - 1))}
+                        onPick={(r) => pickQuickReply(r, true)}
+                        onManage={() => setManageQuickReplies('list')}
+                      />
+                    )}
+                    <Textarea
+                      ref={composerRef}
+                      value={draft}
+                      onKeyDown={onComposerKeyDown}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        setQrIndex(0);
+                      }}
+                      placeholder={pendingMedia?.kind === 'image' ? "Instagram photos can't have a caption" : 'Message…'}
+                      rows={1}
+                      className="min-h-[36px] flex-1 resize-none border-0 bg-transparent px-0 py-2 text-[15px] leading-5 text-[#000] shadow-none placeholder:text-[#737373] focus-visible:ring-0 focus-visible:ring-offset-0"
+                      disabled={composerBlocked || pendingMedia?.kind === 'image'}
+                    />
+                    <button
+                      type="button"
+                      disabled={suggestMutation.isPending || composerBlocked}
+                      onClick={() => suggestMutation.mutate()}
+                      aria-label="Suggest a reply"
+                      title="Suggest a reply with AI — you can edit before sending"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-full text-[#000] transition-colors hover:bg-black/[0.05] disabled:opacity-40"
+                    >
+                      {suggestMutation.isPending ? <Spinner className="size-4" /> : <Sparkles className="size-5" />}
+                    </button>
+                    {canSend ? (
+                      <button
+                        type="button"
+                        onClick={sendNow}
+                        className="h-9 shrink-0 px-2.5 text-sm font-semibold text-[#0095f6] transition-colors hover:text-[#00376b]"
+                      >
+                        {sendMutation.isPending ? <Spinner className="size-4" /> : 'Send'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={uploadMutation.isPending || composerBlocked}
+                        onClick={() => imageInputRef.current?.click()}
+                        aria-label="Send a photo"
+                        title="Send a photo"
+                        className="flex size-9 shrink-0 items-center justify-center rounded-full text-[#000] transition-colors hover:bg-black/[0.05] disabled:opacity-40"
+                      >
+                        <ImageIcon className="size-5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
