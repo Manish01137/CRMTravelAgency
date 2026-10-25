@@ -1456,7 +1456,9 @@ model PlatformExpense {
 model QuickReply {
   id             String   @id @default(uuid()) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
-  /// Lower-case, no spaces, without the "/" — e.g. "price".
+  /// Button name shown above the message box, e.g. "Price list".
+  title          String
+  /// For typing "/" + shortcut — made from the title ("price-list"). Lower-case, no spaces, no "/".
   shortcut       String
   message        String
   createdById    String?  @map("created_by_id") @db.Uuid

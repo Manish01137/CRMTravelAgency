@@ -69,7 +69,7 @@ import { toWhatsAppImage } from '@/lib/whatsappImage';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
   ManageQuickRepliesDialog,
-  QuickRepliesButton,
+  QuickReplyBar,
   QuickReplySuggestions,
   fillQuickReply,
   insertQuickReply,
@@ -498,7 +498,7 @@ export function InboxPage() {
   // Quick replies: typing "/" shows saved messages (like WhatsApp Business).
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const quickReplies = useQuickReplies().data ?? [];
-  const [manageQuickReplies, setManageQuickReplies] = useState(false);
+  const [manageQuickReplies, setManageQuickReplies] = useState<false | 'list' | 'new'>(false);
   const [qrIndex, setQrIndex] = useState(0);
   const [qrDismissedFor, setQrDismissedFor] = useState<string | null>(null);
   const qrQuery = slashQuery(draft);
@@ -552,7 +552,11 @@ export function InboxPage() {
   return (
     <div className={cn(full && 'fixed inset-0 z-40 flex flex-col bg-background p-3 sm:p-4')}>
       {!full && <PageHeader title="Inbox" description="WhatsApp and Instagram conversations — auto-created from incoming messages." />}
-      <ManageQuickRepliesDialog open={manageQuickReplies} onOpenChange={setManageQuickReplies} />
+      <ManageQuickRepliesDialog
+        open={!!manageQuickReplies}
+        startNew={manageQuickReplies === 'new'}
+        onOpenChange={(o) => setManageQuickReplies(o ? 'list' : false)}
+      />
 
       <div className={cn('flex flex-wrap items-center justify-between gap-2', full ? 'mb-3' : 'mb-4')}>
       {/* Channel switcher */}
@@ -1100,6 +1104,14 @@ export function InboxPage() {
                     </Button>
                   </div>
                 )}
+                {!composerBlocked && !outsideWindow && (
+                  <QuickReplyBar
+                    contactName={selected?.contactName}
+                    onPick={(r) => pickQuickReply(r, false)}
+                    onManage={() => setManageQuickReplies('list')}
+                    onNew={() => setManageQuickReplies('new')}
+                  />
+                )}
                 <div className="flex items-end gap-2">
                   <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
                   <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
@@ -1126,14 +1138,13 @@ export function InboxPage() {
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <QuickRepliesButton disabled={composerBlocked} onPick={(r) => pickQuickReply(r, false)} onManage={() => setManageQuickReplies(true)} />
                   <div className="relative flex-1">
                   {qrOpen && !composerBlocked && (
                     <QuickReplySuggestions
                       matches={qrMatches}
                       activeIndex={Math.min(qrIndex, Math.max(0, qrMatches.length - 1))}
                       onPick={(r) => pickQuickReply(r, true)}
-                      onManage={() => setManageQuickReplies(true)}
+                      onManage={() => setManageQuickReplies('list')}
                     />
                   )}
                   <Textarea

@@ -1040,6 +1040,8 @@ export interface AdPackageLink {
 /** Inbox quick reply — inserted by typing "/" + shortcut. */
 export interface QuickReply {
   id: string;
+  /** Button name shown above the message box. */
+  title: string;
   shortcut: string;
   message: string;
   createdAt: string;
