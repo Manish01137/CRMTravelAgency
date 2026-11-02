@@ -784,7 +784,7 @@ export type ConversationChannel = 'WHATSAPP' | 'INSTAGRAM';
 
 export interface Conversation {
   id: string;
-  organizationId: string;
+  organizationId?: string;
   channel: ConversationChannel;
   externalContactId: string;
   contactName: string | null;
@@ -832,7 +832,8 @@ export interface ChannelMessage {
   id: string;
   conversationId: string;
   direction: MessageDirection;
-  externalMessageId: string | null;
+  /** Not sent to the chat screen (it doesn't need it). */
+  externalMessageId?: string | null;
   body: string | null;
   mediaUrl: string | null;
   templateName: string | null;

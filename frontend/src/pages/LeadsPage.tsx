@@ -36,6 +36,7 @@ import {
   MessageSquareText,
   Tag as TagIcon,
 } from 'lucide-react';
+import { POLL, livePolling } from '@/lib/livePolling';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Lead, LeadSource, LeadStats, LeadStatus, Paginated, User } from '@/types';
@@ -323,7 +324,6 @@ function StatusDropdown({
   );
 }
 
-const LIVE_REFRESH_MS = 5000;
 const FRESH_HIGHLIGHT_MS = 4000;
 
 /**
@@ -629,21 +629,19 @@ export function LeadsPage() {
   }, [queryString]);
 
   // Live: new WhatsApp / Instagram leads show up on their own. Checks every
-  // 5s while this tab is visible (paused in the background) and right away
+  // 20s while this tab is visible (paused in the background) and right away
   // when you come back to it.
   const leadsQuery = useQuery({
     queryKey: ['leads', queryString],
     queryFn: () => api.get<Paginated<Lead>>(`/leads?${queryString}`),
     placeholderData: keepPreviousData,
-    refetchInterval: LIVE_REFRESH_MS,
-    refetchOnWindowFocus: true,
+    ...livePolling(POLL.leads),
   });
 
   const statsQuery = useQuery({
     queryKey: ['lead-stats'],
     queryFn: () => api.get<LeadStats>('/leads/stats'),
-    refetchInterval: LIVE_REFRESH_MS,
-    refetchOnWindowFocus: true,
+    ...livePolling(POLL.leads),
   });
 
   // Leads that arrived since the page loaded get a brief highlight.

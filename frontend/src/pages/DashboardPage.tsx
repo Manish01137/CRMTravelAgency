@@ -15,6 +15,7 @@ import {
   UserPlus,
   Wallet,
 } from 'lucide-react';
+import { POLL, livePolling } from '@/lib/livePolling';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { BookingStats, CalendarFeed, Lead, LeadStats, LeadStatus, Paginated, Task } from '@/types';
@@ -280,15 +281,13 @@ export function DashboardPage() {
   const statsQuery = useQuery({
     queryKey: ['lead-stats'],
     queryFn: () => api.get<LeadStats>('/leads/stats'),
-    refetchInterval: 15_000, // new WhatsApp / Instagram leads show up without a refresh
-    refetchOnWindowFocus: true,
+    ...livePolling(POLL.dashboard), // new WhatsApp / Instagram leads show up without a refresh
   });
 
   const recentQuery = useQuery({
     queryKey: ['leads', { recent: true }],
     queryFn: () => api.get<Paginated<Lead>>('/leads?pageSize=5&sort=createdAt&order=desc'),
-    refetchInterval: 15_000,
-    refetchOnWindowFocus: true,
+    ...livePolling(POLL.dashboard),
   });
 
   const bookingStatsQuery = useQuery({

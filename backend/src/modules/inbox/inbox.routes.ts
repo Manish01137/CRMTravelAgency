@@ -5,6 +5,7 @@ import { requireAuth } from '../../middleware/auth';
 import * as controller from './inbox.controller';
 import {
   conversationIdParam,
+  listMessagesQuerySchema,
   createTemplateSchema,
   listConversationsQuerySchema,
   sendMessageSchema,
@@ -25,7 +26,11 @@ router.patch(
   validate({ params: conversationIdParam, body: setFavoriteSchema }),
   asyncHandler(controller.setFavorite),
 );
-router.get('/conversations/:id/messages', validate({ params: conversationIdParam }), asyncHandler(controller.listMessages));
+router.get(
+  '/conversations/:id/messages',
+  validate({ params: conversationIdParam, query: listMessagesQuerySchema }),
+  asyncHandler(controller.listMessages),
+);
 router.post(
   '/conversations/:id/messages',
   validate({ params: conversationIdParam, body: sendMessageSchema }),

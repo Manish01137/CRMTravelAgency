@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Cpu, Database, Server, Zap } from 'lucide-react';
+import { livePolling } from '@/lib/livePolling';
 import { api } from '@/lib/api';
 import { fromNow } from '@/lib/format';
 import { Card } from '@/components/ui/card';
@@ -22,7 +23,7 @@ export function OwnerSystemHealthPage() {
   const { data, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['owner', 'system-health'],
     queryFn: () => api.get<SystemHealth>('/platform-admin/system-health'),
-    refetchInterval: 30_000,
+    ...livePolling(30_000),
   });
 
   return (

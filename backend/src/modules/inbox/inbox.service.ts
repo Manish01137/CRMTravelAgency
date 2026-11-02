@@ -89,7 +89,7 @@ export async function listConversations(
       },
       orderBy: { lastMessageAt: 'desc' },
       take: 200,
-      include: { lead: { select: CONVERSATION_LEAD_SELECT } },
+      select: { ...CONVERSATION_SELECT, lead: { select: CONVERSATION_LEAD_SELECT } },
     }),
   );
 }
@@ -119,16 +119,78 @@ export async function setFavorite(organizationId: string, conversationId: string
   });
 }
 
-export async function listMessages(organizationId: string, conversationId: string) {
+/** What the chat screen shows of a message — nothing more crosses the wire. */
+const MESSAGE_SELECT = {
+  id: true,
+  conversationId: true,
+  direction: true,
+  body: true,
+  mediaUrl: true,
+  templateName: true,
+  status: true,
+  errorMessage: true,
+  sentById: true,
+  createdAt: true,
+} as const;
+
+/** What the chat list / header show of a conversation. */
+const CONVERSATION_SELECT = {
+  id: true,
+  channel: true,
+  externalContactId: true,
+  contactName: true,
+  contactAvatarUrl: true,
+  contactPhone: true,
+  leadId: true,
+  lastMessageAt: true,
+  lastMessagePreview: true,
+  lastInboundAt: true,
+  unreadCount: true,
+  isFavorite: true,
+} as const;
+
+/** A chat opens on its newest messages; polls then ask only for what's new. */
+const FULL_LOAD_LIMIT = 200;
+const NEWER_LIMIT = 100;
+/** Sent messages whose ticks can still change (sent → delivered → read / failed). */
+const STATUS_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * The open chat. Without `after`: the newest 200 messages (oldest first).
+ * With `after` (the newest message the screen already has): only messages
+ * from then on, plus the current status of recent sent messages so ticks
+ * keep updating — the screen merges both into what it has.
+ */
+export async function listMessages(organizationId: string, conversationId: string, after?: Date) {
   return withTenant(organizationId, async (tx) => {
-    const conversation = await tx.conversation.findUnique({ where: { id: conversationId } });
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: CONVERSATION_SELECT });
     if (!conversation) throw NotFound('Conversation not found');
-    const messages = await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' }, take: 500 });
+    let messages;
+    let statuses: { id: string; status: string; errorMessage: string | null }[] | undefined;
+    if (after) {
+      // gte, not gt: two messages can share a millisecond — the screen drops ones it already has.
+      messages = await tx.message.findMany({
+        where: { conversationId, createdAt: { gte: after } },
+        orderBy: { createdAt: 'asc' },
+        take: NEWER_LIMIT,
+        select: MESSAGE_SELECT,
+      });
+      statuses = await tx.message.findMany({
+        where: { conversationId, direction: 'OUTBOUND', createdAt: { gte: new Date(Date.now() - STATUS_WINDOW_MS) } },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: { id: true, status: true, errorMessage: true },
+      });
+    } else {
+      messages = (
+        await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: FULL_LOAD_LIMIT, select: MESSAGE_SELECT })
+      ).reverse();
+    }
     const lead = conversation.leadId ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: CONVERSATION_LEAD_SELECT }) : null;
     if (conversation.unreadCount > 0) {
       await tx.conversation.update({ where: { id: conversationId }, data: { unreadCount: 0 } });
     }
-    return { conversation: { ...conversation, lead }, messages };
+    return { conversation: { ...conversation, lead }, messages, ...(statuses && { statuses }) };
   });
 }
 

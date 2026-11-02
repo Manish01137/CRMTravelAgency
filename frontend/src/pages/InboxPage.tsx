@@ -66,6 +66,7 @@ import {
 import { initials } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 import { toWhatsAppImage } from '@/lib/whatsappImage';
+import { POLL, livePolling } from '@/lib/livePolling';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
   ManageQuickRepliesDialog,
@@ -115,6 +116,40 @@ function fillTemplatePreview(bodyText: string, contactName: string | null | unde
   const first = keys.every((k) => /^\d+$/.test(k)) ? [...keys].sort((a, b) => Number(a) - Number(b))[0] : keys[0];
   const name = contactName?.trim() || 'there';
   return bodyText.replace(new RegExp(`\\{\\{\\s*${first}\\s*\\}\\}`, 'g'), name);
+}
+
+// --- The open chat's messages ---------------------------------------------------
+
+type Thread = { conversation: Conversation; messages: ChannelMessage[] };
+/** A poll's answer: messages since the newest one on screen, and the latest ticks of recent sent ones. */
+type ThreadUpdate = Thread & { statuses?: { id: string; status: ChannelMessage['status']; errorMessage: string | null }[] };
+
+/** The bubble shown while a message is going out (replaced by the server's copy). */
+const SENDING_PREFIX = 'sending-';
+const isSending = (m: ChannelMessage) => m.id.startsWith(SENDING_PREFIX);
+
+/** Adds a poll's new messages to the ones on screen and updates ticks — nothing is reloaded. */
+function mergeThread(have: Thread, update: ThreadUpdate): Thread {
+  const statusById = new Map((update.statuses ?? []).map((s) => [s.id, s]));
+  const incomingById = new Map(update.messages.map((m) => [m.id, m]));
+  const messages = have.messages.map((m) => {
+    const fresh = incomingById.get(m.id);
+    if (fresh) return fresh;
+    const s = statusById.get(m.id);
+    return s && (s.status !== m.status || s.errorMessage !== m.errorMessage) ? { ...m, status: s.status, errorMessage: s.errorMessage } : m;
+  });
+  const shown = new Set(messages.map((m) => m.id));
+  for (const m of update.messages) {
+    if (shown.has(m.id)) continue;
+    // The server's copy of a message still showing as "sending…" takes its place.
+    const sendingIdx = messages.findIndex(
+      (t) => isSending(t) && m.direction === 'OUTBOUND' && (t.mediaUrl ?? null) === (m.mediaUrl ?? null) && (t.templateName ?? null) === (m.templateName ?? null) && (t.templateName || (t.body ?? null) === (m.body ?? null)),
+    );
+    if (sendingIdx >= 0) messages.splice(sendingIdx, 1);
+    messages.push(m);
+  }
+  messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  return { conversation: update.conversation, messages };
 }
 
 // --- Look & feel ----------------------------------------------------------------
@@ -495,13 +530,13 @@ export function InboxPage() {
       api.get<Conversation[]>(
         `/inbox/conversations?channel=${channel}&filter=${filter}${stage ? `&stage=${stage}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`,
       ),
-    refetchInterval: 8000,
+    ...livePolling(POLL.chatList),
   });
 
   const stageCountsQuery = useQuery({
     queryKey: ['conversations', 'stage-counts', channel],
     queryFn: () => api.get<ConversationStageCounts>(`/inbox/conversations/stage-counts?channel=${channel}`),
-    refetchInterval: 15000,
+    ...livePolling(POLL.stageCounts),
   });
   const stageCounts = stageCountsQuery.data;
 
@@ -522,11 +557,20 @@ export function InboxPage() {
     setPendingMedia(null);
   }, [channel]);
 
+  // The open chat: its newest messages on first open, then each poll asks only
+  // for what's new since the last message on screen (plus tick updates).
   const threadQuery = useQuery({
     queryKey: ['messages', selectedId],
-    queryFn: () => api.get<{ conversation: Conversation; messages: ChannelMessage[] }>(`/inbox/conversations/${selectedId}/messages`),
+    queryFn: async () => {
+      const key = ['messages', selectedId];
+      const have = queryClient.getQueryData<Thread>(key);
+      const newest = have?.messages.filter((m) => !isSending(m)).at(-1);
+      if (!have || !newest) return api.get<Thread>(`/inbox/conversations/${selectedId}/messages`);
+      const update = await api.get<ThreadUpdate>(`/inbox/conversations/${selectedId}/messages?after=${encodeURIComponent(newest.createdAt)}`);
+      return mergeThread(queryClient.getQueryData<Thread>(key) ?? have, update);
+    },
     enabled: !!selectedId,
-    refetchInterval: 5000,
+    ...livePolling(POLL.openChat),
   });
   // Stays open even when a stage change moves the chat out of the filtered list.
   const listed = conversations.find((c) => c.id === selectedId) ?? null;
@@ -549,7 +593,7 @@ export function InboxPage() {
     queryKey: ['chat-bot', selectedId],
     queryFn: () => api.get<ChatBotState>(`/inbox/conversations/${selectedId}/bot`),
     enabled: !!selectedId,
-    refetchInterval: 8000,
+    ...livePolling(POLL.chatBot),
   });
   const bot = botQuery.data;
   const botMutation = useMutation({
@@ -611,7 +655,6 @@ export function InboxPage() {
   const composerBlocked = (outsideWindow && !templateName) || igWindow === 'closed';
 
   type SendVars = { body?: string; mediaUrl?: string; templateName?: string };
-  type Thread = { conversation: Conversation; messages: ChannelMessage[] };
   const sendMutation = useMutation({
     mutationFn: (vars: SendVars) => api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, vars),
     // The bubble shows straight away (clock icon) while it goes out; the server's
@@ -627,7 +670,7 @@ export function InboxPage() {
               messages: [
                 ...old.messages,
                 {
-                  id: `sending-${Date.now()}`,
+                  id: `${SENDING_PREFIX}${Date.now()}`,
                   conversationId: selectedId!,
                   direction: 'OUTBOUND',
                   externalMessageId: null,

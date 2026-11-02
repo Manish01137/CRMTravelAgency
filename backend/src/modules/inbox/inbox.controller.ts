@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery } from './inbox.schemas';
+import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery } from './inbox.schemas';
 import { controlChatBot, getChatBotState } from '../bot-flow/bot-flow.control';
 import { assertConversationVisible, conversationScope, viewerOf } from '../../lib/visibility';
 
@@ -35,7 +35,8 @@ export async function setFavorite(req: Request, res: Response): Promise<void> {
 
 export async function listMessages(req: Request, res: Response): Promise<void> {
   await checkAccess(req);
-  const result = await service.listMessages(req.auth!.organizationId, req.params.id);
+  const { after } = req.query as unknown as ListMessagesQuery;
+  const result = await service.listMessages(req.auth!.organizationId, req.params.id, after);
   res.json(result);
 }
 

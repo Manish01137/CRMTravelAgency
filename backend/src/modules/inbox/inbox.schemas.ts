@@ -25,6 +25,10 @@ export const conversationIdParam = z.object({ id: z.string().uuid('Invalid conve
 
 export const setFavoriteSchema = z.object({ isFavorite: z.boolean() });
 
+// Open chat polling: `after` = the newest message the screen already has — only newer ones come back.
+export const listMessagesQuerySchema = z.object({ after: z.coerce.date().optional() });
+export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
+
 // The chat's bot: start its flow again from the beginning, or pause it while the team handles the chat.
 export const botControlSchema = z.object({ action: z.enum(['restart', 'pause']) });
 export type BotControlInput = z.infer<typeof botControlSchema>;
