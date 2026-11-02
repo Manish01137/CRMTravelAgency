@@ -310,7 +310,7 @@ async function loadState(
     if (!session) {
       const flowId = chooseFlowForNewChat(routing, messageBody, await sourceAdIdOf(), messageCreatedAt);
       if (!flowId) return null; // no flow applies to this chat
-      // upsert, not create: the scheduled poller (every 10s) and a manually
+      // upsert, not create: the scheduled poller (every 30s) and a manually
       // triggered scan can both reach this for the same brand-new conversation.
       session = await tx.botFlowSession.upsert({
         where: { conversationId },

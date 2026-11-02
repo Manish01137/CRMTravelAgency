@@ -326,7 +326,7 @@ async function updateTemplateStatus(organizationId: string, externalTemplateId: 
  * each — unless the org's Bot Flow is about to open a brand-new
  * conversation for this lead, in which case the engine sends them itself as
  * the very first replies (bot-flow.engine.ts, session start). Sending them
- * here in that case would race the 10s poller and could land after the
+ * here in that case would race the backup poller and could land after the
  * flow's first question. Returns true when at least one was sent.
  */
 async function sendAdPackagesIfNotFlowHandled(

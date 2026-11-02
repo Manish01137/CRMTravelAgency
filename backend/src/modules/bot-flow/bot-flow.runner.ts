@@ -14,7 +14,7 @@ import {
 /**
  * Runs the bot for a chat's newest inbound message. Called straight from the
  * webhook the moment a message arrives (so the reply goes out in a second or
- * two), and by the 10s poller as a backup for anything missed.
+ * two), and by the 30s poller as a backup for anything missed.
  *
  * Both can reach the same chat at once, so each chat is handled one run at a
  * time (runExclusive), and every run re-reads the session first — the second

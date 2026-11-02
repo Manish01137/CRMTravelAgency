@@ -14,7 +14,7 @@ import {
 /**
  * Reacts to new inbound WhatsApp/Instagram messages for orgs using Bot Flow
  * (a default flow on a channel, or keyword / ad-triggered flows) WITHOUT touching Phase 3's webhooks.service.ts. Runs as a
- * BullMQ repeatable job (every 10s): scans across all organizations for
+ * BullMQ repeatable job (every 30s): scans across all organizations for
  * unprocessed inbound messages (cross-org discovery via systemPrisma — same
  * "resolve before an org context exists" pattern webhooks.service.ts itself
  * documents), then hands each one to bot-flow.engine.ts, which does all its
@@ -25,8 +25,14 @@ import {
 const QUEUE_NAME = 'bot-flow-poll';
 const JOB_NAME = 'scan';
 // Backup only — replies go out straight from the webhook (bot-flow.runner.ts).
-const POLL_INTERVAL_MS = 3_000;
-const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // only scan conversations active in the last 7 days
+// Every scan reads the database, so it stays slow and narrow: the database is
+// billed by data transferred, and this used to be most of it.
+const POLL_INTERVAL_MS = 30_000;
+// This poller only catches messages the webhook missed (a deploy restart, a
+// dropped instant run) — those are minutes old, never days.
+const RECENT_WINDOW_MS = 6 * 60 * 60 * 1000;
+// Room for clock differences between this server (lastInboundAt) and the database (messages.created_at).
+const CLOCK_SLACK_MS = 10 * 60 * 1000;
 
 let queue: Queue | null = null;
 let worker: Worker | null = null;
@@ -57,17 +63,28 @@ async function scan(): Promise<void> {
 async function scanChannel(organizationId: string, channel: 'WHATSAPP' | 'INSTAGRAM'): Promise<void> {
   const connection = await systemPrisma.channelConnection.findUnique({
     where: { organizationId_channel: { organizationId, channel } },
+    select: { status: true },
   });
   if (!connection || connection.status !== 'CONNECTED') return;
 
   const routing = await loadFlowRouting(systemPrisma as unknown as TenantTx, organizationId, channel);
   if (!botFlowInUse(routing)) return;
 
+  // Only what the pre-checks below read — processConversation loads the chat again itself.
+  // `take: 1` on a relation in a findMany is applied in memory by Prisma (the SQL has
+  // no LIMIT), so the messages are also bounded by date: only this window's inbound ones.
+  const since = Date.now() - RECENT_WINDOW_MS;
   const conversations = await systemPrisma.conversation.findMany({
-    where: { organizationId, channel, lastInboundAt: { gte: new Date(Date.now() - RECENT_WINDOW_MS) } },
-    include: {
-      messages: { where: { direction: 'INBOUND' }, orderBy: { createdAt: 'desc' }, take: 1 },
-      botFlowSession: true,
+    where: { organizationId, channel, lastInboundAt: { gte: new Date(since) } },
+    select: {
+      id: true,
+      messages: {
+        where: { direction: 'INBOUND', createdAt: { gte: new Date(since - CLOCK_SLACK_MS) } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { body: true, createdAt: true },
+      },
+      botFlowSession: { select: { status: true, flowId: true, lastProcessedMessageAt: true } },
       lead: { select: { sourceAdId: true } },
     },
   });
@@ -78,7 +95,7 @@ async function scanChannel(organizationId: string, channel: 'WHATSAPP' | 'INSTAG
     const session = conversation.botFlowSession;
     if (session?.lastProcessedMessageAt && session.lastProcessedMessageAt >= latestInbound.createdAt) continue;
     const body = latestInbound.body ?? '';
-    // Cheap pre-checks so chats no flow applies to aren't loaded every 10s.
+    // Cheap pre-checks so chats no flow applies to aren't loaded on every scan.
     // A finished or teammate-owned chat only wakes the bot with a keyword or "hi".
     const flowId = session ? settingsFlowId(routing, session.flowId) : null;
     const greeting = !!chooseFlowForGreeting(routing, body, flowId, latestInbound.createdAt);
