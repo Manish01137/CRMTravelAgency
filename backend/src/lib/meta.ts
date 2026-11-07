@@ -398,16 +398,20 @@ export async function sendWhatsAppTypingIndicator(phoneNumberId: string, accessT
   });
 }
 
+/** Makes a WhatsApp message quote an earlier one (shown as a reply on the customer's phone). */
+const quoting = (replyToWamid?: string) => (replyToWamid ? { context: { message_id: replyToWamid } } : {});
+
 export async function sendWhatsAppText(
   phoneNumberId: string,
   accessToken: string,
   to: string,
   body: string,
+  replyToWamid?: string,
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body } }),
+    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body }, ...quoting(replyToWamid) }),
   });
   return { externalMessageId: data.messages[0].id };
 }
@@ -420,6 +424,7 @@ export async function sendWhatsAppImage(
   to: string,
   imageUrl: string,
   caption?: string,
+  replyToWamid?: string,
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
@@ -429,6 +434,7 @@ export async function sendWhatsAppImage(
       to,
       type: 'image',
       image: caption ? { link: imageUrl, caption } : { link: imageUrl },
+      ...quoting(replyToWamid),
     }),
   });
   return { externalMessageId: data.messages[0].id };
@@ -444,6 +450,7 @@ export async function sendWhatsAppDocument(
   documentUrl: string,
   filename: string,
   caption?: string,
+  replyToWamid?: string,
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
@@ -453,6 +460,7 @@ export async function sendWhatsAppDocument(
       to,
       type: 'document',
       document: { link: documentUrl, filename, ...(caption ? { caption } : {}) },
+      ...quoting(replyToWamid),
     }),
   });
   return { externalMessageId: data.messages[0].id };

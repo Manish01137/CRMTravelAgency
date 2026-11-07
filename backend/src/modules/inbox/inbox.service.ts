@@ -124,6 +124,7 @@ const MESSAGE_SELECT = {
   id: true,
   conversationId: true,
   direction: true,
+  externalMessageId: true, // no id at Meta → nothing to reply to
   body: true,
   mediaUrl: true,
   templateName: true,
@@ -131,6 +132,7 @@ const MESSAGE_SELECT = {
   errorMessage: true,
   sentById: true,
   createdAt: true,
+  replyTo: { select: { id: true, direction: true, body: true, mediaUrl: true, templateName: true } },
 } as const;
 
 /** What the chat list / header show of a conversation. */
@@ -166,7 +168,7 @@ export async function listMessages(organizationId: string, conversationId: strin
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: CONVERSATION_SELECT });
     if (!conversation) throw NotFound('Conversation not found');
     let messages;
-    let statuses: { id: string; status: string; errorMessage: string | null }[] | undefined;
+    let statuses: { id: string; status: string; errorMessage: string | null; externalMessageId: string | null }[] | undefined;
     if (after) {
       // gte, not gt: two messages can share a millisecond — the screen drops ones it already has.
       messages = await tx.message.findMany({
@@ -179,7 +181,7 @@ export async function listMessages(organizationId: string, conversationId: strin
         where: { conversationId, direction: 'OUTBOUND', createdAt: { gte: new Date(Date.now() - STATUS_WINDOW_MS) } },
         orderBy: { createdAt: 'desc' },
         take: 100,
-        select: { id: true, status: true, errorMessage: true },
+        select: { id: true, status: true, errorMessage: true, externalMessageId: true },
       });
     } else {
       messages = (
@@ -196,7 +198,14 @@ export async function listMessages(organizationId: string, conversationId: strin
 
 /** What phase 1 hands to the Meta call — everything it needs, so the send itself touches no database. */
 type SendPlan =
-  | { channel: 'WHATSAPP'; creds: WhatsAppCredentials; to: string; template: { name: string; language: string; params: string[]; paramNames: (string | null)[] } | null }
+  | {
+      channel: 'WHATSAPP';
+      creds: WhatsAppCredentials;
+      to: string;
+      template: { name: string; language: string; params: string[]; paramNames: (string | null)[] } | null;
+      /** Meta's id of the message being replied to. */
+      replyToWamid?: string;
+    }
   | { channel: 'INSTAGRAM'; creds: InstagramCredentials; to: string; humanAgent: boolean };
 
 /**
@@ -245,6 +254,16 @@ export async function sendMessage(
       throw BadRequest('Instagram DMs only support photos, not documents');
     }
 
+    // Reply to a message: WhatsApp only, and not on a template (Meta's templates can't quote).
+    let replyToId: string | undefined;
+    let replyToWamid: string | undefined;
+    if (input.replyToMessageId && conversation.channel === 'WHATSAPP' && !input.templateName) {
+      const target = await tx.message.findFirst({ where: { id: input.replyToMessageId, conversationId }, select: { id: true, externalMessageId: true } });
+      if (!target?.externalMessageId) throw BadRequest("That message can't be replied to — send this as a normal message instead");
+      replyToId = target.id;
+      replyToWamid = target.externalMessageId;
+    }
+
     let plan: SendPlan;
     if (conversation.channel === 'WHATSAPP') {
       let template: Extract<SendPlan, { channel: 'WHATSAPP' }>['template'] = null;
@@ -264,7 +283,7 @@ export async function sendMessage(
           paramNames: variables.map((v) => (v.named ? v.key : null)),
         };
       }
-      plan = { channel: 'WHATSAPP', creds: decryptJson<WhatsAppCredentials>(connection.credentials), to: conversation.externalContactId, template };
+      plan = { channel: 'WHATSAPP', creds: decryptJson<WhatsAppCredentials>(connection.credentials), to: conversation.externalContactId, template, replyToWamid };
     } else {
       plan = {
         channel: 'INSTAGRAM',
@@ -285,6 +304,7 @@ export async function sendMessage(
         templateName: input.templateName,
         status: 'QUEUED',
         sentById: userId,
+        replyToId,
       },
     });
     await tx.conversation.update({
@@ -345,18 +365,18 @@ function asSendError(err: unknown): never {
 /** The one network call of a send — no database access in here. */
 async function sendThroughMeta(plan: SendPlan, input: SendMessageInput): Promise<{ externalMessageId: string }> {
   if (plan.channel === 'WHATSAPP') {
-    const { creds, to, template } = plan;
+    const { creds, to, template, replyToWamid } = plan;
     if (template) {
       return sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, to, template.name, template.language, template.params, template.paramNames);
     }
     if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
-      return sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, documentFilenameFromUrl(input.mediaUrl), input.body?.trim() || undefined);
+      return sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, documentFilenameFromUrl(input.mediaUrl), input.body?.trim() || undefined, replyToWamid);
     }
     if (input.mediaUrl) {
       // WhatsApp supports a caption on the image itself — one message, not two.
-      return sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, input.body?.trim() || undefined);
+      return sendWhatsAppImage(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, input.body?.trim() || undefined, replyToWamid);
     }
-    return sendWhatsAppText(creds.phoneNumberId, creds.accessToken, to, input.body!);
+    return sendWhatsAppText(creds.phoneNumberId, creds.accessToken, to, input.body!, replyToWamid);
   }
   const { creds, to, humanAgent } = plan;
   // Instagram's attachment message has no caption field — any typed text

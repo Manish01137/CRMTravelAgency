@@ -939,14 +939,19 @@ model Message {
   status                 MessageStatus    @default(SENT)
   errorMessage           String?          @map("error_message")
   sentById               String?          @map("sent_by_id") @db.Uuid // agent who sent it (outbound only)
+  /// The message this one quotes (WhatsApp "reply to a message"). Null for a normal message.
+  replyToId              String?          @map("reply_to_id") @db.Uuid
   createdAt              DateTime         @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sentBy       User?        @relation("MessageSender", fields: [sentById], references: [id], onDelete: SetNull)
+  replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReply")
 
   @@index([organizationId])
   @@index([conversationId, createdAt])
+  @@index([replyToId])
   @@map("messages")
 }
 

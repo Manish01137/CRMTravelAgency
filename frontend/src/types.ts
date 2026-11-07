@@ -832,8 +832,10 @@ export interface ChannelMessage {
   id: string;
   conversationId: string;
   direction: MessageDirection;
-  /** Not sent to the chat screen (it doesn't need it). */
+  /** Meta's id — a message without one can't be replied to. */
   externalMessageId?: string | null;
+  /** The message this one quotes (WhatsApp reply). */
+  replyTo?: Pick<ChannelMessage, 'id' | 'direction' | 'body' | 'mediaUrl' | 'templateName'> | null;
   body: string | null;
   mediaUrl: string | null;
   templateName: string | null;

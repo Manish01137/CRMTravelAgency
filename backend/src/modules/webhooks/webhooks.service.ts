@@ -61,6 +61,20 @@ function instagramLeadSource(
   return isAd ? 'INSTAGRAM_ADS' : 'INSTAGRAM';
 }
 
+/** Files customers send that the Inbox keeps and shows as a card. */
+const DOCUMENT_EXTENSIONS: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+};
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+
 /**
  * Downloads a WhatsApp media object (image/video/document) and re-hosts it at
  * a public Supabase Storage URL. Meta's own media URLs require the same
@@ -71,7 +85,7 @@ function instagramLeadSource(
  * message with a broken media re-host still gets recorded, just without a
  * photo attached, rather than being dropped entirely.
  */
-async function downloadWhatsAppMedia(organizationId: string, mediaId: string): Promise<string | null> {
+async function downloadWhatsAppMedia(organizationId: string, mediaId: string, document?: { filename: string | null }): Promise<string | null> {
   try {
     const connection = await systemPrisma.channelConnection.findUnique({
       where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
@@ -83,13 +97,22 @@ async function downloadWhatsAppMedia(organizationId: string, mediaId: string): P
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!metaRes.ok) return null;
-    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string; file_size?: number };
     if (!meta.url) return null;
+    if (document) {
+      // Only ordinary office files, and not huge ones (each is held in memory while it's copied).
+      if (!DOCUMENT_EXTENSIONS[meta.mime_type?.split(';')[0] ?? ''] || (meta.file_size ?? 0) > MAX_DOCUMENT_BYTES) return null;
+    }
 
     const fileRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!fileRes.ok) return null;
     const buffer = Buffer.from(await fileRes.arrayBuffer());
     const mimeType = meta.mime_type ?? 'image/jpeg';
+    if (document) {
+      const ext = DOCUMENT_EXTENSIONS[mimeType.split(';')[0]];
+      if (buffer.length > MAX_DOCUMENT_BYTES) return null;
+      return await uploadBufferToStorage(buffer, mimeType, ext, `${organizationId}/whatsapp-media`, document.filename ?? 'document');
+    }
     const ext = mimeType.split('/')[1]?.split(';')[0] ?? 'jpg';
     return await uploadBufferToStorage(buffer, mimeType, ext, `${organizationId}/whatsapp-media`);
   } catch (err) {
@@ -178,6 +201,8 @@ async function recordInbound(params: {
   mediaUrl?: string | null;
   interactiveSelectionId?: string | null;
   externalMessageId: string | null;
+  /** Meta's id of the message the customer is replying to, if any. */
+  replyToWamid?: string | null;
   leadSource: InboundLeadSource;
   /** Meta's referral.source_id when this message came from a Click-to-WhatsApp ad. */
   adId?: string | null;
@@ -190,7 +215,7 @@ async function recordInbound(params: {
   /** True when a brand-new lead was created from this ad message and tagged with it. */
   adTaggedNewLead: boolean;
 }> {
-  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, leadSource, adId } = params;
+  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, replyToWamid, leadSource, adId } = params;
 
   return withTenant(organizationId, async (tx) => {
     const existing = await tx.conversation.findUnique({
@@ -253,6 +278,10 @@ async function recordInbound(params: {
       },
     });
 
+    // Quoting a message we don't have (older than this chat, or never saved) just shows as a normal message.
+    const quoted = replyToWamid
+      ? await tx.message.findFirst({ where: { conversationId: conversation.id, externalMessageId: replyToWamid }, select: { id: true } })
+      : null;
     await tx.message.create({
       data: {
         organizationId,
@@ -262,10 +291,12 @@ async function recordInbound(params: {
         body: body || null,
         mediaUrl: mediaUrl ?? undefined,
         interactiveSelectionId: interactiveSelectionId ?? undefined,
+        replyToId: quoted?.id,
         status: 'DELIVERED',
       },
     });
-    const preview = mediaUrl ? (body.trim() ? body : '📷 Photo') : body;
+    const documentLabel = mediaUrl ? body.match(/^\[Document(?:: (.*))?\]$/) : null;
+    const preview = documentLabel ? `📄 ${documentLabel[1] || 'Document'}` : mediaUrl ? (body.trim() ? body : '📷 Photo') : body;
     await tx.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -409,9 +440,19 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // instead of trying to parse free text. button_reply covered too, for
       // any future quick-reply-button use — same shape, different field name.
       const described = describeWhatsAppMessage(msg);
-      const text = described.text;
       const interactiveSelectionId = described.interactiveSelectionId;
-      const mediaUrl = described.imageId ? await downloadWhatsAppMedia(organizationId, described.imageId) : null;
+      const doc = described.document;
+      const mediaUrl = described.imageId
+        ? await downloadWhatsAppMedia(organizationId, described.imageId)
+        : doc
+          ? await downloadWhatsAppMedia(organizationId, doc.id, doc)
+          : null;
+      // A file we couldn't keep (too big, an unusual type, storage unavailable): say so in the chat.
+      const lostDocument = doc && !mediaUrl ? `[Document${doc.filename ? `: ${doc.filename}` : ''} — the file couldn't be saved to the CRM]` : null;
+      const text = lostDocument ? (doc?.caption ? `${doc.caption}\n${lostDocument}` : lostDocument) : described.text;
+      // Customer replied to a specific message. Button / list taps also carry this
+      // but aren't a reply worth quoting — the tap itself says what it answers.
+      const replyToWamid = type === 'interactive' || type === 'button' ? null : ((msg.context as { id?: string } | undefined)?.id ?? null);
       if (type === 'unsupported') {
         // Meta's own reason — kept in the log for diagnosis (the label above is what the Inbox shows).
         console.warn('[webhooks] unsupported WhatsApp message', JSON.stringify({ organizationId, from, unsupported: msg.unsupported, errors: msg.errors }));
@@ -435,6 +476,7 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
         mediaUrl,
         interactiveSelectionId,
         externalMessageId: (msg.id as string) ?? null,
+        replyToWamid,
         leadSource,
         adId,
       });

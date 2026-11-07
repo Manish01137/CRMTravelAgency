@@ -14,6 +14,8 @@ export interface DescribedMessage {
   text: string;
   /** WhatsApp media id to download and attach (images only). */
   imageId: string | null;
+  /** A PDF / Word / Excel… file to download and attach. */
+  document?: { id: string; filename: string | null; caption: string | null } | null;
   interactiveSelectionId: string | null;
 }
 
@@ -71,8 +73,12 @@ export function describeWhatsAppMessage(msg: Raw): DescribedMessage {
       return { ...none, text: caption || placeholder('Video') };
     }
     case 'document': {
-      const d = msg.document as { filename?: string; caption?: string } | undefined;
-      return { ...none, text: d?.caption || placeholder(`Document${d?.filename ? `: ${d.filename}` : ''}`) };
+      const d = msg.document as { id?: string; filename?: string; caption?: string } | undefined;
+      return {
+        ...none,
+        text: d?.caption || placeholder(`Document${d?.filename ? `: ${d.filename}` : ''}`),
+        document: d?.id ? { id: d.id, filename: d.filename ?? null, caption: d.caption ?? null } : null,
+      };
     }
     case 'audio':
       return { ...none, text: placeholder((msg.audio as { voice?: boolean } | undefined)?.voice ? 'Voice message' : 'Audio file') };

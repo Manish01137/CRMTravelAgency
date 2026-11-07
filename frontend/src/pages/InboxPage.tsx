@@ -11,6 +11,7 @@ import {
   FileText,
   Image as ImageIcon,
   ArrowLeft,
+  Reply,
   MoreVertical,
   Plus,
   Inbox as InboxIcon,
@@ -89,9 +90,20 @@ const WA_WALLPAPER_STYLE: React.CSSProperties = {
   backgroundSize: '160px 160px',
 };
 
-/** No separate "media kind" column — a document is just a mediaUrl ending in
- *  .pdf, same convention the backend uses (see inbox.service.ts). */
-const isPdfUrl = (url: string) => /\.pdf(?:[?#]|$)/i.test(url);
+/** No separate "media kind" column — a file is recognised by the extension on its mediaUrl. */
+const documentExtension = (url: string) => url.match(/\.(pdf|docx?|xlsx?|pptx?|txt|csv)(?:[?#]|$)/i)?.[1].toLowerCase() ?? null;
+const isDocumentUrl = (url: string) => documentExtension(url) !== null;
+const DOCUMENT_BADGE: Record<string, { label: string; color: string }> = {
+  pdf: { label: 'PDF', color: 'bg-[#ff5c5c]' },
+  doc: { label: 'DOC', color: 'bg-[#2b6cdb]' },
+  docx: { label: 'DOC', color: 'bg-[#2b6cdb]' },
+  xls: { label: 'XLS', color: 'bg-[#1f9d55]' },
+  xlsx: { label: 'XLS', color: 'bg-[#1f9d55]' },
+  ppt: { label: 'PPT', color: 'bg-[#e8710a]' },
+  pptx: { label: 'PPT', color: 'bg-[#e8710a]' },
+  txt: { label: 'TXT', color: 'bg-[#667781]' },
+  csv: { label: 'CSV', color: 'bg-[#1f9d55]' },
+};
 const isVideoUrl = (url: string) => /\.(mp4|mov|webm|3gp)(?:[?#]|$)/i.test(url);
 
 /** Recovers the human filename embedded in a document upload's storage key
@@ -100,7 +112,8 @@ const isVideoUrl = (url: string) => /\.(mp4|mov|webm|3gp)(?:[?#]|$)/i.test(url);
 function documentNameFromUrl(url: string): string {
   const last = url.split('/').pop() ?? 'document.pdf';
   const withoutQuery = last.split(/[?#]/)[0];
-  return decodeURIComponent(withoutQuery.replace(/^\d+-[0-9a-f]+-/, '')) || 'document.pdf';
+  const name = decodeURIComponent(withoutQuery.replace(/^\d+-[0-9a-f]+-?/, ''));
+  return name && !name.startsWith('.') ? name : `document${name || '.pdf'}`;
 }
 
 /**
@@ -122,7 +135,7 @@ function fillTemplatePreview(bodyText: string, contactName: string | null | unde
 
 type Thread = { conversation: Conversation; messages: ChannelMessage[] };
 /** A poll's answer: messages since the newest one on screen, and the latest ticks of recent sent ones. */
-type ThreadUpdate = Thread & { statuses?: { id: string; status: ChannelMessage['status']; errorMessage: string | null }[] };
+type ThreadUpdate = Thread & { statuses?: { id: string; status: ChannelMessage['status']; errorMessage: string | null; externalMessageId: string | null }[] };
 
 /** The bubble shown while a message is going out (replaced by the server's copy). */
 const SENDING_PREFIX = 'sending-';
@@ -136,7 +149,9 @@ function mergeThread(have: Thread, update: ThreadUpdate): Thread {
     const fresh = incomingById.get(m.id);
     if (fresh) return fresh;
     const s = statusById.get(m.id);
-    return s && (s.status !== m.status || s.errorMessage !== m.errorMessage) ? { ...m, status: s.status, errorMessage: s.errorMessage } : m;
+    return s && (s.status !== m.status || s.errorMessage !== m.errorMessage || s.externalMessageId !== m.externalMessageId)
+      ? { ...m, status: s.status, errorMessage: s.errorMessage, externalMessageId: s.externalMessageId }
+      : m;
   });
   const shown = new Set(messages.map((m) => m.id));
   for (const m of update.messages) {
@@ -382,13 +397,21 @@ function BubbleTail({ outbound }: { outbound: boolean }) {
   );
 }
 
-/** A photo / video / PDF inside a bubble. */
+/** A photo / video / file inside a bubble. */
 function MessageMedia({ m, rounded }: { m: ChannelMessage; rounded: string }) {
   if (!m.mediaUrl) return null;
-  if (isPdfUrl(m.mediaUrl)) {
+  const ext = documentExtension(m.mediaUrl);
+  if (ext) {
+    const badge = DOCUMENT_BADGE[ext];
     return (
-      <a href={m.mediaUrl} target="_blank" rel="noreferrer" className={cn('mb-1 flex min-w-[200px] items-center gap-2.5 bg-black/[0.06] p-2.5 transition-colors hover:bg-black/[0.1]', rounded)}>
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#ff5c5c] text-[10px] font-bold text-white">PDF</span>
+      <a
+        href={m.mediaUrl}
+        target="_blank"
+        rel="noreferrer"
+        title="Open this file"
+        className={cn('mb-1 flex min-w-[200px] items-center gap-2.5 bg-black/[0.06] p-2.5 transition-colors hover:bg-black/[0.1]', rounded)}
+      >
+        <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-md text-[10px] font-bold text-white', badge.color)}>{badge.label}</span>
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{documentNameFromUrl(m.mediaUrl)}</span>
       </a>
     );
@@ -413,9 +436,56 @@ function FailedNote({ m, className }: { m: ChannelMessage; className?: string })
   );
 }
 
+/** A file a customer sent is stored with a "[Document: x.pdf]" label — the card already says that. */
+const shownBody = (m: ChannelMessage) => (m.mediaUrl && isDocumentUrl(m.mediaUrl) && /^\[Document(: [^\n]*)?\]$/.test(m.body ?? '') ? null : m.body);
+
+/** One line describing a quoted message. */
+function quotedText(q: NonNullable<ChannelMessage['replyTo']>): string {
+  const body = q.body?.trim();
+  if (q.mediaUrl && isDocumentUrl(q.mediaUrl)) return `📄 ${documentNameFromUrl(q.mediaUrl)}`;
+  if (body) return body;
+  if (q.mediaUrl) return isVideoUrl(q.mediaUrl) ? '🎥 Video' : '📷 Photo';
+  return q.templateName ? `Template · ${q.templateName}` : 'Message';
+}
+
+/** The quoted message: inside a reply's bubble, and above the message box while replying. */
+function QuotedMessage({ quote, contactName, onClick, className }: { quote: NonNullable<ChannelMessage['replyTo']>; contactName: string; onClick?: () => void; className?: string }) {
+  const out = quote.direction === 'OUTBOUND';
+  const inner = (
+    <>
+      <span className={cn('block truncate text-[12.5px] font-medium', out ? 'text-[#06a77d]' : 'text-[#027eb5]')}>{out ? 'You' : contactName}</span>
+      <span className="line-clamp-2 whitespace-pre-line break-words text-[12.5px] leading-[16px] text-[#54656f]">{quotedText(quote)}</span>
+    </>
+  );
+  const classes = cn('block w-full min-w-0 rounded-[5px] border-l-4 bg-black/[0.05] px-2 py-1 text-left', out ? 'border-[#06cf9c]' : 'border-[#53bdeb]', className);
+  return onClick ? (
+    <button type="button" onClick={onClick} title="Go to this message" className={cn(classes, 'transition-colors hover:bg-black/[0.09]')}>
+      {inner}
+    </button>
+  ) : (
+    <div className={classes}>{inner}</div>
+  );
+}
+
 /** One WhatsApp message: green (sent) or white (received), tail on the first of a run, time + ticks inside. */
-function WaBubble({ m, first }: { m: ChannelMessage; first: boolean }) {
+function WaBubble({
+  m,
+  first,
+  contactName,
+  onReply,
+  onJump,
+  highlighted,
+}: {
+  m: ChannelMessage;
+  first: boolean;
+  contactName: string;
+  /** Absent when this message can't be replied to. */
+  onReply?: () => void;
+  onJump: (id: string) => void;
+  highlighted: boolean;
+}) {
   const out = m.direction === 'OUTBOUND';
+  const body = shownBody(m);
   const meta = (
     <span className="float-right ml-2.5 mt-[3px] flex translate-y-[5px] items-center gap-[3px] text-[11px] leading-none text-[#667781]">
       {clockTime(m.createdAt)}
@@ -423,22 +493,38 @@ function WaBubble({ m, first }: { m: ChannelMessage; first: boolean }) {
     </span>
   );
   return (
-    <div className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
-      <div
-        className={cn(
-          'relative max-w-[85%] rounded-[7.5px] px-[9px] pb-2 pt-1.5 text-[14.2px] leading-[19px] text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] sm:max-w-[65%]',
-          out ? 'bg-[#d9fdd3]' : 'bg-white',
-          first && (out ? 'rounded-tr-none' : 'rounded-tl-none'),
-          m.mediaUrl && !isPdfUrl(m.mediaUrl) && 'p-[3px] pb-1.5',
-        )}
-      >
-        {first && <BubbleTail outbound={out} />}
-        {m.templateName && <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#008069]">Template · {m.templateName}</p>}
-        <MessageMedia m={m} rounded="rounded-[6px]" />
-        <div className={cn('after:block after:clear-both after:content-[""]', m.mediaUrl && !isPdfUrl(m.mediaUrl) && 'px-1.5')}>
-          {m.body && <span className="whitespace-pre-wrap break-words">{m.body}</span>}
-          {meta}
+    <div id={`msg-${m.id}`} className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
+      <div className={cn('group flex w-full items-center gap-1', out ? 'flex-row-reverse' : 'flex-row')}>
+        <div
+          className={cn(
+            'relative max-w-[85%] rounded-[7.5px] px-[9px] pb-2 pt-1.5 text-[14.2px] leading-[19px] text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] transition-[box-shadow] duration-300 sm:max-w-[65%]',
+            out ? 'bg-[#d9fdd3]' : 'bg-white',
+            first && (out ? 'rounded-tr-none' : 'rounded-tl-none'),
+            m.mediaUrl && !isDocumentUrl(m.mediaUrl) && 'p-[3px] pb-1.5',
+            highlighted && 'ring-2 ring-[#00a884]/60',
+          )}
+        >
+          {first && <BubbleTail outbound={out} />}
+          {m.replyTo && <QuotedMessage quote={m.replyTo} contactName={contactName} onClick={() => onJump(m.replyTo!.id)} className="mb-1 min-w-[150px]" />}
+          {m.templateName && <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#008069]">Template · {m.templateName}</p>}
+          <MessageMedia m={m} rounded="rounded-[6px]" />
+          <div className={cn('after:block after:clear-both after:content-[""]', m.mediaUrl && !isDocumentUrl(m.mediaUrl) && 'px-1.5')}>
+            {body && <span className="whitespace-pre-wrap break-words">{body}</span>}
+            {meta}
+          </div>
         </div>
+        {onReply && (
+          // On a computer it appears on hover; touch screens have no hover, so it stays faintly visible.
+          <button
+            type="button"
+            onClick={onReply}
+            aria-label="Reply to this message"
+            title="Reply"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#54656f] opacity-0 shadow-sm transition-opacity hover:text-[#111b21] focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-60"
+          >
+            <Reply className="size-4" />
+          </button>
+        )}
       </div>
       <FailedNote m={m} className={out ? 'text-right' : undefined} />
     </div>
@@ -451,7 +537,7 @@ function WaBubble({ m, first }: { m: ChannelMessage; first: boolean }) {
  */
 function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; first: boolean; last: boolean; contact: Conversation; showStatus: boolean }) {
   const out = m.direction === 'OUTBOUND';
-  const mediaOnly = !!m.mediaUrl && !m.body && !isPdfUrl(m.mediaUrl);
+  const mediaOnly = !!m.mediaUrl && !m.body && !isDocumentUrl(m.mediaUrl);
   const corners = out
     ? cn('rounded-[22px]', !first && 'rounded-tr-[6px]', !last && 'rounded-br-[6px]')
     : cn('rounded-[22px]', !first && 'rounded-tl-[6px]', !last && 'rounded-bl-[6px]');
@@ -463,7 +549,7 @@ function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; 
           title={clockTime(m.createdAt)}
           className={cn(
             'max-w-[78vw] text-[15px] leading-5 sm:max-w-[60%]',
-            m.mediaUrl && isPdfUrl(m.mediaUrl) && 'min-w-[244px]',
+            m.mediaUrl && isDocumentUrl(m.mediaUrl) && 'min-w-[244px]',
             mediaOnly ? 'overflow-hidden' : 'px-3 py-2',
             mediaOnly ? corners : cn(corners, out ? 'bg-[#3797f0] text-white' : 'bg-[#efefef] text-[#000]'),
             m.status === 'QUEUED' && 'opacity-70',
@@ -523,6 +609,9 @@ export function InboxPage() {
   const [draft, setDraft] = useState('');
   const [templateName, setTemplateName] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ url: string; kind: 'image' | 'document'; name: string } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<ChannelMessage | null>(null);
+  // A reply belongs to the chat it was started in.
+  useEffect(() => setReplyingTo(null), [selectedId]);
 
   const conversationsQuery = useQuery({
     queryKey: ['conversations', channel, filter, stage, search],
@@ -654,7 +743,7 @@ export function InboxPage() {
   }, [selected, channel]);
   const composerBlocked = (outsideWindow && !templateName) || igWindow === 'closed';
 
-  type SendVars = { body?: string; mediaUrl?: string; templateName?: string };
+  type SendVars = { body?: string; mediaUrl?: string; templateName?: string; replyToMessageId?: string };
   const sendMutation = useMutation({
     mutationFn: (vars: SendVars) => api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, vars),
     // The bubble shows straight away (clock icon) while it goes out; the server's
@@ -663,6 +752,7 @@ export function InboxPage() {
       const key = ['messages', selectedId];
       await queryClient.cancelQueries({ queryKey: key });
       const draftBefore = draft;
+      const replyBefore = replyingTo;
       queryClient.setQueryData<Thread>(key, (old) =>
         old
           ? {
@@ -677,6 +767,7 @@ export function InboxPage() {
                   body: vars.body ?? (vars.templateName ? `Template: ${vars.templateName}` : null),
                   mediaUrl: vars.mediaUrl ?? null,
                   templateName: vars.templateName ?? null,
+                  replyTo: replyBefore,
                   status: 'QUEUED',
                   errorMessage: null,
                   sentById: me?.id ?? null,
@@ -689,7 +780,8 @@ export function InboxPage() {
       setDraft('');
       setTemplateName(null);
       setPendingMedia(null);
-      return { draftBefore };
+      setReplyingTo(null);
+      return { draftBefore, replyBefore };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
@@ -699,6 +791,7 @@ export function InboxPage() {
       toast.error(err instanceof ApiError ? err.message : 'Send failed');
       // Text back in the box, so it can be fixed and sent again.
       if (context?.draftBefore) setDraft((d) => d || context.draftBefore);
+      if (context?.replyBefore) setReplyingTo((r) => r ?? context.replyBefore);
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
       queryClient.invalidateQueries({ queryKey: ['conversations', channel] });
       // No payment method on Meta → the banner shows right away.
@@ -862,11 +955,30 @@ export function InboxPage() {
       body: draft.trim() || undefined,
       mediaUrl: pendingMedia?.url || undefined,
       templateName: templateName || undefined,
+      replyToMessageId: replyingTo?.id,
     });
+  };
+  const startReply = (m: ChannelMessage) => {
+    setReplyingTo(m);
+    composerRef.current?.focus();
+  };
+  // Tapping a quote goes to the original (when it's among the messages on screen) and flashes it.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const jumpToMessage = (id: string) => {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setHighlightId(id);
+    window.setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 1500);
   };
   // Enter sends, Shift+Enter is a new line (like WhatsApp Web) — on a computer; phones keep Enter for new lines.
   const onComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     handleComposerKeyDown(e);
+    if (!e.defaultPrevented && e.key === 'Escape' && replyingTo) {
+      e.preventDefault();
+      setReplyingTo(null);
+      return;
+    }
     if (e.defaultPrevented || e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
     if (window.matchMedia('(pointer: coarse)').matches) return;
     e.preventDefault();
@@ -1413,7 +1525,14 @@ export function InboxPage() {
                             </p>
                           )}
                           {wa ? (
-                            <WaBubble m={m} first={first} />
+                            <WaBubble
+                              m={m}
+                              first={first}
+                              contactName={label}
+                              highlighted={highlightId === m.id}
+                              onJump={jumpToMessage}
+                              onReply={!outsideWindow && m.externalMessageId && m.status !== 'FAILED' ? () => startReply(m) : undefined}
+                            />
                           ) : (
                             <IgBubble m={m} first={first} last={last} contact={selected} showStatus={m.id === lastOutboundId} />
                           )}
@@ -1498,6 +1617,20 @@ export function InboxPage() {
                 <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
                 <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
 
+                {wa && replyingTo && (
+                  <div className="mb-2 flex items-center gap-2 rounded-lg bg-white p-1.5 shadow-sm">
+                    <QuotedMessage quote={replyingTo} contactName={label} className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      aria-label="Cancel reply"
+                      title="Cancel reply (Esc)"
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06]"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                )}
                 {wa ? (
                   // WhatsApp Web: + attach, white rounded box, round green send.
                   <div className="flex items-end gap-1 sm:gap-2">

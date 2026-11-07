@@ -40,6 +40,8 @@ export const sendMessageSchema = z
     body: z.string().trim().max(4096).optional(),
     mediaUrl: z.preprocess(emptyToUndefined, z.string().trim().url().optional()),
     templateName: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
+    // WhatsApp: the message in this chat that this one replies to.
+    replyToMessageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
   })
   // A plain text message still requires real text; an image message can go out
   // with just a caption-less mediaUrl, same as WhatsApp/Instagram themselves allow.
