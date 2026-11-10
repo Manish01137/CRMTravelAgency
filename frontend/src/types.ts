@@ -836,6 +836,11 @@ export interface ChannelMessage {
   externalMessageId?: string | null;
   /** The message this one quotes (WhatsApp reply). */
   replyTo?: Pick<ChannelMessage, 'id' | 'direction' | 'body' | 'mediaUrl' | 'templateName'> | null;
+  /** Starred by the team (never shown to the customer). */
+  starredAt?: string | null;
+  /** WhatsApp emoji reactions on this message: the customer's and ours. */
+  customerReaction?: string | null;
+  agentReaction?: string | null;
   body: string | null;
   mediaUrl: string | null;
   templateName: string | null;
@@ -1049,4 +1054,18 @@ export interface QuickReply {
   message: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Message info: when a message was sent, delivered and read (or why it failed). */
+export interface MessageInfo {
+  id: string;
+  direction: MessageDirection;
+  status: MessageStatus;
+  createdAt: string;
+  deliveredAt: string | null;
+  readAt: string | null;
+  errorMessage: string | null;
+  templateName: string | null;
+  starredAt: string | null;
+  sentBy: { name: string } | null;
 }

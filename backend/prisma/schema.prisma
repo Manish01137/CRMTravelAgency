@@ -941,6 +941,14 @@ model Message {
   sentById               String?          @map("sent_by_id") @db.Uuid // agent who sent it (outbound only)
   /// The message this one quotes (WhatsApp "reply to a message"). Null for a normal message.
   replyToId              String?          @map("reply_to_id") @db.Uuid
+  /// Starred by the team (team-only — the customer never sees it).
+  starredAt              DateTime?        @map("starred_at")
+  /// The customer's emoji reaction on this message (WhatsApp), and ours.
+  customerReaction       String?          @map("customer_reaction")
+  agentReaction          String?          @map("agent_reaction")
+  /// When Meta reported our message delivered / read (Message info).
+  deliveredAt            DateTime?        @map("delivered_at")
+  readAt                 DateTime?        @map("read_at")
   createdAt              DateTime         @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

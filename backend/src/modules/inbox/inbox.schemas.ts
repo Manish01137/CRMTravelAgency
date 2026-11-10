@@ -25,6 +25,14 @@ export const conversationIdParam = z.object({ id: z.string().uuid('Invalid conve
 
 export const setFavoriteSchema = z.object({ isFavorite: z.boolean() });
 
+// One message of a chat (react / star / info).
+export const messageIdParam = z.object({ id: z.string().uuid('Invalid conversation id'), messageId: z.string().uuid('Invalid message id') });
+// An emoji, or "" to remove our reaction.
+export const reactSchema = z.object({ emoji: z.string().max(16) });
+export const starSchema = z.object({ starred: z.boolean() });
+export type ReactInput = z.infer<typeof reactSchema>;
+export type StarInput = z.infer<typeof starSchema>;
+
 // Open chat polling: `after` = the newest message the screen already has — only newer ones come back.
 export const listMessagesQuerySchema = z.object({ after: z.coerce.date().optional() });
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;

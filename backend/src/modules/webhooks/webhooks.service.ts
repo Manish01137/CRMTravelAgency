@@ -326,14 +326,29 @@ const EARLIER_STATUSES: Record<'SENT' | 'DELIVERED' | 'READ' | 'FAILED', Message
   FAILED: ['QUEUED', 'SENT', 'DELIVERED'],
 };
 
-async function updateOutboundStatus(organizationId: string, externalMessageId: string, status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED', errorMessage?: string) {
-  const update = () =>
-    withTenant(organizationId, (tx) =>
+async function updateOutboundStatus(
+  organizationId: string,
+  externalMessageId: string,
+  status: 'SENT' | 'DELIVERED' | 'READ' | 'FAILED',
+  errorMessage?: string,
+  at: Date = new Date(),
+) {
+  // Message info: when it was delivered / read (a "read" also means it was delivered).
+  const times = status === 'DELIVERED' ? { deliveredAt: at } : status === 'READ' ? { readAt: at } : {};
+  const update = async () => {
+    const result = await withTenant(organizationId, (tx) =>
       tx.message.updateMany({
         where: { organizationId, externalMessageId, status: { in: EARLIER_STATUSES[status] } },
-        data: { status, ...(errorMessage !== undefined && { errorMessage }) },
+        data: { status, ...times, ...(errorMessage !== undefined && { errorMessage }) },
       }),
     );
+    if (result.count > 0 && status === 'READ') {
+      await withTenant(organizationId, (tx) =>
+        tx.message.updateMany({ where: { organizationId, externalMessageId, deliveredAt: null }, data: { deliveredAt: at } }),
+      );
+    }
+    return result;
+  };
   const result = await update();
   if (result.count > 0) return;
   // Meta can report "delivered" before the Inbox has saved Meta's id on the
@@ -343,6 +358,28 @@ async function updateOutboundStatus(organizationId: string, externalMessageId: s
   if (known > 0) return;
   await new Promise((r) => setTimeout(r, 3000));
   await update();
+}
+
+/**
+ * The customer reacted to (or un-reacted from) a message in their chat: shown
+ * on that message. Returns false when the message isn't ours to find.
+ */
+async function applyCustomerReaction(organizationId: string, from: string, messageWamid: string, emoji: string): Promise<boolean> {
+  return withTenant(organizationId, async (tx) => {
+    const target = await tx.message.findFirst({
+      where: { organizationId, externalMessageId: messageWamid, conversation: { channel: 'WHATSAPP', externalContactId: from } },
+      select: { id: true, conversationId: true },
+    });
+    if (!target) return false;
+    await tx.message.update({ where: { id: target.id }, data: { customerReaction: emoji || null } });
+    const now = new Date();
+    // Same as any message from them: the chat counts as active (and moves up when they add a reaction).
+    await tx.conversation.update({
+      where: { id: target.conversationId },
+      data: { lastInboundAt: now, ...(emoji && { lastMessageAt: now, lastMessagePreview: `Reacted ${emoji}` }) },
+    });
+    return true;
+  });
 }
 
 /** Best-effort template-approval status sync. Silently no-ops if we don't recognize the template id. */
@@ -433,6 +470,12 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       if (!from) continue;
       const contact = contacts.find((c) => c.wa_id === from);
       const type = String(msg.type ?? 'text');
+      // An emoji reaction belongs on the message it reacts to, not as a new message.
+      // (A reaction to a message we don't have falls through and is recorded as before.)
+      if (type === 'reaction') {
+        const reaction = msg.reaction as { message_id?: string; emoji?: string } | undefined;
+        if (reaction?.message_id && (await applyCustomerReaction(organizationId, from, reaction.message_id, reaction.emoji ?? ''))) continue;
+      }
       // A tap on a Bot Flow CAROUSEL's list message arrives here as
       // type: 'interactive' with interactive.list_reply — its `id` is the
       // packageId we set when we sent the list (see bot-flow.engine.ts's
@@ -526,7 +569,9 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
           : isMetaPaymentError(error.code, `${error.title ?? ''} ${error.message ?? ''}`)
             ? WHATSAPP_PAYMENT_MESSAGE
             : friendlyMetaError(error.code, error.message ?? error.title);
-        await updateOutboundStatus(organizationId, messageId, mapped, errorMessage);
+        // Meta's own time of the event (seconds), so Message info shows when it really happened.
+        const at = Number(st.timestamp) > 0 ? new Date(Number(st.timestamp) * 1000) : new Date();
+        await updateOutboundStatus(organizationId, messageId, mapped, errorMessage, at);
         // A bot message whose photo / PDF Meta couldn't use never reached the customer — send its text again.
         if (mapped === 'FAILED') {
           await resendBotMessageWithoutMedia(organizationId, messageId, error?.code).catch((err) =>

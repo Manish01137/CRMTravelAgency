@@ -398,6 +398,19 @@ export async function sendWhatsAppTypingIndicator(phoneNumberId: string, accessT
   });
 }
 
+/**
+ * Reacts to one of the chat's messages with an emoji (shown on the customer's
+ * phone under that message). An empty emoji removes our reaction. Meta refuses
+ * reactions to messages older than 30 days.
+ */
+export async function sendWhatsAppReaction(phoneNumberId: string, accessToken: string, to: string, messageWamid: string, emoji: string): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'reaction', reaction: { message_id: messageWamid, emoji } }),
+  });
+}
+
 /** Makes a WhatsApp message quote an earlier one (shown as a reply on the customer's phone). */
 const quoting = (replyToWamid?: string) => (replyToWamid ? { context: { message_id: replyToWamid } } : {});
 

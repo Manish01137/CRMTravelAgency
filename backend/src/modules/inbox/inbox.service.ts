@@ -9,6 +9,7 @@ import {
   templateBodyVariables,
   sendInstagramText,
   sendInstagramImage,
+  sendWhatsAppReaction,
   createWhatsAppTemplate,
   metaErrorText,
 } from '../../lib/meta';
@@ -133,6 +134,9 @@ const MESSAGE_SELECT = {
   sentById: true,
   createdAt: true,
   replyTo: { select: { id: true, direction: true, body: true, mediaUrl: true, templateName: true } },
+  starredAt: true,
+  customerReaction: true,
+  agentReaction: true,
 } as const;
 
 /** What the chat list / header show of a conversation. */
@@ -168,7 +172,9 @@ export async function listMessages(organizationId: string, conversationId: strin
     const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: CONVERSATION_SELECT });
     if (!conversation) throw NotFound('Conversation not found');
     let messages;
-    let statuses: { id: string; status: string; errorMessage: string | null; externalMessageId: string | null }[] | undefined;
+    let statuses:
+      | { id: string; status: string; errorMessage: string | null; externalMessageId: string | null; customerReaction: string | null; agentReaction: string | null }[]
+      | undefined;
     if (after) {
       // gte, not gt: two messages can share a millisecond — the screen drops ones it already has.
       messages = await tx.message.findMany({
@@ -177,11 +183,12 @@ export async function listMessages(organizationId: string, conversationId: strin
         take: NEWER_LIMIT,
         select: MESSAGE_SELECT,
       });
+      // Recent messages whose ticks or reactions can still change (either side can react).
       statuses = await tx.message.findMany({
-        where: { conversationId, direction: 'OUTBOUND', createdAt: { gte: new Date(Date.now() - STATUS_WINDOW_MS) } },
+        where: { conversationId, createdAt: { gte: new Date(Date.now() - STATUS_WINDOW_MS) } },
         orderBy: { createdAt: 'desc' },
-        take: 100,
-        select: { id: true, status: true, errorMessage: true, externalMessageId: true },
+        take: 150,
+        select: { id: true, status: true, errorMessage: true, externalMessageId: true, customerReaction: true, agentReaction: true },
       });
     } else {
       messages = (
@@ -384,6 +391,69 @@ async function sendThroughMeta(plan: SendPlan, input: SendMessageInput): Promise
   // unlabeled second message.
   if (input.mediaUrl) return sendInstagramImage(creds.igUserId, creds.accessToken, to, input.mediaUrl, { humanAgent }).catch(explainInstagramWindow);
   return sendInstagramText(creds.igUserId, creds.accessToken, to, input.body!, { humanAgent }).catch(explainInstagramWindow);
+}
+
+// --- One message: react, star, info ---------------------------------------------
+
+/**
+ * Our emoji reaction on a message (WhatsApp; "" removes it). Sent to Meta
+ * first — outside any transaction — and saved only once Meta accepted it.
+ */
+export async function reactToMessage(organizationId: string, conversationId: string, messageId: string, emoji: string) {
+  const { creds, to, wamid } = await withTenant(organizationId, async (tx) => {
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { channel: true, externalContactId: true } });
+    if (!conversation) throw NotFound('Conversation not found');
+    if (conversation.channel !== 'WHATSAPP') throw BadRequest('Reactions are available on WhatsApp chats');
+    const message = await tx.message.findFirst({ where: { id: messageId, conversationId }, select: { externalMessageId: true } });
+    if (!message) throw NotFound('Message not found');
+    if (!message.externalMessageId) throw BadRequest("This message can't be reacted to");
+    const connection = await tx.channelConnection.findUnique({ where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } } });
+    if (!connection || connection.status !== 'CONNECTED' || !connection.credentials) throw BadRequest('WhatsApp is not connected');
+    return { creds: decryptJson<WhatsAppCredentials>(connection.credentials), to: conversation.externalContactId, wamid: message.externalMessageId };
+  });
+  await sendWhatsAppReaction(creds.phoneNumberId, creds.accessToken, to, wamid, emoji);
+  return withTenant(organizationId, (tx) =>
+    tx.message.update({ where: { id: messageId }, data: { agentReaction: emoji || null }, select: { id: true, agentReaction: true } }),
+  );
+}
+
+/** Star / unstar a message for the team (never shown to the customer). */
+export async function starMessage(organizationId: string, conversationId: string, messageId: string, starred: boolean) {
+  return withTenant(organizationId, async (tx) => {
+    const message = await tx.message.findFirst({ where: { id: messageId, conversationId }, select: { id: true } });
+    if (!message) throw NotFound('Message not found');
+    return tx.message.update({ where: { id: messageId }, data: { starredAt: starred ? new Date() : null }, select: { id: true, starredAt: true } });
+  });
+}
+
+/** This chat's starred messages, newest star first. */
+export async function listStarredMessages(organizationId: string, conversationId: string) {
+  return withTenant(organizationId, (tx) =>
+    tx.message.findMany({ where: { conversationId, starredAt: { not: null } }, orderBy: { starredAt: 'desc' }, take: 100, select: MESSAGE_SELECT }),
+  );
+}
+
+/** Message info: when it was sent, delivered and read (or why it failed), and who sent it. */
+export async function getMessageInfo(organizationId: string, conversationId: string, messageId: string) {
+  return withTenant(organizationId, async (tx) => {
+    const message = await tx.message.findFirst({
+      where: { id: messageId, conversationId },
+      select: {
+        id: true,
+        direction: true,
+        status: true,
+        createdAt: true,
+        deliveredAt: true,
+        readAt: true,
+        errorMessage: true,
+        templateName: true,
+        starredAt: true,
+        sentBy: { select: { name: true } },
+      },
+    });
+    if (!message) throw NotFound('Message not found');
+    return message;
+  });
 }
 
 /**

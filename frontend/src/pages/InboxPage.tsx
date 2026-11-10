@@ -11,7 +11,7 @@ import {
   FileText,
   Image as ImageIcon,
   ArrowLeft,
-  Reply,
+  Smile,
   MoreVertical,
   Plus,
   Inbox as InboxIcon,
@@ -46,6 +46,7 @@ import type {
   ChatBotState,
   ChannelStatus,
   QuickReply,
+  MessageInfo,
 } from '@/types';
 import { LEAD_STATUSES, LEAD_STATUS_STYLES } from '@/lib/leadMeta';
 import { useAuth } from '@/context/AuthContext';
@@ -68,6 +69,9 @@ import { initials } from '@/lib/format';
 import { useDebounce } from '@/lib/useDebounce';
 import { toWhatsAppImage } from '@/lib/whatsappImage';
 import { POLL, livePolling } from '@/lib/livePolling';
+import { copyToClipboard } from '@/lib/share';
+import { EmojiPicker } from '@/components/inbox/EmojiPicker';
+import { MessageMenu, ReactionBadges } from '@/components/inbox/MessageMenu';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
   ManageQuickRepliesDialog,
@@ -135,7 +139,16 @@ function fillTemplatePreview(bodyText: string, contactName: string | null | unde
 
 type Thread = { conversation: Conversation; messages: ChannelMessage[] };
 /** A poll's answer: messages since the newest one on screen, and the latest ticks of recent sent ones. */
-type ThreadUpdate = Thread & { statuses?: { id: string; status: ChannelMessage['status']; errorMessage: string | null; externalMessageId: string | null }[] };
+type ThreadUpdate = Thread & {
+  statuses?: {
+    id: string;
+    status: ChannelMessage['status'];
+    errorMessage: string | null;
+    externalMessageId: string | null;
+    customerReaction: string | null;
+    agentReaction: string | null;
+  }[];
+};
 
 /** The bubble shown while a message is going out (replaced by the server's copy). */
 const SENDING_PREFIX = 'sending-';
@@ -149,8 +162,20 @@ function mergeThread(have: Thread, update: ThreadUpdate): Thread {
     const fresh = incomingById.get(m.id);
     if (fresh) return fresh;
     const s = statusById.get(m.id);
-    return s && (s.status !== m.status || s.errorMessage !== m.errorMessage || s.externalMessageId !== m.externalMessageId)
-      ? { ...m, status: s.status, errorMessage: s.errorMessage, externalMessageId: s.externalMessageId }
+    return s &&
+      (s.status !== m.status ||
+        s.errorMessage !== m.errorMessage ||
+        s.externalMessageId !== m.externalMessageId ||
+        s.customerReaction !== (m.customerReaction ?? null) ||
+        s.agentReaction !== (m.agentReaction ?? null))
+      ? {
+          ...m,
+          status: s.status,
+          errorMessage: s.errorMessage,
+          externalMessageId: s.externalMessageId,
+          customerReaction: s.customerReaction,
+          agentReaction: s.agentReaction,
+        }
       : m;
   });
   const shown = new Set(messages.map((m) => m.id));
@@ -467,33 +492,95 @@ function QuotedMessage({ quote, contactName, onClick, className }: { quote: NonN
   );
 }
 
+/** "7 Nov, 6:52 pm" (with the year when it isn't this year). */
+function fullTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** Message info: sent / delivered / read times (or the failure), and who sent it. */
+function MessageInfoRows({ info, wa }: { info: MessageInfo; wa: boolean }) {
+  if (info.direction === 'INBOUND') {
+    return (
+      <dl className="space-y-3 text-sm">
+        <InfoRow icon={<Check className="size-4" />} label="Received" value={fullTime(info.createdAt)} />
+        {info.starredAt && <InfoRow icon={<Star className="size-4 fill-amber-400 text-amber-400" />} label="Starred" value={fullTime(info.starredAt)} />}
+      </dl>
+    );
+  }
+  // Older messages were delivered / read before these times were recorded.
+  const reached = (s: MessageInfo['status'][]) => s.includes(info.status);
+  return (
+    <dl className="space-y-3 text-sm">
+      <InfoRow icon={<Check className="size-4 text-[#667781]" />} label="Sent" value={fullTime(info.createdAt)} />
+      {info.status === 'FAILED' ? (
+        <InfoRow icon={<AlertCircle className="size-4 text-[#ea0038]" />} label="Failed" value={info.errorMessage ?? 'Not delivered'} />
+      ) : (
+        <>
+          <InfoRow
+            icon={<CheckCheck className="size-4 text-[#667781]" />}
+            label="Delivered"
+            value={info.deliveredAt ? fullTime(info.deliveredAt) : reached(['DELIVERED', 'READ']) ? 'Yes (time not recorded)' : '—'}
+          />
+          <InfoRow
+            icon={<CheckCheck className="size-4 text-[#53bdeb]" />}
+            label={wa ? 'Read' : 'Seen'}
+            value={info.readAt ? fullTime(info.readAt) : info.status === 'READ' ? 'Yes (time not recorded)' : '—'}
+          />
+        </>
+      )}
+      <InfoRow icon={<UserPlus className="size-4 text-[#667781]" />} label="Sent by" value={info.sentBy?.name ?? 'Bot / automation'} />
+      {info.templateName && <InfoRow icon={<FileText className="size-4 text-[#667781]" />} label="Template" value={info.templateName} />}
+      {info.starredAt && <InfoRow icon={<Star className="size-4 fill-amber-400 text-amber-400" />} label="Starred" value={fullTime(info.starredAt)} />}
+    </dl>
+  );
+}
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center">{icon}</span>
+      <dt className="w-20 shrink-0 font-medium text-foreground">{label}</dt>
+      <dd className="min-w-0 flex-1 text-muted-foreground">{value}</dd>
+    </div>
+  );
+}
+
 /** One WhatsApp message: green (sent) or white (received), tail on the first of a run, time + ticks inside. */
 function WaBubble({
   m,
   first,
   contactName,
-  onReply,
+  menu,
   onJump,
   highlighted,
 }: {
   m: ChannelMessage;
   first: boolean;
   contactName: string;
-  /** Absent when this message can't be replied to. */
-  onReply?: () => void;
+  /** The ⌄ options menu (reply, react, copy, star, info). */
+  menu?: React.ReactNode;
   onJump: (id: string) => void;
   highlighted: boolean;
 }) {
   const out = m.direction === 'OUTBOUND';
   const body = shownBody(m);
+  const reacted = !!(m.customerReaction || m.agentReaction);
   const meta = (
     <span className="float-right ml-2.5 mt-[3px] flex translate-y-[5px] items-center gap-[3px] text-[11px] leading-none text-[#667781]">
+      {m.starredAt && <Star className="size-3 fill-[#8696a0] text-[#8696a0]" aria-label="Starred" />}
       {clockTime(m.createdAt)}
       {out && <WaTicks status={m.status} />}
     </span>
   );
   return (
-    <div id={`msg-${m.id}`} className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
+    <div id={`msg-${m.id}`} className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]', reacted && 'mb-[18px]')}>
       <div className={cn('group flex w-full items-center gap-1', out ? 'flex-row-reverse' : 'flex-row')}>
         <div
           className={cn(
@@ -512,19 +599,9 @@ function WaBubble({
             {body && <span className="whitespace-pre-wrap break-words">{body}</span>}
             {meta}
           </div>
+          <ReactionBadges m={m} contactName={contactName} side={out ? 'right' : 'left'} />
         </div>
-        {onReply && (
-          // On a computer it appears on hover; touch screens have no hover, so it stays faintly visible.
-          <button
-            type="button"
-            onClick={onReply}
-            aria-label="Reply to this message"
-            title="Reply"
-            className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/80 text-[#54656f] opacity-0 shadow-sm transition-opacity hover:text-[#111b21] focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-60"
-          >
-            <Reply className="size-4" />
-          </button>
-        )}
+        {menu}
       </div>
       <FailedNote m={m} className={out ? 'text-right' : undefined} />
     </div>
@@ -535,7 +612,21 @@ function WaBubble({
  * One Instagram message: blue (sent) or grey (received) rounded bubbles that
  * join up in a run, their small photo beside the last of a run.
  */
-function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; first: boolean; last: boolean; contact: Conversation; showStatus: boolean }) {
+function IgBubble({
+  m,
+  first,
+  last,
+  contact,
+  showStatus,
+  menu,
+}: {
+  m: ChannelMessage;
+  first: boolean;
+  last: boolean;
+  contact: Conversation;
+  showStatus: boolean;
+  menu?: React.ReactNode;
+}) {
   const out = m.direction === 'OUTBOUND';
   const mediaOnly = !!m.mediaUrl && !m.body && !isDocumentUrl(m.mediaUrl);
   const corners = out
@@ -543,7 +634,7 @@ function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; 
     : cn('rounded-[22px]', !first && 'rounded-tl-[6px]', !last && 'rounded-bl-[6px]');
   return (
     <div className={cn('flex flex-col', out ? 'items-end' : 'items-start', first ? 'mt-3' : 'mt-[2px]')}>
-      <div className={cn('flex max-w-full items-end gap-2', out && 'flex-row-reverse')}>
+      <div className={cn('group flex max-w-full items-center gap-2', out && 'flex-row-reverse')}>
         {!out && (last ? <ContactAvatar c={contact} className="size-7" fallbackClassName="bg-[#efefef] text-[10px] text-[#262626]" /> : <span className="w-7 shrink-0" />)}
         <div
           title={clockTime(m.createdAt)}
@@ -559,7 +650,9 @@ function IgBubble({ m, first, last, contact, showStatus }: { m: ChannelMessage; 
           <MessageMedia m={m} rounded={mediaOnly ? corners : 'rounded-[14px]'} />
           {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
         </div>
-        {out && m.status === 'FAILED' && <AlertCircle className="mb-2 size-4 shrink-0 text-[#ed4956]" />}
+        {m.starredAt && <Star className="size-3.5 shrink-0 fill-[#737373] text-[#737373]" aria-label="Starred" />}
+        {out && m.status === 'FAILED' && <AlertCircle className="size-4 shrink-0 text-[#ed4956]" />}
+        {menu}
       </div>
       <FailedNote m={m} className={cn('text-[#ed4956]', out ? 'text-right' : 'ml-9')} />
       {showStatus && m.status !== 'FAILED' && (
@@ -958,6 +1051,91 @@ export function InboxPage() {
       replyToMessageId: replyingTo?.id,
     });
   };
+  // --- One message: react, star, copy, info ------------------------------------
+  const patchMessage = (id: string, patch: Partial<ChannelMessage>) =>
+    queryClient.setQueryData<Thread>(['messages', selectedId], (old) =>
+      old ? { ...old, messages: old.messages.map((x) => (x.id === id ? { ...x, ...patch } : x)) } : old,
+    );
+  const reactMutation = useMutation({
+    mutationFn: ({ id, emoji }: { id: string; emoji: string; before: string | null }) =>
+      api.post(`/inbox/conversations/${selectedId}/messages/${id}/react`, { emoji }),
+    // Shows straight away; put back if Meta refuses it.
+    onMutate: ({ id, emoji }) => patchMessage(id, { agentReaction: emoji || null }),
+    onError: (err, { id, before }) => {
+      patchMessage(id, { agentReaction: before });
+      toast.error(err instanceof ApiError ? err.message : 'Could not send the reaction');
+    },
+  });
+  const starMutation = useMutation({
+    mutationFn: ({ id, starred }: { id: string; starred: boolean }) =>
+      api.patch(`/inbox/conversations/${selectedId}/messages/${id}/star`, { starred }),
+    onMutate: ({ id, starred }) => patchMessage(id, { starredAt: starred ? new Date().toISOString() : null }),
+    onSuccess: (_d, { starred }) => {
+      toast.success(starred ? 'Starred' : 'Unstarred');
+      queryClient.invalidateQueries({ queryKey: ['starred', selectedId] });
+    },
+    onError: (err, { id, starred }) => {
+      patchMessage(id, { starredAt: starred ? null : new Date().toISOString() });
+      toast.error(err instanceof ApiError ? err.message : 'Could not update the star');
+    },
+  });
+  const [infoFor, setInfoFor] = useState<string | null>(null);
+  const infoQuery = useQuery({
+    queryKey: ['message-info', infoFor],
+    queryFn: () => api.get<MessageInfo>(`/inbox/conversations/${selectedId}/messages/${infoFor}`),
+    enabled: !!infoFor && !!selectedId,
+    staleTime: 0,
+  });
+  const [starredOpen, setStarredOpen] = useState(false);
+  const starredQuery = useQuery({
+    queryKey: ['starred', selectedId],
+    queryFn: () => api.get<ChannelMessage[]>(`/inbox/conversations/${selectedId}/starred`),
+    enabled: starredOpen && !!selectedId,
+    staleTime: 0,
+  });
+  // The emoji picker: typing into the message box, or a "more reactions" pick for one message.
+  const [emojiFor, setEmojiFor] = useState<null | { kind: 'insert' } | { kind: 'react'; id: string }>(null);
+  const insertEmoji = (emoji: string) => {
+    const el = composerRef.current;
+    const at = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? at;
+    setDraft((d) => d.slice(0, at) + emoji + d.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + emoji.length, at + emoji.length);
+    });
+  };
+  const copyMessage = async (m: ChannelMessage) => {
+    const text = shownBody(m) ?? m.mediaUrl ?? '';
+    if (!text) return;
+    if (await copyToClipboard(text)) toast.success('Copied');
+    else toast.error('Could not copy');
+  };
+  /** The ⌄ menu for one message — what each item does, and which ones apply. */
+  const messageMenu = (m: ChannelMessage) => {
+    if (isSending(m)) return undefined;
+    const reachable = !!m.externalMessageId && m.status !== 'FAILED';
+    return (
+      <MessageMenu
+        align={m.direction === 'OUTBOUND' ? 'end' : 'start'}
+        reactions={
+          wa && reachable
+            ? {
+                current: m.agentReaction ?? null,
+                onReact: (emoji) => reactMutation.mutate({ id: m.id, emoji, before: m.agentReaction ?? null }),
+                onMore: () => setEmojiFor({ kind: 'react', id: m.id }),
+              }
+            : undefined
+        }
+        onReply={wa && reachable && !outsideWindow ? () => startReply(m) : undefined}
+        onCopy={shownBody(m) || m.mediaUrl ? () => void copyMessage(m) : undefined}
+        starred={!!m.starredAt}
+        onStar={() => starMutation.mutate({ id: m.id, starred: !m.starredAt })}
+        onInfo={() => setInfoFor(m.id)}
+      />
+    );
+  };
+
   const startReply = (m: ChannelMessage) => {
     setReplyingTo(m);
     composerRef.current?.focus();
@@ -1423,6 +1601,15 @@ export function InboxPage() {
                   <button
                     type="button"
                     className={cn(headerIconBtn, 'hidden sm:inline-flex')}
+                    onClick={() => setStarredOpen(true)}
+                    aria-label="Starred messages"
+                    title="Starred messages"
+                  >
+                    <Star className="size-5" />
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(headerIconBtn, 'hidden sm:inline-flex')}
                     disabled={summarizeMutation.isPending || messages.length === 0}
                     onClick={() => summarizeMutation.mutate()}
                     aria-label="Summarize this chat"
@@ -1438,6 +1625,9 @@ export function InboxPage() {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuItem onSelect={() => setStarredOpen(true)}>
+                        <Star className="size-4" /> Starred messages
+                      </DropdownMenuItem>
                       <DropdownMenuItem disabled={messages.length === 0} onSelect={() => summarizeMutation.mutate()}>
                         <FileText className="size-4" /> Summarize chat
                       </DropdownMenuItem>
@@ -1531,10 +1721,10 @@ export function InboxPage() {
                               contactName={label}
                               highlighted={highlightId === m.id}
                               onJump={jumpToMessage}
-                              onReply={!outsideWindow && m.externalMessageId && m.status !== 'FAILED' ? () => startReply(m) : undefined}
+                              menu={messageMenu(m)}
                             />
                           ) : (
-                            <IgBubble m={m} first={first} last={last} contact={selected} showStatus={m.id === lastOutboundId} />
+                            <IgBubble m={m} first={first} last={last} contact={selected} showStatus={m.id === lastOutboundId} menu={messageMenu(m)} />
                           )}
                         </div>
                       );
@@ -1544,7 +1734,24 @@ export function InboxPage() {
               </div>
 
               {/* Composer */}
-              <div className={cn('shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white')}>
+              <div className={cn('relative shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white')}>
+                {emojiFor && (
+                  <div className="absolute bottom-full left-2 z-30 mb-2 sm:left-4">
+                    <EmojiPicker
+                      onClose={() => setEmojiFor(null)}
+                      onPick={(emoji) => {
+                        if (emojiFor.kind === 'insert') {
+                          insertEmoji(emoji);
+                          return; // stays open — several emojis in a row
+                        }
+                        const target = messages.find((x) => x.id === emojiFor.id);
+                        reactMutation.mutate({ id: emojiFor.id, emoji, before: target?.agentReaction ?? null });
+                        setEmojiFor(null);
+                      }}
+                    />
+                    {emojiFor.kind === 'react' && <p className="mt-1 rounded-md bg-card px-2 py-1 text-center text-[11px] text-muted-foreground shadow-sm">Pick a reaction</p>}
+                  </div>
+                )}
                 {wa && whatsappBillingIssue && <WhatsAppBillingBanner />}
                 {igWindow !== 'open' && (
                   <div className={cn('mb-2 rounded-xl px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
@@ -1634,6 +1841,19 @@ export function InboxPage() {
                 {wa ? (
                   // WhatsApp Web: + attach, white rounded box, round green send.
                   <div className="flex items-end gap-1 sm:gap-2">
+                    <button
+                      type="button"
+                      disabled={composerBlocked}
+                      onClick={() => setEmojiFor((f) => (f?.kind === 'insert' ? null : { kind: 'insert' }))}
+                      aria-label="Emoji"
+                      title="Emoji"
+                      className={cn(
+                        'mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06] disabled:opacity-40',
+                        emojiFor?.kind === 'insert' && 'bg-black/[0.06] text-[#00a884]',
+                      )}
+                    >
+                      <Smile className="size-6" />
+                    </button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
@@ -1716,6 +1936,16 @@ export function InboxPage() {
                         onManage={() => setManageQuickReplies('list')}
                       />
                     )}
+                    <button
+                      type="button"
+                      disabled={composerBlocked || pendingMedia?.kind === 'image'}
+                      onClick={() => setEmojiFor((f) => (f?.kind === 'insert' ? null : { kind: 'insert' }))}
+                      aria-label="Emoji"
+                      title="Emoji"
+                      className="-ml-2 flex size-9 shrink-0 items-center justify-center rounded-full text-[#000] transition-colors hover:bg-black/[0.05] disabled:opacity-40"
+                    >
+                      <Smile className="size-5" />
+                    </button>
                     <Textarea
                       ref={composerRef}
                       value={draft}
@@ -1766,6 +1996,75 @@ export function InboxPage() {
           )}
         </div>
       </div>
+
+      {/* Message info */}
+      <Dialog open={!!infoFor} onOpenChange={(o) => !o && setInfoFor(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Message info</DialogTitle>
+            <DialogDescription>{infoQuery.data?.direction === 'INBOUND' ? 'Sent by the customer.' : 'When this message reached the customer.'}</DialogDescription>
+          </DialogHeader>
+          {infoQuery.isLoading || !infoQuery.data ? (
+            <div className="flex justify-center py-6">
+              <Spinner />
+            </div>
+          ) : (
+            <MessageInfoRows info={infoQuery.data} wa={wa} />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Starred messages of this chat */}
+      <Dialog open={starredOpen} onOpenChange={setStarredOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="size-5 fill-amber-400 text-amber-400" /> Starred messages
+            </DialogTitle>
+            <DialogDescription>Only your team sees stars — the customer doesn’t.</DialogDescription>
+          </DialogHeader>
+          {starredQuery.isLoading ? (
+            <div className="flex justify-center py-6">
+              <Spinner />
+            </div>
+          ) : (starredQuery.data ?? []).length === 0 ? (
+            <p className="rounded-lg bg-muted/50 px-3 py-6 text-center text-sm text-muted-foreground">
+              No starred messages in this chat yet. Use a message’s ⌄ menu → Star.
+            </p>
+          ) : (
+            <ul className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+              {(starredQuery.data ?? []).map((s) => (
+                <li key={s.id} className="flex items-start gap-2 rounded-lg border border-border p-2.5">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    title="Go to this message"
+                    onClick={() => {
+                      setStarredOpen(false);
+                      if (document.getElementById(`msg-${s.id}`)) setTimeout(() => jumpToMessage(s.id), 150);
+                      else toast.info('That message is older than the ones shown in this chat');
+                    }}
+                  >
+                    <span className="block text-xs font-medium text-muted-foreground">
+                      {s.direction === 'OUTBOUND' ? 'You' : label} · {fullTime(s.createdAt)}
+                    </span>
+                    <span className="mt-0.5 line-clamp-3 whitespace-pre-line text-sm text-foreground">{quotedText(s)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => starMutation.mutate({ id: s.id, starred: false })}
+                    className="shrink-0 rounded-full p-1.5 text-amber-500 hover:bg-muted"
+                    aria-label="Unstar"
+                    title="Unstar"
+                  >
+                    <Star className="size-4 fill-current" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={summary !== null} onOpenChange={(o) => !o && setSummary(null)}>
         <DialogContent className="sm:max-w-md">

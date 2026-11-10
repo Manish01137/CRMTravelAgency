@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery } from './inbox.schemas';
+import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery, ReactInput, StarInput } from './inbox.schemas';
 import { controlChatBot, getChatBotState } from '../bot-flow/bot-flow.control';
 import { assertConversationVisible, conversationScope, viewerOf } from '../../lib/visibility';
 
@@ -51,6 +51,28 @@ export async function logCall(req: Request, res: Response): Promise<void> {
   await checkAccess(req);
   const message = await service.logCall(req.auth!.organizationId, req.params.id, req.auth!.userId);
   res.status(201).json(message);
+}
+
+export async function reactToMessage(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  const { emoji } = req.body as ReactInput;
+  res.json(await service.reactToMessage(req.auth!.organizationId, req.params.id, req.params.messageId, emoji));
+}
+
+export async function starMessage(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  const { starred } = req.body as StarInput;
+  res.json(await service.starMessage(req.auth!.organizationId, req.params.id, req.params.messageId, starred));
+}
+
+export async function listStarredMessages(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await service.listStarredMessages(req.auth!.organizationId, req.params.id));
+}
+
+export async function getMessageInfo(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await service.getMessageInfo(req.auth!.organizationId, req.params.id, req.params.messageId));
 }
 
 export async function listTemplates(req: Request, res: Response): Promise<void> {
