@@ -841,6 +841,8 @@ export interface ChannelMessage {
   /** WhatsApp emoji reactions on this message: the customer's and ours. */
   customerReaction?: string | null;
   agentReaction?: string | null;
+  /** Pinned to the top of the chat by the team (WhatsApp-style, CRM only). */
+  pinnedAt?: string | null;
   body: string | null;
   mediaUrl: string | null;
   templateName: string | null;

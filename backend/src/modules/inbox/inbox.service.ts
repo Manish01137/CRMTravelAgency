@@ -10,10 +10,14 @@ import {
   sendInstagramText,
   sendInstagramImage,
   sendWhatsAppReaction,
+  sendWhatsAppLocation,
+  sendWhatsAppContact,
   createWhatsAppTemplate,
   metaErrorText,
 } from '../../lib/meta';
 import { AppError, BadRequest, NotFound } from '../../lib/errors';
+import { contactBody, locationBody, parseContactBody, parseLocationBody, richPreview } from '../../lib/richMessages';
+import { isPlaceholderBody } from '../../lib/whatsappInbound';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import { LEAD_STAGES, type CreateTemplateInput, type ListConversationsQuery, type SendMessageInput, type StageCountsQuery } from './inbox.schemas';
 
@@ -43,7 +47,8 @@ function explainInstagramWindow(err: unknown): never {
 /** There's no separate "media kind" column on Message — a document attachment
  *  is just a mediaUrl that happens to end in .pdf, same as everything else
  *  here trusting the URL (see PackageBrochurePage's own dayPhoto/heroPhoto). */
-const isPdfUrl = (url: string) => /\.pdf(?:[?#]|$)/i.test(url);
+// PDFs, and the Word / Excel / PowerPoint / text files customers send (forwarded on as documents).
+const isPdfUrl = (url: string) => /\.(pdf|docx?|xlsx?|pptx?|txt|csv)(?:[?#]|$)/i.test(url);
 
 /** Recovers the human filename embedded by uploadBufferToStorage's document
  *  upload (see storage.ts) — the URL's last path segment, minus the
@@ -135,6 +140,7 @@ const MESSAGE_SELECT = {
   createdAt: true,
   replyTo: { select: { id: true, direction: true, body: true, mediaUrl: true, templateName: true } },
   starredAt: true,
+  pinnedAt: true,
   customerReaction: true,
   agentReaction: true,
 } as const;
@@ -157,6 +163,8 @@ const CONVERSATION_SELECT = {
 
 /** A chat opens on its newest messages; polls then ask only for what's new. */
 const FULL_LOAD_LIMIT = 200;
+/** Like WhatsApp: pinning a 4th message unpins the oldest. */
+const MAX_PINNED = 3;
 const NEWER_LIMIT = 100;
 /** Sent messages whose ticks can still change (sent → delivered → read / failed). */
 const STATUS_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -173,12 +181,20 @@ export async function listMessages(organizationId: string, conversationId: strin
     if (!conversation) throw NotFound('Conversation not found');
     let messages;
     let statuses:
-      | { id: string; status: string; errorMessage: string | null; externalMessageId: string | null; customerReaction: string | null; agentReaction: string | null }[]
+      | {
+          id: string;
+          status: string;
+          errorMessage: string | null;
+          externalMessageId: string | null;
+          customerReaction: string | null;
+          agentReaction: string | null;
+          deletedAt: Date | null;
+        }[]
       | undefined;
     if (after) {
       // gte, not gt: two messages can share a millisecond — the screen drops ones it already has.
       messages = await tx.message.findMany({
-        where: { conversationId, createdAt: { gte: after } },
+        where: { conversationId, createdAt: { gte: after }, deletedAt: null },
         orderBy: { createdAt: 'asc' },
         take: NEWER_LIMIT,
         select: MESSAGE_SELECT,
@@ -188,18 +204,26 @@ export async function listMessages(organizationId: string, conversationId: strin
         where: { conversationId, createdAt: { gte: new Date(Date.now() - STATUS_WINDOW_MS) } },
         orderBy: { createdAt: 'desc' },
         take: 150,
-        select: { id: true, status: true, errorMessage: true, externalMessageId: true, customerReaction: true, agentReaction: true },
+        // deletedAt: a teammate hid it — the screen drops it.
+        select: { id: true, status: true, errorMessage: true, externalMessageId: true, customerReaction: true, agentReaction: true, deletedAt: true },
       });
     } else {
       messages = (
-        await tx.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'desc' }, take: FULL_LOAD_LIMIT, select: MESSAGE_SELECT })
+        await tx.message.findMany({ where: { conversationId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: FULL_LOAD_LIMIT, select: MESSAGE_SELECT })
       ).reverse();
     }
     const lead = conversation.leadId ? await tx.lead.findUnique({ where: { id: conversation.leadId }, select: CONVERSATION_LEAD_SELECT }) : null;
     if (conversation.unreadCount > 0) {
       await tx.conversation.update({ where: { id: conversationId }, data: { unreadCount: 0 } });
     }
-    return { conversation: { ...conversation, lead }, messages, ...(statuses && { statuses }) };
+    // Pinned at the top of the chat — may be older than the messages loaded.
+    const pinned = await tx.message.findMany({
+      where: { conversationId, pinnedAt: { not: null }, deletedAt: null },
+      orderBy: { pinnedAt: 'desc' },
+      take: MAX_PINNED,
+      select: MESSAGE_SELECT,
+    });
+    return { conversation: { ...conversation, lead }, messages, pinned, ...(statuses && { statuses }) };
   });
 }
 
@@ -257,6 +281,9 @@ export async function sendMessage(
     if (conversation.channel === 'INSTAGRAM' && igSinceInbound > INSTAGRAM_HUMAN_AGENT_WINDOW_MS) {
       throw BadRequest(INSTAGRAM_WINDOW_HELP);
     }
+    if (conversation.channel === 'INSTAGRAM' && (input.location || input.contact)) {
+      throw BadRequest('Locations and contacts can be sent on WhatsApp chats');
+    }
     if (conversation.channel === 'INSTAGRAM' && input.mediaUrl && isPdfUrl(input.mediaUrl)) {
       throw BadRequest('Instagram DMs only support photos, not documents');
     }
@@ -300,13 +327,19 @@ export async function sendMessage(
       };
     }
 
-    const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : (input.body ?? '');
+    // A location / contact is stored as one bracketed line the Inbox shows as a card.
+    const body = input.location
+      ? locationBody(input.location)
+      : input.contact
+        ? contactBody([{ name: input.contact.name, phones: [input.contact.phone] }])
+        : input.body || null;
+    const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : body ? (richPreview(body) ?? body) : '';
     const message = await tx.message.create({
       data: {
         organizationId,
         conversationId,
         direction: 'OUTBOUND',
-        body: input.body || null,
+        body,
         mediaUrl: input.mediaUrl,
         templateName: input.templateName,
         status: 'QUEUED',
@@ -376,6 +409,8 @@ async function sendThroughMeta(plan: SendPlan, input: SendMessageInput): Promise
     if (template) {
       return sendWhatsAppTemplate(creds.phoneNumberId, creds.accessToken, to, template.name, template.language, template.params, template.paramNames);
     }
+    if (input.location) return sendWhatsAppLocation(creds.phoneNumberId, creds.accessToken, to, input.location, replyToWamid);
+    if (input.contact) return sendWhatsAppContact(creds.phoneNumberId, creds.accessToken, to, input.contact, replyToWamid);
     if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
       return sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, documentFilenameFromUrl(input.mediaUrl), input.body?.trim() || undefined, replyToWamid);
     }
@@ -429,8 +464,180 @@ export async function starMessage(organizationId: string, conversationId: string
 /** This chat's starred messages, newest star first. */
 export async function listStarredMessages(organizationId: string, conversationId: string) {
   return withTenant(organizationId, (tx) =>
-    tx.message.findMany({ where: { conversationId, starredAt: { not: null } }, orderBy: { starredAt: 'desc' }, take: 100, select: MESSAGE_SELECT }),
+    tx.message.findMany({ where: { conversationId, starredAt: { not: null }, deletedAt: null }, orderBy: { starredAt: 'desc' }, take: 100, select: MESSAGE_SELECT }),
   );
+}
+
+/** Pin / unpin a message at the top of the chat (team-only). A 4th pin replaces the oldest. */
+export async function pinMessage(organizationId: string, conversationId: string, messageId: string, pinned: boolean) {
+  return withTenant(organizationId, async (tx) => {
+    const message = await tx.message.findFirst({ where: { id: messageId, conversationId, deletedAt: null }, select: { id: true } });
+    if (!message) throw NotFound('Message not found');
+    if (pinned) {
+      const current = await tx.message.findMany({
+        where: { conversationId, pinnedAt: { not: null }, deletedAt: null, id: { not: messageId } },
+        orderBy: { pinnedAt: 'desc' },
+        select: { id: true },
+      });
+      const unpin = current.slice(MAX_PINNED - 1).map((m) => m.id);
+      if (unpin.length) await tx.message.updateMany({ where: { id: { in: unpin } }, data: { pinnedAt: null } });
+    }
+    await tx.message.update({ where: { id: messageId }, data: { pinnedAt: pinned ? new Date() : null } });
+    return tx.message.findMany({
+      where: { conversationId, pinnedAt: { not: null }, deletedAt: null },
+      orderBy: { pinnedAt: 'desc' },
+      take: MAX_PINNED,
+      select: MESSAGE_SELECT,
+    });
+  });
+}
+
+/**
+ * Several messages at once (Select): star, unstar, or delete. "Delete" hides
+ * them from the Inbox — the customer still has them, and the rows are kept
+ * (who and when) for the record.
+ */
+export async function bulkMessages(organizationId: string, conversationId: string, userId: string, action: 'star' | 'unstar' | 'delete', messageIds: string[]) {
+  return withTenant(organizationId, async (tx) => {
+    const ids = [...new Set(messageIds)];
+    const where = { id: { in: ids }, conversationId, deletedAt: null };
+    const found = await tx.message.count({ where });
+    if (found !== ids.length) throw NotFound('Some of those messages are not in this chat');
+    const data =
+      action === 'star'
+        ? { starredAt: new Date() }
+        : action === 'unstar'
+          ? { starredAt: null }
+          : { deletedAt: new Date(), deletedById: userId, pinnedAt: null };
+    const result = await tx.message.updateMany({ where, data });
+    return { count: result.count };
+  });
+}
+
+export interface ForwardResult {
+  conversationId: string;
+  sent: number;
+  /** Why this chat stopped (e.g. outside WhatsApp's 24-hour window). */
+  error?: string;
+}
+
+/**
+ * Forwards messages to other chats on the same channel — sent as new messages
+ * (WhatsApp shows no "Forwarded" label for business messages). Each chat goes
+ * through the normal send rules (24-hour window etc.); a chat stops at its
+ * first refusal and the rest carry on. Nothing is ever resent automatically.
+ */
+export async function forwardMessages(
+  organizationId: string,
+  userId: string,
+  fromConversationId: string,
+  messageIds: string[],
+  toConversationIds: string[],
+): Promise<ForwardResult[]> {
+  const { source, channel, targets } = await withTenant(organizationId, async (tx) => {
+    const from = await tx.conversation.findUnique({ where: { id: fromConversationId }, select: { channel: true } });
+    if (!from) throw NotFound('Conversation not found');
+    const source = await tx.message.findMany({
+      where: { id: { in: messageIds }, conversationId: fromConversationId, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { body: true, mediaUrl: true },
+    });
+    const targets = await tx.conversation.findMany({ where: { id: { in: toConversationIds } }, select: { id: true, channel: true } });
+    return { source, channel: from.channel, targets };
+  });
+  if (source.length === 0) throw BadRequest('Nothing to forward');
+  if (targets.length !== new Set(toConversationIds).size) throw NotFound('Chat not found');
+  if (targets.some((t) => t.channel !== channel)) throw BadRequest('Forward to chats on the same channel');
+
+  const sendable = source.map((m) => forwardInput(m, channel)).filter((x): x is SendMessageInput => x !== null);
+  if (sendable.length === 0) throw BadRequest("These messages can't be forwarded (calls, voice notes and stickers aren't sendable)");
+
+  const results: ForwardResult[] = [];
+  for (const target of toConversationIds) {
+    let sent = 0;
+    try {
+      for (const input of sendable) {
+        await sendMessage(organizationId, target, userId, input);
+        sent++;
+      }
+      results.push({ conversationId: target, sent });
+    } catch (err) {
+      results.push({ conversationId: target, sent, error: err instanceof Error ? err.message : 'Could not send' });
+    }
+  }
+  return results;
+}
+
+/** One stored message as something we can send again (null when it isn't sendable). */
+function forwardInput(m: { body: string | null; mediaUrl: string | null }, channel: string): SendMessageInput | null {
+  const location = parseLocationBody(m.body);
+  if (location) {
+    return channel === 'WHATSAPP'
+      ? ({ location: { latitude: location.latitude, longitude: location.longitude, ...(location.name && { name: location.name }) } } as SendMessageInput)
+      : ({ body: `📍 ${location.name ?? 'Location'}\nhttps://maps.google.com/?q=${location.latitude},${location.longitude}` } as SendMessageInput);
+  }
+  const people = parseContactBody(m.body);
+  if (people?.[0]?.phones[0]) {
+    const p = people[0];
+    return channel === 'WHATSAPP'
+      ? ({ contact: { name: p.name, phone: p.phones[0] } } as SendMessageInput)
+      : ({ body: `${p.name}: ${p.phones.join(', ')}` } as SendMessageInput);
+  }
+  // A file's "[Document: x.pdf]" label, "[Voice message]"… aren't text to send on.
+  const body = m.body && !isPlaceholderBody(m.body) ? m.body : undefined;
+  if (!body && !m.mediaUrl) return null;
+  return { body, mediaUrl: m.mediaUrl ?? undefined } as SendMessageInput;
+}
+
+/**
+ * A Google Maps link (incl. short maps.app.goo.gl links) or "lat, lng" → a map
+ * pin to send. Only Google Maps addresses are ever fetched.
+ */
+export async function resolveLocationLink(link: string): Promise<{ latitude: number; longitude: number; name: string | null }> {
+  const typed = link.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+  if (typed) return checkCoords(Number(typed[1]), Number(typed[2]), null);
+  let url = link.trim();
+  for (let hop = 0; hop < 4; hop++) {
+    const found = coordsFromMapsUrl(url);
+    if (found) return checkCoords(found.lat, found.lng, found.name);
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      break;
+    }
+    const host = parsed.hostname.replace(/^www\./, '');
+    const google = host === 'maps.app.goo.gl' || host === 'goo.gl' || host === 'maps.google.com' || /^google\.[a-z.]+$/.test(host);
+    if (!google || parsed.protocol !== 'https:') break;
+    // Short links redirect to the full one — follow it ourselves, Google only.
+    const res = await fetch(url, { redirect: 'manual' }).catch(() => null);
+    const next = res?.headers.get('location');
+    if (!next) break;
+    url = new URL(next, url).toString();
+  }
+  throw BadRequest('Could not read a location from that link — paste a Google Maps link, or type it as "latitude, longitude"');
+}
+
+function coordsFromMapsUrl(url: string): { lat: number; lng: number; name: string | null } | null {
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(url);
+    } catch {
+      return url;
+    }
+  })();
+  const name = decoded.match(/\/place\/([^/@]+)/)?.[1]?.replace(/\+/g, ' ').trim() || null;
+  const patterns = [/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, /@(-?\d+\.\d+),(-?\d+\.\d+)/, /[?&](?:q|query|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/];
+  for (const p of patterns) {
+    const m = decoded.match(p);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), name };
+  }
+  return null;
+}
+
+function checkCoords(latitude: number, longitude: number, name: string | null) {
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) throw BadRequest('Those coordinates are not a real place');
+  return { latitude, longitude, name };
 }
 
 /** Message info: when it was sent, delivered and read (or why it failed), and who sent it. */

@@ -8,6 +8,8 @@
  * traveller to type instead of taking the label as their answer.
  */
 
+import { contactBody } from './richMessages';
+
 type Raw = Record<string, unknown>;
 
 export interface DescribedMessage {
@@ -96,8 +98,13 @@ export function describeWhatsAppMessage(msg: Raw): DescribedMessage {
     }
     case 'contacts': {
       const people = (msg.contacts as { name?: { formatted_name?: string }; phones?: { phone?: string }[] }[] | undefined) ?? [];
-      const list = people.map((p) => [p.name?.formatted_name, p.phones?.map((x) => x.phone).filter(Boolean).join(', ')].filter(Boolean).join(' ')).join('; ');
-      return { ...none, text: placeholder(`Shared contact${list ? `: ${list}` : ''}`) };
+      // "Name (+91 …)" — the Inbox shows it as a contact card (lib/richMessages.ts).
+      return {
+        ...none,
+        text: contactBody(
+          people.map((p) => ({ name: p.name?.formatted_name || 'Contact', phones: (p.phones ?? []).map((x) => x.phone ?? '').filter(Boolean) })),
+        ),
+      };
     }
     case 'unsupported':
       return { ...none, text: unsupportedLabel(msg) };

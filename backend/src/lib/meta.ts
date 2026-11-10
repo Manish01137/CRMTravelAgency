@@ -411,6 +411,62 @@ export async function sendWhatsAppReaction(phoneNumberId: string, accessToken: s
   });
 }
 
+/** A map pin in the chat (hotel, pickup point…). */
+export async function sendWhatsAppLocation(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  location: { latitude: number; longitude: number; name?: string | null; address?: string | null },
+  replyToWamid?: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'location',
+      location: {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        ...(location.name ? { name: location.name } : {}),
+        ...(location.address ? { address: location.address } : {}),
+      },
+      ...quoting(replyToWamid),
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
+/** A contact card (driver, guide, hotel desk…) the customer can save or message. */
+export async function sendWhatsAppContact(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  contact: { name: string; phone: string; email?: string | null },
+  replyToWamid?: string,
+): Promise<{ externalMessageId: string }> {
+  const [first, ...rest] = contact.name.trim().split(/\s+/);
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'contacts',
+      contacts: [
+        {
+          name: { formatted_name: contact.name.trim(), first_name: first, ...(rest.length ? { last_name: rest.join(' ') } : {}) },
+          phones: [{ phone: contact.phone, type: 'CELL' }],
+          ...(contact.email ? { emails: [{ email: contact.email, type: 'WORK' }] } : {}),
+        },
+      ],
+      ...quoting(replyToWamid),
+    }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
 /** Makes a WhatsApp message quote an earlier one (shown as a reply on the customer's phone). */
 const quoting = (replyToWamid?: string) => (replyToWamid ? { context: { message_id: replyToWamid } } : {});
 

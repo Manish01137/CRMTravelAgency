@@ -5,6 +5,7 @@ import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { WHATSAPP_PAYMENT_MESSAGE, fetchInstagramSenderProfile, isMetaPaymentError } from '../../lib/meta';
 import { friendlyMetaError } from '../../lib/metaErrors';
+import { richPreview } from '../../lib/richMessages';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { resendBotMessageWithoutMedia, sendPackage } from '../bot-flow/bot-send';
 import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
@@ -296,7 +297,13 @@ async function recordInbound(params: {
       },
     });
     const documentLabel = mediaUrl ? body.match(/^\[Document(?:: (.*))?\]$/) : null;
-    const preview = documentLabel ? `📄 ${documentLabel[1] || 'Document'}` : mediaUrl ? (body.trim() ? body : '📷 Photo') : body;
+    const preview = documentLabel
+      ? `📄 ${documentLabel[1] || 'Document'}`
+      : mediaUrl
+        ? body.trim()
+          ? body
+          : '📷 Photo'
+        : (richPreview(body) ?? body);
     await tx.conversation.update({
       where: { id: conversation.id },
       data: {

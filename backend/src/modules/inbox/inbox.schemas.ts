@@ -30,6 +30,23 @@ export const messageIdParam = z.object({ id: z.string().uuid('Invalid conversati
 // An emoji, or "" to remove our reaction.
 export const reactSchema = z.object({ emoji: z.string().max(16) });
 export const starSchema = z.object({ starred: z.boolean() });
+export const pinSchema = z.object({ pinned: z.boolean() });
+// Several messages at once (Select).
+export const bulkMessagesSchema = z.object({
+  action: z.enum(['star', 'unstar', 'delete']),
+  messageIds: z.array(z.string().uuid()).min(1).max(100),
+});
+export const forwardSchema = z.object({
+  fromConversationId: z.string().uuid(),
+  messageIds: z.array(z.string().uuid()).min(1, 'Choose a message to forward').max(20, 'Forward up to 20 messages at a time'),
+  toConversationIds: z.array(z.string().uuid()).min(1, 'Choose a chat').max(5, 'Forward to up to 5 chats at a time'),
+});
+// A Google Maps link (or "lat, lng") → a map pin to send.
+export const resolveLocationSchema = z.object({ link: z.string().trim().min(3).max(2000) });
+export type PinInput = z.infer<typeof pinSchema>;
+export type BulkMessagesInput = z.infer<typeof bulkMessagesSchema>;
+export type ForwardInput = z.infer<typeof forwardSchema>;
+export type ResolveLocationInput = z.infer<typeof resolveLocationSchema>;
 export type ReactInput = z.infer<typeof reactSchema>;
 export type StarInput = z.infer<typeof starSchema>;
 
@@ -50,10 +67,26 @@ export const sendMessageSchema = z
     templateName: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
     // WhatsApp: the message in this chat that this one replies to.
     replyToMessageId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+    // WhatsApp: a map pin, or a contact card, instead of text.
+    location: z
+      .object({
+        latitude: z.coerce.number().min(-90).max(90),
+        longitude: z.coerce.number().min(-180).max(180),
+        name: z.string().trim().max(200).optional(),
+        address: z.string().trim().max(300).optional(),
+      })
+      .optional(),
+    contact: z
+      .object({
+        name: z.string().trim().min(1, 'Add the contact’s name').max(120),
+        phone: z.string().trim().regex(/^\+?[\d\s()-]{6,20}$/, 'Enter a valid phone number'),
+        email: z.preprocess(emptyToUndefined, z.string().trim().email('Enter a valid email').optional()),
+      })
+      .optional(),
   })
   // A plain text message still requires real text; an image message can go out
   // with just a caption-less mediaUrl, same as WhatsApp/Instagram themselves allow.
-  .refine((v) => !!v.body?.trim() || !!v.mediaUrl, { message: 'Message cannot be empty', path: ['body'] });
+  .refine((v) => !!v.body?.trim() || !!v.mediaUrl || !!v.location || !!v.contact, { message: 'Message cannot be empty', path: ['body'] });
 
 export const createTemplateSchema = z.object({
   name: z

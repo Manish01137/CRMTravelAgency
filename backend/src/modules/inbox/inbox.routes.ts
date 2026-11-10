@@ -15,6 +15,10 @@ import {
   messageIdParam,
   reactSchema,
   starSchema,
+  pinSchema,
+  bulkMessagesSchema,
+  forwardSchema,
+  resolveLocationSchema,
 } from './inbox.schemas';
 
 // Unified WhatsApp + Instagram inbox — ONE screen, filtered by `channel`
@@ -43,7 +47,11 @@ router.post(
 router.get('/conversations/:id/starred', validate({ params: conversationIdParam }), asyncHandler(controller.listStarredMessages));
 router.post('/conversations/:id/messages/:messageId/react', validate({ params: messageIdParam, body: reactSchema }), asyncHandler(controller.reactToMessage));
 router.patch('/conversations/:id/messages/:messageId/star', validate({ params: messageIdParam, body: starSchema }), asyncHandler(controller.starMessage));
+router.patch('/conversations/:id/messages/:messageId/pin', validate({ params: messageIdParam, body: pinSchema }), asyncHandler(controller.pinMessage));
+router.post('/conversations/:id/messages/bulk', validate({ params: conversationIdParam, body: bulkMessagesSchema }), asyncHandler(controller.bulkMessages));
 router.get('/conversations/:id/messages/:messageId', validate({ params: messageIdParam }), asyncHandler(controller.getMessageInfo));
+router.post('/forward', validate({ body: forwardSchema }), asyncHandler(controller.forwardMessages));
+router.post('/location/resolve', validate({ body: resolveLocationSchema }), asyncHandler(controller.resolveLocation));
 router.post('/conversations/:id/log-call', validate({ params: conversationIdParam }), asyncHandler(controller.logCall));
 router.get('/conversations/:id/bot', validate({ params: conversationIdParam }), asyncHandler(controller.getBot));
 router.post('/conversations/:id/bot', validate({ params: conversationIdParam, body: botControlSchema }), asyncHandler(controller.controlBot));

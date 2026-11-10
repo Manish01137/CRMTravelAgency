@@ -377,6 +377,7 @@ model User {
 
   eventLeadsAdded     EventLead[]  @relation("EventLeadAddedBy")
   quickRepliesCreated QuickReply[] @relation("QuickReplyCreatedBy")
+  messagesDeleted     Message[]    @relation("MessageDeletedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -949,12 +950,18 @@ model Message {
   /// When Meta reported our message delivered / read (Message info).
   deliveredAt            DateTime?        @map("delivered_at")
   readAt                 DateTime?        @map("read_at")
+  /// Pinned at the top of the chat by the team (up to 3; team-only).
+  pinnedAt               DateTime?        @map("pinned_at")
+  /// Hidden from the Inbox by a teammate ("delete" — the customer still has it). Kept for the record.
+  deletedAt              DateTime?        @map("deleted_at")
+  deletedById            String?          @map("deleted_by_id") @db.Uuid
   createdAt              DateTime         @default(now()) @map("created_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sentBy       User?        @relation("MessageSender", fields: [sentById], references: [id], onDelete: SetNull)
   replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  deletedBy    User?        @relation("MessageDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
   replies      Message[]    @relation("MessageReply")
 
   @@index([organizationId])

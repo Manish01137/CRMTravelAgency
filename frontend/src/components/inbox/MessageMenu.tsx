@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Copy, Info, Plus, Reply, Star, StarOff } from 'lucide-react';
+import { CheckSquare, ChevronDown, Copy, Forward, Info, Pin, PinOff, Plus, Reply, Star, StarOff, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ChannelMessage } from '@/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -19,6 +19,11 @@ export function MessageMenu({
   starred,
   onStar,
   onInfo,
+  pinned,
+  onPin,
+  onForward,
+  onSelect,
+  onDelete,
 }: {
   align: 'start' | 'end';
   /** Absent when this message can't be reacted to. */
@@ -28,6 +33,12 @@ export function MessageMenu({
   starred: boolean;
   onStar: () => void;
   onInfo: () => void;
+  pinned?: boolean;
+  onPin?: () => void;
+  /** Absent when this message can't be forwarded (e.g. a template, a failed send). */
+  onForward?: () => void;
+  onSelect?: () => void;
+  onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -92,12 +103,35 @@ export function MessageMenu({
             <Copy className="size-4" /> Copy
           </DropdownMenuItem>
         )}
+        {onForward && (
+          <DropdownMenuItem onSelect={onForward}>
+            <Forward className="size-4" /> Forward
+          </DropdownMenuItem>
+        )}
+        {onPin && (
+          <DropdownMenuItem onSelect={onPin}>
+            {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />} {pinned ? 'Unpin' : 'Pin'}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={onStar}>
           {starred ? <StarOff className="size-4" /> : <Star className="size-4" />} {starred ? 'Unstar' : 'Star'}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onInfo}>
           <Info className="size-4" /> Message info
         </DropdownMenuItem>
+        {onSelect && (
+          <DropdownMenuItem onSelect={onSelect}>
+            <CheckSquare className="size-4" /> Select
+          </DropdownMenuItem>
+        )}
+        {onDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
+              <Trash2 className="size-4" /> Delete
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

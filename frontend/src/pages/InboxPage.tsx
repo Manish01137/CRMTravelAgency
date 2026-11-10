@@ -30,6 +30,12 @@ import {
   Maximize2,
   Minimize2,
   PanelLeftClose,
+  MapPin,
+  UserRound,
+  Pin,
+  Forward,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -72,6 +78,10 @@ import { POLL, livePolling } from '@/lib/livePolling';
 import { copyToClipboard } from '@/lib/share';
 import { EmojiPicker } from '@/components/inbox/EmojiPicker';
 import { MessageMenu, ReactionBadges } from '@/components/inbox/MessageMenu';
+import { ContactCard, LocationCard, contactBody, locationBody, parseContacts, parseLocation, richCopyText, richSummary, type SharedLocation } from '@/components/inbox/RichCards';
+import { ForwardDialog } from '@/components/inbox/ForwardDialog';
+import { ContactDialog, LocationDialog } from '@/components/inbox/ShareDialogs';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
   ManageQuickRepliesDialog,
@@ -137,7 +147,7 @@ function fillTemplatePreview(bodyText: string, contactName: string | null | unde
 
 // --- The open chat's messages ---------------------------------------------------
 
-type Thread = { conversation: Conversation; messages: ChannelMessage[] };
+type Thread = { conversation: Conversation; messages: ChannelMessage[]; /** Pinned to the top (newest pin first). */ pinned?: ChannelMessage[] };
 /** A poll's answer: messages since the newest one on screen, and the latest ticks of recent sent ones. */
 type ThreadUpdate = Thread & {
   statuses?: {
@@ -147,6 +157,8 @@ type ThreadUpdate = Thread & {
     externalMessageId: string | null;
     customerReaction: string | null;
     agentReaction: string | null;
+    /** Set when a teammate deleted it (hidden in the CRM). */
+    deletedAt?: string | null;
   }[];
 };
 
@@ -158,7 +170,7 @@ const isSending = (m: ChannelMessage) => m.id.startsWith(SENDING_PREFIX);
 function mergeThread(have: Thread, update: ThreadUpdate): Thread {
   const statusById = new Map((update.statuses ?? []).map((s) => [s.id, s]));
   const incomingById = new Map(update.messages.map((m) => [m.id, m]));
-  const messages = have.messages.map((m) => {
+  const messages = have.messages.filter((m) => !statusById.get(m.id)?.deletedAt).map((m) => {
     const fresh = incomingById.get(m.id);
     if (fresh) return fresh;
     const s = statusById.get(m.id);
@@ -189,7 +201,7 @@ function mergeThread(have: Thread, update: ThreadUpdate): Thread {
     messages.push(m);
   }
   messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  return { conversation: update.conversation, messages };
+  return { conversation: update.conversation, messages, pinned: update.pinned ?? have.pinned };
 }
 
 // --- Look & feel ----------------------------------------------------------------
@@ -467,6 +479,8 @@ const shownBody = (m: ChannelMessage) => (m.mediaUrl && isDocumentUrl(m.mediaUrl
 /** One line describing a quoted message. */
 function quotedText(q: NonNullable<ChannelMessage['replyTo']>): string {
   const body = q.body?.trim();
+  const rich = richSummary(body);
+  if (rich) return rich;
   if (q.mediaUrl && isDocumentUrl(q.mediaUrl)) return `📄 ${documentNameFromUrl(q.mediaUrl)}`;
   if (body) return body;
   if (q.mediaUrl) return isVideoUrl(q.mediaUrl) ? '🎥 Video' : '📷 Photo';
@@ -571,9 +585,12 @@ function WaBubble({
 }) {
   const out = m.direction === 'OUTBOUND';
   const body = shownBody(m);
+  const location = parseLocation(body);
+  const people = location ? null : parseContacts(body);
   const reacted = !!(m.customerReaction || m.agentReaction);
   const meta = (
     <span className="float-right ml-2.5 mt-[3px] flex translate-y-[5px] items-center gap-[3px] text-[11px] leading-none text-[#667781]">
+      {m.pinnedAt && <Pin className="size-3 text-[#8696a0]" aria-label="Pinned" />}
       {m.starredAt && <Star className="size-3 fill-[#8696a0] text-[#8696a0]" aria-label="Starred" />}
       {clockTime(m.createdAt)}
       {out && <WaTicks status={m.status} />}
@@ -596,7 +613,13 @@ function WaBubble({
           {m.templateName && <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#008069]">Template · {m.templateName}</p>}
           <MessageMedia m={m} rounded="rounded-[6px]" />
           <div className={cn('after:block after:clear-both after:content-[""]', m.mediaUrl && !isDocumentUrl(m.mediaUrl) && 'px-1.5')}>
-            {body && <span className="whitespace-pre-wrap break-words">{body}</span>}
+            {location ? (
+              <LocationCard location={location} tone="wa" />
+            ) : people ? (
+              <ContactCard people={people} tone="wa" />
+            ) : (
+              body && <span className="whitespace-pre-wrap break-words">{body}</span>
+            )}
             {meta}
           </div>
           <ReactionBadges m={m} contactName={contactName} side={out ? 'right' : 'left'} />
@@ -648,8 +671,15 @@ function IgBubble({
         >
           {m.templateName && <p className="mb-0.5 text-[11px] font-semibold opacity-80">Template · {m.templateName}</p>}
           <MessageMedia m={m} rounded={mediaOnly ? corners : 'rounded-[14px]'} />
-          {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+          {parseLocation(m.body) ? (
+            <LocationCard location={parseLocation(m.body)!} tone={out ? 'ig-out' : 'ig-in'} />
+          ) : parseContacts(m.body) ? (
+            <ContactCard people={parseContacts(m.body)!} tone={out ? 'ig-out' : 'ig-in'} />
+          ) : (
+            m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>
+          )}
         </div>
+        {m.pinnedAt && <Pin className="size-3.5 shrink-0 text-[#737373]" aria-label="Pinned" />}
         {m.starredAt && <Star className="size-3.5 shrink-0 fill-[#737373] text-[#737373]" aria-label="Starred" />}
         {out && m.status === 'FAILED' && <AlertCircle className="size-4 shrink-0 text-[#ed4956]" />}
         {menu}
@@ -658,6 +688,58 @@ function IgBubble({
       {showStatus && m.status !== 'FAILED' && (
         <p className="mr-1 mt-1 text-[11px] text-[#737373]">{m.status === 'READ' ? 'Seen' : m.status === 'QUEUED' ? 'Sending…' : 'Sent'}</p>
       )}
+    </div>
+  );
+}
+
+/** In Select mode a tap anywhere on the row picks the message (links and menus inside don't fire). */
+function SelectableRow({
+  selecting,
+  checked,
+  onToggle,
+  wa,
+  first,
+  children,
+}: {
+  selecting: boolean;
+  checked: boolean;
+  onToggle: () => void;
+  wa: boolean;
+  first: boolean;
+  children: React.ReactNode;
+}) {
+  if (!selecting) return <>{children}</>;
+  return (
+    <div
+      role="checkbox"
+      aria-checked={checked}
+      tabIndex={0}
+      onClickCapture={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      className={cn(
+        '-mx-3 flex cursor-pointer select-none items-center gap-2 px-3 transition-colors sm:-mx-2 sm:px-2',
+        checked ? (wa ? 'bg-[#00a884]/[0.12]' : 'bg-[#3797f0]/[0.08]') : 'hover:bg-black/[0.03]',
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-[18px] shrink-0 items-center justify-center rounded-[4px] border-2',
+          first ? 'mt-3' : 'mt-[2px]',
+          checked ? (wa ? 'border-[#00a884] bg-[#00a884] text-white' : 'border-[#3797f0] bg-[#3797f0] text-white') : 'border-[#8696a0] bg-white',
+        )}
+      >
+        {checked && <Check className="size-3" strokeWidth={3} />}
+      </span>
+      <div className="pointer-events-none min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -836,7 +918,14 @@ export function InboxPage() {
   }, [selected, channel]);
   const composerBlocked = (outsideWindow && !templateName) || igWindow === 'closed';
 
-  type SendVars = { body?: string; mediaUrl?: string; templateName?: string; replyToMessageId?: string };
+  type SendVars = {
+    body?: string;
+    mediaUrl?: string;
+    templateName?: string;
+    replyToMessageId?: string;
+    location?: SharedLocation;
+    contact?: { name: string; phone: string; email?: string };
+  };
   const sendMutation = useMutation({
     mutationFn: (vars: SendVars) => api.post<ChannelMessage>(`/inbox/conversations/${selectedId}/messages`, vars),
     // The bubble shows straight away (clock icon) while it goes out; the server's
@@ -857,7 +946,11 @@ export function InboxPage() {
                   conversationId: selectedId!,
                   direction: 'OUTBOUND',
                   externalMessageId: null,
-                  body: vars.body ?? (vars.templateName ? `Template: ${vars.templateName}` : null),
+                  body: vars.location
+                    ? locationBody(vars.location)
+                    : vars.contact
+                      ? contactBody([{ name: vars.contact.name, phones: [vars.contact.phone] }])
+                      : (vars.body ?? (vars.templateName ? `Template: ${vars.templateName}` : null)),
                   mediaUrl: vars.mediaUrl ?? null,
                   templateName: vars.templateName ?? null,
                   replyTo: replyBefore,
@@ -870,11 +963,14 @@ export function InboxPage() {
             }
           : old,
       );
-      setDraft('');
-      setTemplateName(null);
-      setPendingMedia(null);
+      const shared = !!(vars.location || vars.contact);
+      if (!shared) {
+        setDraft('');
+        setTemplateName(null);
+        setPendingMedia(null);
+      }
       setReplyingTo(null);
-      return { draftBefore, replyBefore };
+      return { draftBefore: shared ? '' : draftBefore, replyBefore };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedId] });
@@ -1106,7 +1202,7 @@ export function InboxPage() {
     });
   };
   const copyMessage = async (m: ChannelMessage) => {
-    const text = shownBody(m) ?? m.mediaUrl ?? '';
+    const text = richCopyText(m.body) ?? shownBody(m) ?? m.mediaUrl ?? '';
     if (!text) return;
     if (await copyToClipboard(text)) toast.success('Copied');
     else toast.error('Could not copy');
@@ -1132,9 +1228,98 @@ export function InboxPage() {
         starred={!!m.starredAt}
         onStar={() => starMutation.mutate({ id: m.id, starred: !m.starredAt })}
         onInfo={() => setInfoFor(m.id)}
+        pinned={!!m.pinnedAt}
+        onPin={() => pinMutation.mutate({ id: m.id, pinned: !m.pinnedAt })}
+        onForward={canForward(m) ? () => setForwardIds([m.id]) : undefined}
+        onSelect={() => setSelectedMsgs([m.id])}
+        onDelete={() => setDeleteIds([m.id])}
       />
     );
   };
+
+  // --- Pin, select, forward, delete ---------------------------------------------
+  const pinnedList = threadQuery.data?.conversation.id === selectedId ? (threadQuery.data.pinned ?? []) : [];
+  const [pinIndex, setPinIndex] = useState(0);
+  useEffect(() => setPinIndex(0), [selectedId, pinnedList.length]);
+  const pinMutation = useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      api.patch<ChannelMessage[]>(`/inbox/conversations/${selectedId}/messages/${id}/pin`, { pinned }),
+    onSuccess: (list, { pinned }) => {
+      const ids = new Set(list.map((x) => x.id));
+      queryClient.setQueryData<Thread>(['messages', selectedId], (old) =>
+        old
+          ? {
+              ...old,
+              pinned: list,
+              messages: old.messages.map((x) => {
+                const p = list.find((l) => l.id === x.id);
+                return p ? { ...x, pinnedAt: p.pinnedAt } : x.pinnedAt && !ids.has(x.id) ? { ...x, pinnedAt: null } : x;
+              }),
+            }
+          : old,
+      );
+      toast.success(pinned ? 'Pinned — only your team sees pins' : 'Unpinned');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update the pin'),
+  });
+  /** Pinned message shown in the bar: click to jump to it. */
+  const jumpToPinned = (m: ChannelMessage) => {
+    if (document.getElementById(`msg-${m.id}`)) jumpToMessage(m.id);
+    else toast.info('That message is older than the ones shown in this chat');
+    if (pinnedList.length > 1) setPinIndex((i) => (i + 1) % pinnedList.length);
+  };
+
+  // Select mode: tap messages, then copy / star / forward / delete them together.
+  const [selectedMsgs, setSelectedMsgs] = useState<string[] | null>(null);
+  const selecting = selectedMsgs !== null;
+  useEffect(() => setSelectedMsgs(null), [selectedId]);
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) setSelectedMsgs(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting]);
+  const toggleSelected = (id: string) =>
+    setSelectedMsgs((list) => (list ? (list.includes(id) ? list.filter((x) => x !== id) : list.length >= 100 ? list : [...list, id]) : [id]));
+  const pickedMessages = () => (threadQuery.data?.messages ?? []).filter((m) => selectedMsgs?.includes(m.id));
+  const canForward = (m: ChannelMessage) => !isSending(m) && !m.templateName && m.status !== 'FAILED' && !!(m.mediaUrl || (m.body && (!/^\[.*\]$/s.test(m.body.trim()) || richSummary(m.body))));
+  const copySelected = async () => {
+    const picked = pickedMessages();
+    const text = picked
+      .map((m) => `[${clockTime(m.createdAt)}] ${m.direction === 'OUTBOUND' ? 'You' : label}: ${richCopyText(m.body) ?? shownBody(m) ?? m.mediaUrl ?? ''}`)
+      .join('\n');
+    if (await copyToClipboard(text)) toast.success(`Copied ${picked.length} message${picked.length === 1 ? '' : 's'}`);
+    else toast.error('Could not copy');
+    setSelectedMsgs(null);
+  };
+  const bulkMutation = useMutation({
+    mutationFn: ({ action, ids }: { action: 'star' | 'unstar' | 'delete'; ids: string[] }) =>
+      api.post<{ count: number }>(`/inbox/conversations/${selectedId}/messages/bulk`, { action, messageIds: ids }),
+    onSuccess: (r, { action, ids }) => {
+      const now = new Date().toISOString();
+      queryClient.setQueryData<Thread>(['messages', selectedId], (old) =>
+        old
+          ? action === 'delete'
+            ? { ...old, messages: old.messages.filter((x) => !ids.includes(x.id)), pinned: old.pinned?.filter((x) => !ids.includes(x.id)) }
+            : { ...old, messages: old.messages.map((x) => (ids.includes(x.id) ? { ...x, starredAt: action === 'star' ? now : null } : x)) }
+          : old,
+      );
+      queryClient.invalidateQueries({ queryKey: ['starred', selectedId] });
+      toast.success(
+        action === 'delete'
+          ? `Deleted ${r.count} message${r.count === 1 ? '' : 's'} from the CRM`
+          : `${action === 'star' ? 'Starred' : 'Unstarred'} ${r.count} message${r.count === 1 ? '' : 's'}`,
+      );
+      setSelectedMsgs(null);
+      setDeleteIds(null);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update those messages'),
+  });
+  const [forwardIds, setForwardIds] = useState<string[] | null>(null);
+  const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
+  const [shareDialog, setShareDialog] = useState<null | 'location' | 'contact'>(null);
 
   const startReply = (m: ChannelMessage) => {
     setReplyingTo(m);
@@ -1667,6 +1852,44 @@ export function InboxPage() {
                 </div>
               </div>
 
+              {/* Pinned messages (team only) — tap to go to it; several cycle like WhatsApp */}
+              {pinnedList.length > 0 &&
+                !selecting &&
+                (() => {
+                  const at = Math.min(pinIndex, pinnedList.length - 1);
+                  const p = pinnedList[at];
+                  return (
+                    <div className={cn('flex shrink-0 items-center gap-2.5 border-b bg-white px-3 py-1.5 sm:px-4', wa ? 'border-black/[0.06]' : 'border-[#efefef]')}>
+                      {pinnedList.length > 1 && (
+                        <span className="flex flex-col gap-[3px]" aria-hidden>
+                          {pinnedList.map((x, i) => (
+                            <span key={x.id} className={cn('h-2.5 w-[3px] rounded-full', i === at ? (wa ? 'bg-[#00a884]' : 'bg-[#3797f0]') : 'bg-black/15')} />
+                          ))}
+                        </span>
+                      )}
+                      <button type="button" onClick={() => jumpToPinned(p)} title="Go to this message" className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                        <Pin className="size-4 shrink-0 text-[#54656f]" />
+                        <span className="min-w-0">
+                          <span className={cn('block text-[12px] font-medium', wa ? 'text-[#008069]' : 'text-[#3797f0]')}>
+                            Pinned{pinnedList.length > 1 ? ` · ${at + 1} of ${pinnedList.length}` : ''}
+                          </span>
+                          <span className="block truncate text-[13px] text-[#54656f]">{quotedText(p)}</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => pinMutation.mutate({ id: p.id, pinned: false })}
+                        disabled={pinMutation.isPending}
+                        title="Unpin"
+                        aria-label="Unpin"
+                        className="flex size-8 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06]"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  );
+                })()}
+
               {/* Messages */}
               <div
                 ref={threadRef}
@@ -1714,18 +1937,33 @@ export function InboxPage() {
                               {dayLabel(m.createdAt)} {clockTime(m.createdAt)}
                             </p>
                           )}
-                          {wa ? (
-                            <WaBubble
-                              m={m}
-                              first={first}
-                              contactName={label}
-                              highlighted={highlightId === m.id}
-                              onJump={jumpToMessage}
-                              menu={messageMenu(m)}
-                            />
-                          ) : (
-                            <IgBubble m={m} first={first} last={last} contact={selected} showStatus={m.id === lastOutboundId} menu={messageMenu(m)} />
-                          )}
+                          <SelectableRow
+                            selecting={selecting && !isSending(m)}
+                            checked={!!selectedMsgs?.includes(m.id)}
+                            onToggle={() => toggleSelected(m.id)}
+                            wa={wa}
+                            first={first}
+                          >
+                            {wa ? (
+                              <WaBubble
+                                m={m}
+                                first={first}
+                                contactName={label}
+                                highlighted={highlightId === m.id}
+                                onJump={jumpToMessage}
+                                menu={selecting ? undefined : messageMenu(m)}
+                              />
+                            ) : (
+                              <IgBubble
+                                m={m}
+                                first={first}
+                                last={last}
+                                contact={selected}
+                                showStatus={m.id === lastOutboundId}
+                                menu={selecting ? undefined : messageMenu(m)}
+                              />
+                            )}
+                          </SelectableRow>
                         </div>
                       );
                     })}
@@ -1733,8 +1971,59 @@ export function InboxPage() {
                 )}
               </div>
 
+              {/* Select mode: what to do with the picked messages */}
+              {selecting &&
+                (() => {
+                  const picked = pickedMessages();
+                  const n = picked.length;
+                  const allStarred = n > 0 && picked.every((x) => x.starredAt);
+                  const forwardable = n > 0 && n <= 20 && picked.every(canForward);
+                  const action = 'flex size-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06] disabled:opacity-35 disabled:hover:bg-transparent';
+                  return (
+                    <div className={cn('flex shrink-0 items-center gap-1 px-2 py-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white')}>
+                      <button type="button" onClick={() => setSelectedMsgs(null)} aria-label="Cancel selection" title="Cancel (Esc)" className={action}>
+                        <X className="size-5" />
+                      </button>
+                      <span className="flex-1 pl-1 text-[15px] text-[#111b21]">{n === 0 ? 'Tap messages to select' : `${n} selected`}</span>
+                      <button type="button" disabled={n === 0} onClick={() => void copySelected()} aria-label="Copy" title="Copy" className={action}>
+                        <Copy className="size-5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={n === 0 || bulkMutation.isPending}
+                        onClick={() => bulkMutation.mutate({ action: allStarred ? 'unstar' : 'star', ids: picked.map((x) => x.id) })}
+                        aria-label={allStarred ? 'Unstar' : 'Star'}
+                        title={allStarred ? 'Unstar' : 'Star'}
+                        className={action}
+                      >
+                        <Star className={cn('size-5', allStarred && 'fill-current')} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!forwardable}
+                        onClick={() => setForwardIds(picked.map((x) => x.id))}
+                        aria-label="Forward"
+                        title={n > 20 ? 'Forward up to 20 messages at a time' : n > 0 && !forwardable ? "Templates and failed messages can't be forwarded" : 'Forward'}
+                        className={action}
+                      >
+                        <Forward className="size-5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={n === 0}
+                        onClick={() => setDeleteIds(picked.map((x) => x.id))}
+                        aria-label="Delete"
+                        title="Delete"
+                        className={cn(action, 'text-[#ea0038]')}
+                      >
+                        <Trash2 className="size-5" />
+                      </button>
+                    </div>
+                  );
+                })()}
+
               {/* Composer */}
-              <div className={cn('relative shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white')}>
+              <div className={cn('relative shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white', selecting && 'hidden')}>
                 {emojiFor && (
                   <div className="absolute bottom-full left-2 z-30 mb-2 sm:left-4">
                     <EmojiPicker
@@ -1879,6 +2168,18 @@ export function InboxPage() {
                           </span>
                           Document (PDF)
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setShareDialog('location')}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#1fa855] text-white">
+                            <MapPin className="size-3.5" />
+                          </span>
+                          Location
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setShareDialog('contact')}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#009de2] text-white">
+                            <UserRound className="size-3.5" />
+                          </span>
+                          Contact
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                     <div className="relative min-w-0 flex-1">
@@ -1996,6 +2297,37 @@ export function InboxPage() {
           )}
         </div>
       </div>
+
+      {selectedId && (
+        <ForwardDialog
+          open={!!forwardIds}
+          onOpenChange={(o) => !o && setForwardIds(null)}
+          channel={channel}
+          fromConversationId={selectedId}
+          messageIds={forwardIds ?? []}
+          onDone={() => setSelectedMsgs(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!deleteIds}
+        onOpenChange={(o) => !o && setDeleteIds(null)}
+        title={deleteIds && deleteIds.length > 1 ? `Delete ${deleteIds.length} messages?` : 'Delete this message?'}
+        description="It's removed from this chat in the CRM for your whole team. The customer still has it on their phone."
+        confirmLabel="Delete"
+        destructive
+        loading={bulkMutation.isPending}
+        onConfirm={() => deleteIds && bulkMutation.mutate({ action: 'delete', ids: deleteIds })}
+      />
+      <LocationDialog
+        open={shareDialog === 'location'}
+        onOpenChange={(o) => !o && setShareDialog(null)}
+        onSend={(location) => sendMutation.mutate({ location, replyToMessageId: replyingTo?.id })}
+      />
+      <ContactDialog
+        open={shareDialog === 'contact'}
+        onOpenChange={(o) => !o && setShareDialog(null)}
+        onSend={(contact) => sendMutation.mutate({ contact, replyToMessageId: replyingTo?.id })}
+      />
 
       {/* Message info */}
       <Dialog open={!!infoFor} onOpenChange={(o) => !o && setInfoFor(null)}>
