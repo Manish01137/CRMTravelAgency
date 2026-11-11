@@ -36,6 +36,9 @@ import {
   Forward,
   Copy,
   Trash2,
+  CalendarClock,
+  Video as VideoIcon,
+  Mic,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -43,6 +46,7 @@ import type {
   ChannelMessage,
   Conversation,
   ConversationChannel,
+  ScheduledMessage,
   ConversationFilter,
   ConversationStage,
   ConversationStageCounts,
@@ -82,6 +86,10 @@ import { ContactCard, LocationCard, contactBody, locationBody, parseContacts, pa
 import { ForwardDialog } from '@/components/inbox/ForwardDialog';
 import { ContactDialog, LocationDialog } from '@/components/inbox/ShareDialogs';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { VoiceNote, isAudioUrl, isMediaLabel, isStickerMessage } from '@/components/inbox/MediaPlayers';
+import { ContactInfoPanel } from '@/components/inbox/ContactInfoPanel';
+import { VoiceRecorderBar, canRecordVoice } from '@/components/inbox/VoiceRecorder';
+import { ScheduleDialog, ScheduledListDialog, ScheduledStrip } from '@/components/inbox/ScheduleDialogs';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
   ManageQuickRepliesDialog,
@@ -435,8 +443,9 @@ function BubbleTail({ outbound }: { outbound: boolean }) {
 }
 
 /** A photo / video / file inside a bubble. */
-function MessageMedia({ m, rounded }: { m: ChannelMessage; rounded: string }) {
+function MessageMedia({ m, rounded, tone = 'wa-in' }: { m: ChannelMessage; rounded: string; tone?: 'wa-out' | 'wa-in' | 'ig-out' | 'ig-in' }) {
   if (!m.mediaUrl) return null;
+  if (isAudioUrl(m.mediaUrl)) return <VoiceNote src={m.mediaUrl} tone={tone} voice={m.body?.trim() !== '[Audio file]'} />;
   const ext = documentExtension(m.mediaUrl);
   if (ext) {
     const badge = DOCUMENT_BADGE[ext];
@@ -454,7 +463,7 @@ function MessageMedia({ m, rounded }: { m: ChannelMessage; rounded: string }) {
     );
   }
   if (isVideoUrl(m.mediaUrl)) {
-    return <video src={m.mediaUrl} controls preload="metadata" className={cn('mb-1 block max-h-72 w-full bg-black', rounded)} />;
+    return <video src={m.mediaUrl} controls playsInline preload="metadata" className={cn('mb-1 block max-h-80 w-full min-w-[220px] bg-black', rounded)} />;
   }
   return (
     <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="mb-1 block">
@@ -474,7 +483,8 @@ function FailedNote({ m, className }: { m: ChannelMessage; className?: string })
 }
 
 /** A file a customer sent is stored with a "[Document: x.pdf]" label — the card already says that. */
-const shownBody = (m: ChannelMessage) => (m.mediaUrl && isDocumentUrl(m.mediaUrl) && /^\[Document(: [^\n]*)?\]$/.test(m.body ?? '') ? null : m.body);
+const shownBody = (m: ChannelMessage) =>
+  m.mediaUrl && ((isDocumentUrl(m.mediaUrl) && /^\[Document(: [^\n]*)?\]$/.test(m.body ?? '')) || isMediaLabel(m.body)) ? null : m.body;
 
 /** One line describing a quoted message. */
 function quotedText(q: NonNullable<ChannelMessage['replyTo']>): string {
@@ -482,6 +492,9 @@ function quotedText(q: NonNullable<ChannelMessage['replyTo']>): string {
   const rich = richSummary(body);
   if (rich) return rich;
   if (q.mediaUrl && isDocumentUrl(q.mediaUrl)) return `📄 ${documentNameFromUrl(q.mediaUrl)}`;
+  if (q.mediaUrl && isAudioUrl(q.mediaUrl)) return '🎤 Voice message';
+  if (q.mediaUrl && body === '[Sticker]') return '🙂 Sticker';
+  if (q.mediaUrl && body === '[Video]') return '🎥 Video';
   if (body) return body;
   if (q.mediaUrl) return isVideoUrl(q.mediaUrl) ? '🎥 Video' : '📷 Photo';
   return q.templateName ? `Template · ${q.templateName}` : 'Message';
@@ -588,6 +601,9 @@ function WaBubble({
   const location = parseLocation(body);
   const people = location ? null : parseContacts(body);
   const reacted = !!(m.customerReaction || m.agentReaction);
+  const sticker = isStickerMessage(m);
+  // A photo / video fills the bubble edge to edge; voice notes and files keep the normal padding.
+  const visual = !!m.mediaUrl && !isDocumentUrl(m.mediaUrl) && !isAudioUrl(m.mediaUrl) && !sticker;
   const meta = (
     <span className="float-right ml-2.5 mt-[3px] flex translate-y-[5px] items-center gap-[3px] text-[11px] leading-none text-[#667781]">
       {m.pinnedAt && <Pin className="size-3 text-[#8696a0]" aria-label="Pinned" />}
@@ -602,17 +618,30 @@ function WaBubble({
         <div
           className={cn(
             'relative max-w-[85%] rounded-[7.5px] px-[9px] pb-2 pt-1.5 text-[14.2px] leading-[19px] text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] transition-[box-shadow] duration-300 sm:max-w-[65%]',
-            out ? 'bg-[#d9fdd3]' : 'bg-white',
-            first && (out ? 'rounded-tr-none' : 'rounded-tl-none'),
-            m.mediaUrl && !isDocumentUrl(m.mediaUrl) && 'p-[3px] pb-1.5',
+            sticker ? 'bg-transparent p-0 shadow-none' : out ? 'bg-[#d9fdd3]' : 'bg-white',
+            first && !sticker && (out ? 'rounded-tr-none' : 'rounded-tl-none'),
+            visual && 'p-[3px] pb-1.5',
             highlighted && 'ring-2 ring-[#00a884]/60',
           )}
         >
-          {first && <BubbleTail outbound={out} />}
+          {first && !sticker && <BubbleTail outbound={out} />}
           {m.replyTo && <QuotedMessage quote={m.replyTo} contactName={contactName} onClick={() => onJump(m.replyTo!.id)} className="mb-1 min-w-[150px]" />}
           {m.templateName && <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#008069]">Template · {m.templateName}</p>}
-          <MessageMedia m={m} rounded="rounded-[6px]" />
-          <div className={cn('after:block after:clear-both after:content-[""]', m.mediaUrl && !isDocumentUrl(m.mediaUrl) && 'px-1.5')}>
+          {sticker ? (
+            <a href={m.mediaUrl!} target="_blank" rel="noreferrer" className="block">
+              <img src={m.mediaUrl!} alt="Sticker" className="size-[150px] object-contain" />
+            </a>
+          ) : (
+            <MessageMedia m={m} rounded="rounded-[6px]" tone={out ? 'wa-out' : 'wa-in'} />
+          )}
+          <div
+            className={cn(
+              'after:block after:clear-both after:content-[""]',
+              visual && 'px-1.5',
+              sticker && 'w-fit rounded-full bg-white/85 px-2 pb-1.5 shadow-sm [&>span]:translate-y-[3px]',
+              sticker && (out ? 'ml-auto' : ''),
+            )}
+          >
             {location ? (
               <LocationCard location={location} tone="wa" />
             ) : people ? (
@@ -651,7 +680,7 @@ function IgBubble({
   menu?: React.ReactNode;
 }) {
   const out = m.direction === 'OUTBOUND';
-  const mediaOnly = !!m.mediaUrl && !m.body && !isDocumentUrl(m.mediaUrl);
+  const mediaOnly = !!m.mediaUrl && (!m.body || isMediaLabel(m.body)) && !isDocumentUrl(m.mediaUrl) && !isAudioUrl(m.mediaUrl);
   const corners = out
     ? cn('rounded-[22px]', !first && 'rounded-tr-[6px]', !last && 'rounded-br-[6px]')
     : cn('rounded-[22px]', !first && 'rounded-tl-[6px]', !last && 'rounded-bl-[6px]');
@@ -670,13 +699,13 @@ function IgBubble({
           )}
         >
           {m.templateName && <p className="mb-0.5 text-[11px] font-semibold opacity-80">Template · {m.templateName}</p>}
-          <MessageMedia m={m} rounded={mediaOnly ? corners : 'rounded-[14px]'} />
+          <MessageMedia m={m} rounded={mediaOnly ? corners : 'rounded-[14px]'} tone={out ? 'ig-out' : 'ig-in'} />
           {parseLocation(m.body) ? (
             <LocationCard location={parseLocation(m.body)!} tone={out ? 'ig-out' : 'ig-in'} />
           ) : parseContacts(m.body) ? (
             <ContactCard people={parseContacts(m.body)!} tone={out ? 'ig-out' : 'ig-in'} />
           ) : (
-            m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>
+            shownBody(m) && <p className="whitespace-pre-wrap break-words">{shownBody(m)}</p>
           )}
         </div>
         {m.pinnedAt && <Pin className="size-3.5 shrink-0 text-[#737373]" aria-label="Pinned" />}
@@ -783,7 +812,7 @@ export function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [templateName, setTemplateName] = useState<string | null>(null);
-  const [pendingMedia, setPendingMedia] = useState<{ url: string; kind: 'image' | 'document'; name: string } | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<{ url: string; kind: 'image' | 'document' | 'video'; name: string } | null>(null);
   const [replyingTo, setReplyingTo] = useState<ChannelMessage | null>(null);
   // A reply belongs to the chat it was started in.
   useEffect(() => setReplyingTo(null), [selectedId]);
@@ -989,8 +1018,8 @@ export function InboxPage() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: ({ file, kind }: { file: File; kind: 'image' | 'document' }) =>
-      api.upload(kind === 'document' ? '/uploads/document' : '/uploads', file),
+    mutationFn: ({ file, kind }: { file: File; kind: 'image' | 'document' | 'video' }) =>
+      api.upload(kind === 'document' ? '/uploads/document' : kind === 'video' ? '/uploads/video' : '/uploads', file),
     onSuccess: (data, { file, kind }) => setPendingMedia({ url: data.url, kind, name: file.name }),
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not upload the file'),
   });
@@ -1059,6 +1088,16 @@ export function InboxPage() {
     toWhatsAppImage(file)
       .then((ready) => uploadMutation.mutate({ file: ready, kind: 'image' }))
       .catch((err: Error) => toast.error(err.message));
+  };
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const handleVideoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    // WhatsApp's own limits: MP4, up to 16 MB.
+    if (file.type !== 'video/mp4') return void toast.error('WhatsApp only accepts MP4 videos');
+    if (file.size > 16 * 1024 * 1024) return void toast.error('That video is over 16 MB — WhatsApp’s limit. Trim or compress it first.');
+    uploadMutation.mutate({ file, kind: 'video' });
   };
   const handleDocumentSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1320,6 +1359,39 @@ export function InboxPage() {
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const [shareDialog, setShareDialog] = useState<null | 'location' | 'contact'>(null);
+
+  // --- Contact info panel -------------------------------------------------------
+  const [contactInfoOpen, setContactInfoOpen] = useState(false);
+  useEffect(() => setContactInfoOpen(false), [selectedId]);
+
+  // --- Scheduled messages ---------------------------------------------------------
+  const scheduledQuery = useQuery({
+    queryKey: ['scheduled', selectedId],
+    queryFn: () => api.get<ScheduledMessage[]>(`/inbox/conversations/${selectedId}/scheduled`),
+    enabled: !!selectedId,
+    // Only while something is waiting, and only in a visible tab — sent ones then drop off the list.
+    refetchInterval: (q) =>
+      q.state.data?.some((x) => x.status === 'PENDING' || x.status === 'SENDING') && document.visibilityState === 'visible' ? 60_000 : false,
+  });
+  const scheduledList = scheduledQuery.data ?? [];
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledListOpen, setScheduledListOpen] = useState(false);
+  const openSchedule = () => setScheduleOpen(true);
+
+  // --- Voice notes: record → the server converts to OGG Opus → sent as a WhatsApp voice note
+  const [recording, setRecording] = useState(false);
+  useEffect(() => setRecording(false), [selectedId]);
+  const voiceMutation = useMutation({
+    mutationFn: (file: File) => api.upload('/uploads/voice', file),
+    onSuccess: ({ url }) => {
+      setRecording(false);
+      sendMutation.mutate({ mediaUrl: url, body: '[Voice message]', replyToMessageId: replyingTo?.id });
+    },
+    onError: (err) => {
+      setRecording(false);
+      toast.error(err instanceof ApiError ? err.message : 'Could not send the voice note');
+    },
+  });
 
   const startReply = (m: ChannelMessage) => {
     setReplyingTo(m);
@@ -1585,7 +1657,7 @@ export function InboxPage() {
         {/* ---------------- Chat ---------------- */}
         <div
           className={cn(
-            'min-h-0 flex-col',
+            'relative min-h-0 flex-col',
             // Phones: the open chat covers the screen; no chat → just the list.
             selected ? 'flex' : 'hidden md:flex',
             chatOverPhone && 'fixed inset-0 z-50 bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]',
@@ -1625,18 +1697,20 @@ export function InboxPage() {
                 <button type="button" onClick={closeChat} className={cn(headerIconBtn, 'md:hidden')} aria-label="Back to chats">
                   <ArrowLeft className="size-5" />
                 </button>
-                <ContactAvatar
-                  c={selected}
-                  className={wa ? 'size-10' : 'size-11'}
-                  fallbackClassName={wa ? 'bg-[#dfe5e7] text-[#54656f]' : 'bg-[#efefef] text-[#262626]'}
-                />
-                <div className="min-w-0 flex-1 pl-1">
-                  <p className={cn('truncate text-[16px] leading-tight', wa ? 'text-[#111b21]' : 'font-semibold text-[#000]')}>{label}</p>
-                  <p className={cn('truncate text-[13px] leading-tight', wa ? 'text-[#667781]' : 'text-[#737373]')}>
-                    {[selected.contactName && selected.contactPhone ? selected.contactPhone : null, ...selectedTags.slice(0, 3)].filter(Boolean).join(' · ') ||
-                      (wa ? 'WhatsApp' : 'Instagram')}
-                  </p>
-                </div>
+                <button type="button" onClick={() => setContactInfoOpen(true)} title="Contact info" className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                  <ContactAvatar
+                    c={selected}
+                    className={wa ? 'size-10' : 'size-11'}
+                    fallbackClassName={wa ? 'bg-[#dfe5e7] text-[#54656f]' : 'bg-[#efefef] text-[#262626]'}
+                  />
+                  <div className="min-w-0 flex-1 pl-1">
+                    <p className={cn('truncate text-[16px] leading-tight', wa ? 'text-[#111b21]' : 'font-semibold text-[#000]')}>{label}</p>
+                    <p className={cn('truncate text-[13px] leading-tight', wa ? 'text-[#667781]' : 'text-[#737373]')}>
+                      {[selected.contactName && selected.contactPhone ? selected.contactPhone : null, ...selectedTags.slice(0, 3)].filter(Boolean).join(' · ') ||
+                        (wa ? 'WhatsApp' : 'Instagram')}
+                    </p>
+                  </div>
+                </button>
                 <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
                   {bot && (
                     <DropdownMenu>
@@ -1810,8 +1884,14 @@ export function InboxPage() {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-60">
+                      <DropdownMenuItem onSelect={() => setContactInfoOpen(true)}>
+                        <UserRound className="size-4" /> Contact info
+                      </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setStarredOpen(true)}>
                         <Star className="size-4" /> Starred messages
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setScheduledListOpen(true)}>
+                        <CalendarClock className="size-4" /> Scheduled messages{scheduledList.length ? ` (${scheduledList.length})` : ''}
                       </DropdownMenuItem>
                       <DropdownMenuItem disabled={messages.length === 0} onSelect={() => summarizeMutation.mutate()}>
                         <FileText className="size-4" /> Summarize chat
@@ -2041,6 +2121,7 @@ export function InboxPage() {
                     {emojiFor.kind === 'react' && <p className="mt-1 rounded-md bg-card px-2 py-1 text-center text-[11px] text-muted-foreground shadow-sm">Pick a reaction</p>}
                   </div>
                 )}
+                <ScheduledStrip items={scheduledList} wa={wa} onOpen={() => setScheduledListOpen(true)} />
                 {wa && whatsappBillingIssue && <WhatsAppBillingBanner />}
                 {igWindow !== 'open' && (
                   <div className={cn('mb-2 rounded-xl px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
@@ -2085,11 +2166,16 @@ export function InboxPage() {
                       </div>
                     ) : pendingMedia!.kind === 'image' ? (
                       <img src={pendingMedia!.url} alt="" className="size-14 rounded-lg object-cover" />
+                    ) : pendingMedia!.kind === 'video' ? (
+                      <span className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black">
+                        <video src={`${pendingMedia!.url}#t=0.1`} muted preload="metadata" className="size-full object-cover opacity-80" />
+                        <VideoIcon className="absolute size-5 text-white" />
+                      </span>
                     ) : (
                       <span className="flex size-14 shrink-0 items-center justify-center rounded-lg bg-[#ff5c5c] text-xs font-bold text-white">PDF</span>
                     )}
                     <p className="flex-1 truncate text-xs text-muted-foreground">
-                      {uploadMutation.isPending ? 'Uploading…' : pendingMedia!.kind === 'image' ? 'Photo ready to send' : pendingMedia!.name}
+                      {uploadMutation.isPending ? 'Uploading…' : pendingMedia!.kind === 'image' ? 'Photo ready to send' : pendingMedia!.kind === 'video' ? `Video ready to send · ${pendingMedia!.name}` : pendingMedia!.name}
                     </p>
                     <button
                       type="button"
@@ -2112,6 +2198,7 @@ export function InboxPage() {
                 )}
                 <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
                 <input ref={documentInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleDocumentSelected} />
+                <input ref={videoInputRef} type="file" accept="video/mp4" className="hidden" onChange={handleVideoSelected} />
 
                 {wa && replyingTo && (
                   <div className="mb-2 flex items-center gap-2 rounded-lg bg-white p-1.5 shadow-sm">
@@ -2127,7 +2214,11 @@ export function InboxPage() {
                     </button>
                   </div>
                 )}
-                {wa ? (
+                {wa && recording ? (
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    <VoiceRecorderBar wa onCancel={() => setRecording(false)} onSend={(file) => voiceMutation.mutate(file)} sending={voiceMutation.isPending} />
+                  </div>
+                ) : wa ? (
                   // WhatsApp Web: + attach, white rounded box, round green send.
                   <div className="flex items-end gap-1 sm:gap-2">
                     <button
@@ -2162,6 +2253,12 @@ export function InboxPage() {
                           </span>
                           Photo
                         </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => videoInputRef.current?.click()}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#ff2e74] text-white">
+                            <VideoIcon className="size-3.5" />
+                          </span>
+                          Video (MP4)
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => documentInputRef.current?.click()}>
                           <span className="flex size-7 items-center justify-center rounded-full bg-[#7f66ff] text-white">
                             <FileText className="size-3.5" />
@@ -2179,6 +2276,12 @@ export function InboxPage() {
                             <UserRound className="size-3.5" />
                           </span>
                           Contact
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={openSchedule}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#02a698] text-white">
+                            <CalendarClock className="size-3.5" />
+                          </span>
+                          Schedule message
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -2205,6 +2308,17 @@ export function InboxPage() {
                         disabled={composerBlocked}
                       />
                     </div>
+                    {(!!draft.trim() || !!pendingMedia || !!templateName) && (
+                      <button
+                        type="button"
+                        onClick={openSchedule}
+                        aria-label="Schedule message"
+                        title="Schedule — send it later"
+                        className="mb-0.5 hidden size-10 shrink-0 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/[0.06] sm:flex"
+                      >
+                        <CalendarClock className="size-5" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={suggestMutation.isPending || composerBlocked}
@@ -2215,16 +2329,30 @@ export function InboxPage() {
                     >
                       {suggestMutation.isPending ? <Spinner className="size-4" /> : <Sparkles className="size-5" />}
                     </button>
-                    <button
-                      type="button"
-                      disabled={!canSend}
-                      onClick={sendNow}
-                      aria-label="Send message"
-                      title="Send (Enter)"
-                      className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all hover:bg-[#008f72] active:scale-95 disabled:bg-[#00a884]/40"
-                    >
-                      {sendMutation.isPending ? <Spinner className="size-4" /> : <Send className="size-[18px] translate-x-px" />}
-                    </button>
+                    {!draft.trim() && !pendingMedia && !templateName && !sendMutation.isPending && canRecordVoice() ? (
+                      // Nothing typed: the send button is a mic, like WhatsApp.
+                      <button
+                        type="button"
+                        disabled={composerBlocked || uploadMutation.isPending}
+                        onClick={() => setRecording(true)}
+                        aria-label="Record a voice note"
+                        title="Record a voice note"
+                        className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all hover:bg-[#008f72] active:scale-95 disabled:bg-[#00a884]/40"
+                      >
+                        <Mic className="size-5" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!canSend}
+                        onClick={sendNow}
+                        aria-label="Send message"
+                        title="Send (Enter)"
+                        className="mb-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all hover:bg-[#008f72] active:scale-95 disabled:bg-[#00a884]/40"
+                      >
+                        {sendMutation.isPending ? <Spinner className="size-4" /> : <Send className="size-[18px] translate-x-px" />}
+                      </button>
+                    )}
                   </div>
                 ) : (
                   // Instagram: one rounded pill — text, photo button, blue "Send".
@@ -2270,6 +2398,17 @@ export function InboxPage() {
                     >
                       {suggestMutation.isPending ? <Spinner className="size-4" /> : <Sparkles className="size-5" />}
                     </button>
+                    {canSend && (
+                      <button
+                        type="button"
+                        onClick={openSchedule}
+                        aria-label="Schedule message"
+                        title="Schedule — send it later"
+                        className="flex size-9 shrink-0 items-center justify-center rounded-full text-[#000] transition-colors hover:bg-black/[0.05]"
+                      >
+                        <CalendarClock className="size-5" />
+                      </button>
+                    )}
                     {canSend ? (
                       <button
                         type="button"
@@ -2293,10 +2432,49 @@ export function InboxPage() {
                   </div>
                 )}
               </div>
+              {contactInfoOpen && (
+                <ContactInfoPanel
+                  conversation={{ ...selected, lead: (fromThread ?? listed)?.lead ?? selected.lead }}
+                  channel={channel}
+                  onClose={() => setContactInfoOpen(false)}
+                  onShowStarred={() => setStarredOpen(true)}
+                  onJump={(id) => {
+                    if (!document.getElementById(`msg-${id}`)) return false;
+                    setContactInfoOpen(false);
+                    setTimeout(() => jumpToMessage(id), 50);
+                    return true;
+                  }}
+                />
+              )}
             </>
           )}
         </div>
       </div>
+
+      {selectedId && selected && (
+        <>
+          <ScheduleDialog
+            open={scheduleOpen}
+            onOpenChange={setScheduleOpen}
+            conversationId={selectedId}
+            channel={channel}
+            lastInboundAt={selected.lastInboundAt}
+            draft={{
+              body: draft,
+              mediaUrl: pendingMedia?.url,
+              mediaLabel: pendingMedia ? (pendingMedia.kind === 'image' ? 'Photo' : `${pendingMedia.kind === 'video' ? 'Video' : 'Document'} · ${pendingMedia.name}`) : undefined,
+              templateName,
+            }}
+            onScheduled={() => {
+              setDraft('');
+              setPendingMedia(null);
+              setTemplateName(null);
+              setReplyingTo(null);
+            }}
+          />
+          <ScheduledListDialog open={scheduledListOpen} onOpenChange={setScheduledListOpen} conversationId={selectedId} items={scheduledList} />
+        </>
+      )}
 
       {selectedId && (
         <ForwardDialog

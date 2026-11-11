@@ -19,6 +19,9 @@ import {
   bulkMessagesSchema,
   forwardSchema,
   resolveLocationSchema,
+  scheduledIdParam,
+  scheduleMessageSchema,
+  updateScheduledSchema,
 } from './inbox.schemas';
 
 // Unified WhatsApp + Instagram inbox — ONE screen, filtered by `channel`
@@ -52,6 +55,13 @@ router.post('/conversations/:id/messages/bulk', validate({ params: conversationI
 router.get('/conversations/:id/messages/:messageId', validate({ params: messageIdParam }), asyncHandler(controller.getMessageInfo));
 router.post('/forward', validate({ body: forwardSchema }), asyncHandler(controller.forwardMessages));
 router.post('/location/resolve', validate({ body: resolveLocationSchema }), asyncHandler(controller.resolveLocation));
+router.get('/conversations/:id/shared', validate({ params: conversationIdParam }), asyncHandler(controller.listSharedItems));
+// Scheduled messages (sent later by queues/scheduled-messages.ts).
+router.get('/conversations/:id/scheduled', validate({ params: conversationIdParam }), asyncHandler(controller.listScheduled));
+router.post('/conversations/:id/scheduled', validate({ params: conversationIdParam, body: scheduleMessageSchema }), asyncHandler(controller.scheduleMessage));
+router.patch('/conversations/:id/scheduled/:scheduledId', validate({ params: scheduledIdParam, body: updateScheduledSchema }), asyncHandler(controller.updateScheduled));
+router.delete('/conversations/:id/scheduled/:scheduledId', validate({ params: scheduledIdParam }), asyncHandler(controller.cancelScheduled));
+router.post('/conversations/:id/scheduled/:scheduledId/send', validate({ params: scheduledIdParam }), asyncHandler(controller.sendScheduledNow));
 router.post('/conversations/:id/log-call', validate({ params: conversationIdParam }), asyncHandler(controller.logCall));
 router.get('/conversations/:id/bot', validate({ params: conversationIdParam }), asyncHandler(controller.getBot));
 router.post('/conversations/:id/bot', validate({ params: conversationIdParam, body: botControlSchema }), asyncHandler(controller.controlBot));

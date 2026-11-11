@@ -108,3 +108,18 @@ export type StageCountsQuery = z.infer<typeof stageCountsQuerySchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type SetFavoriteInput = z.infer<typeof setFavoriteSchema>;
+
+// --- Scheduled messages ------------------------------------------------------------
+export const scheduledIdParam = z.object({ id: z.string().uuid('Invalid conversation id'), scheduledId: z.string().uuid('Invalid scheduled message id') });
+export const scheduleMessageSchema = z.object({
+  sendAt: z.coerce.date({ invalid_type_error: 'Pick a date and time' }),
+  message: sendMessageSchema,
+});
+export const updateScheduledSchema = z
+  .object({
+    sendAt: z.coerce.date().optional(),
+    body: z.string().trim().min(1, 'Message cannot be empty').max(4096).optional(),
+  })
+  .refine((v) => v.sendAt || v.body, { message: 'Nothing to change' });
+export type ScheduleMessageInput = z.infer<typeof scheduleMessageSchema>;
+export type UpdateScheduledInput = z.infer<typeof updateScheduledSchema>;

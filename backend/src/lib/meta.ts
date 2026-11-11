@@ -542,6 +542,7 @@ export async function sendWhatsAppVideo(
   to: string,
   videoUrl: string,
   caption?: string,
+  replyToWamid?: string,
 ): Promise<{ externalMessageId: string }> {
   const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
     method: 'POST',
@@ -551,7 +552,25 @@ export async function sendWhatsAppVideo(
       to,
       type: 'video',
       video: caption ? { link: videoUrl, caption } : { link: videoUrl },
+      ...quoting(replyToWamid),
     }),
+  });
+  return { externalMessageId: data.messages[0].id };
+}
+
+/** A voice note / audio file or a sticker from a public URL (neither takes a caption). */
+export async function sendWhatsAppAudioOrSticker(
+  phoneNumberId: string,
+  accessToken: string,
+  to: string,
+  kind: 'audio' | 'sticker',
+  url: string,
+  replyToWamid?: string,
+): Promise<{ externalMessageId: string }> {
+  const data = await graphFetch<{ messages: { id: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: kind, [kind]: { link: url }, ...quoting(replyToWamid) }),
   });
   return { externalMessageId: data.messages[0].id };
 }

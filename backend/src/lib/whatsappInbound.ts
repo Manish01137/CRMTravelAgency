@@ -18,8 +18,12 @@ export interface DescribedMessage {
   imageId: string | null;
   /** A PDF / Word / Excel… file to download and attach. */
   document?: { id: string; filename: string | null; caption: string | null } | null;
+  /** A video, voice note / audio file or sticker to download and attach. */
+  media?: { id: string; kind: WhatsAppMediaKind; label: string } | null;
   interactiveSelectionId: string | null;
 }
+
+export type WhatsAppMediaKind = 'video' | 'audio' | 'sticker';
 
 const placeholder = (label: string) => `[${label}]`;
 
@@ -71,8 +75,8 @@ export function describeWhatsAppMessage(msg: Raw): DescribedMessage {
       return { ...none, text: image?.caption ?? '', imageId: image?.id ?? null };
     }
     case 'video': {
-      const caption = (msg.video as { caption?: string } | undefined)?.caption;
-      return { ...none, text: caption || placeholder('Video') };
+      const v = msg.video as { id?: string; caption?: string } | undefined;
+      return { ...none, text: v?.caption || placeholder('Video'), media: v?.id ? { id: v.id, kind: 'video', label: 'Video' } : null };
     }
     case 'document': {
       const d = msg.document as { id?: string; filename?: string; caption?: string } | undefined;
@@ -82,10 +86,15 @@ export function describeWhatsAppMessage(msg: Raw): DescribedMessage {
         document: d?.id ? { id: d.id, filename: d.filename ?? null, caption: d.caption ?? null } : null,
       };
     }
-    case 'audio':
-      return { ...none, text: placeholder((msg.audio as { voice?: boolean } | undefined)?.voice ? 'Voice message' : 'Audio file') };
-    case 'sticker':
-      return { ...none, text: placeholder('Sticker') };
+    case 'audio': {
+      const a = msg.audio as { id?: string; voice?: boolean } | undefined;
+      const label = a?.voice ? 'Voice message' : 'Audio file';
+      return { ...none, text: placeholder(label), media: a?.id ? { id: a.id, kind: 'audio', label } : null };
+    }
+    case 'sticker': {
+      const id = (msg.sticker as { id?: string } | undefined)?.id;
+      return { ...none, text: placeholder('Sticker'), media: id ? { id, kind: 'sticker', label: 'Sticker' } : null };
+    }
     case 'reaction': {
       const emoji = (msg.reaction as { emoji?: string } | undefined)?.emoji;
       return { ...none, text: placeholder(emoji ? `Reacted ${emoji}` : 'Removed a reaction') };

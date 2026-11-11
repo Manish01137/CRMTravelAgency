@@ -4,6 +4,8 @@ import { disconnectPrisma } from './lib/prisma';
 import { isRedisConfigured, disconnectRedis } from './lib/redis';
 import { startBotFlowPoller, stopBotFlowPoller } from './queues/bot-flow-poller';
 import { startAutomationSweep, stopAutomationSweep } from './queues/automation-sweep';
+import { startScheduledMessages, stopScheduledMessages } from './queues/scheduled-messages';
+import { runDueScheduledMessages } from './modules/inbox/scheduled.service';
 import { refreshInstagramTokens } from './modules/channels/channels.service';
 
 const app = createApp();
@@ -18,10 +20,10 @@ const server = app.listen(env.PORT, () => {
 // absent, the server still starts fine, just without Bot Flow / follow-up
 // automation running.
 if (isRedisConfigured()) {
-  Promise.all([startBotFlowPoller(), startAutomationSweep()])
+  Promise.all([startBotFlowPoller(), startAutomationSweep(), startScheduledMessages()])
     .then(() => {
       // eslint-disable-next-line no-console
-      console.log('✓ Automation workers started (Bot Flow poller, follow-up sweep)');
+      console.log('✓ Automation workers started (Bot Flow poller, follow-up sweep, scheduled messages)');
     })
     .catch((err) => {
       // eslint-disable-next-line no-console
@@ -30,6 +32,11 @@ if (isRedisConfigured()) {
 } else {
   // eslint-disable-next-line no-console
   console.log('ℹ REDIS_URL not set — Bot Flow / follow-up automation workers are disabled');
+  // Scheduled Inbox messages still go out — a plain timer on this one server.
+  setInterval(
+    () => void runDueScheduledMessages().catch((err) => console.error('Scheduled messages failed:', err instanceof Error ? err.message : err)),
+    30_000,
+  ).unref();
 }
 
 // Instagram Login tokens expire after ~60 days — renew them well before then.
@@ -43,7 +50,7 @@ function shutdown(signal: string): void {
   // eslint-disable-next-line no-console
   console.log(`\n${signal} received — shutting down gracefully...`);
   server.close(() => {
-    Promise.allSettled([stopBotFlowPoller(), stopAutomationSweep(), disconnectRedis(), disconnectPrisma()]).finally(() => process.exit(0));
+    Promise.allSettled([stopBotFlowPoller(), stopAutomationSweep(), stopScheduledMessages(), disconnectRedis(), disconnectPrisma()]).finally(() => process.exit(0));
   });
   // Force-exit if graceful shutdown hangs.
   setTimeout(() => process.exit(1), 10_000).unref();

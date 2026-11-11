@@ -5,13 +5,13 @@ import { decryptJson } from '../../lib/encryption';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { WHATSAPP_PAYMENT_MESSAGE, fetchInstagramSenderProfile, isMetaPaymentError } from '../../lib/meta';
 import { friendlyMetaError } from '../../lib/metaErrors';
-import { richPreview } from '../../lib/richMessages';
+import { mediaPreview, richPreview } from '../../lib/richMessages';
 import { runSmartBotForWhatsApp } from '../bot/smart-bot.service';
 import { resendBotMessageWithoutMedia, sendPackage } from '../bot-flow/bot-send';
 import { chooseFlowForNewChat, loadFlowRouting } from '../bot-flow/bot-flow.triggers';
 import { triggerBotFlowNow } from '../bot-flow/bot-flow.runner';
 import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-package-mappings.service';
-import { describeWhatsAppMessage } from '../../lib/whatsappInbound';
+import { describeWhatsAppMessage, type WhatsAppMediaKind } from '../../lib/whatsappInbound';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 
@@ -76,6 +76,16 @@ const DOCUMENT_EXTENSIONS: Record<string, string> = {
 };
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 
+/** Videos, voice notes and stickers: the file types WhatsApp sends, and a size cap for each (WhatsApp's own limits). */
+const MEDIA_RULES: Record<WhatsAppMediaKind, { types: Record<string, string>; maxBytes: number }> = {
+  video: { types: { 'video/mp4': 'mp4', 'video/3gpp': '3gp' }, maxBytes: 16 * 1024 * 1024 },
+  audio: {
+    types: { 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/amr': 'amr' },
+    maxBytes: 16 * 1024 * 1024,
+  },
+  sticker: { types: { 'image/webp': 'webp' }, maxBytes: 1024 * 1024 },
+};
+
 /**
  * Downloads a WhatsApp media object (image/video/document) and re-hosts it at
  * a public Supabase Storage URL. Meta's own media URLs require the same
@@ -86,7 +96,12 @@ const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
  * message with a broken media re-host still gets recorded, just without a
  * photo attached, rather than being dropped entirely.
  */
-async function downloadWhatsAppMedia(organizationId: string, mediaId: string, document?: { filename: string | null }): Promise<string | null> {
+async function downloadWhatsAppMedia(
+  organizationId: string,
+  mediaId: string,
+  document?: { filename: string | null } | null,
+  kind?: WhatsAppMediaKind,
+): Promise<string | null> {
   try {
     const connection = await systemPrisma.channelConnection.findUnique({
       where: { organizationId_channel: { organizationId, channel: 'WHATSAPP' } },
@@ -104,6 +119,9 @@ async function downloadWhatsAppMedia(organizationId: string, mediaId: string, do
       // Only ordinary office files, and not huge ones (each is held in memory while it's copied).
       if (!DOCUMENT_EXTENSIONS[meta.mime_type?.split(';')[0] ?? ''] || (meta.file_size ?? 0) > MAX_DOCUMENT_BYTES) return null;
     }
+    const rule = kind ? MEDIA_RULES[kind] : null;
+    const mediaExt = rule ? rule.types[meta.mime_type?.split(';')[0].trim() ?? ''] : undefined;
+    if (rule && (!mediaExt || (meta.file_size ?? 0) > rule.maxBytes)) return null;
 
     const fileRes = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!fileRes.ok) return null;
@@ -113,6 +131,11 @@ async function downloadWhatsAppMedia(organizationId: string, mediaId: string, do
       const ext = DOCUMENT_EXTENSIONS[mimeType.split(';')[0]];
       if (buffer.length > MAX_DOCUMENT_BYTES) return null;
       return await uploadBufferToStorage(buffer, mimeType, ext, `${organizationId}/whatsapp-media`, document.filename ?? 'document');
+    }
+    if (rule) {
+      if (buffer.length > rule.maxBytes) return null;
+      // The extension is how the Inbox knows to show a player (voice notes: audio/ogg; codecs=opus → .ogg).
+      return await uploadBufferToStorage(buffer, mimeType.split(';')[0].trim(), mediaExt!, `${organizationId}/whatsapp-media`);
     }
     const ext = mimeType.split('/')[1]?.split(';')[0] ?? 'jpg';
     return await uploadBufferToStorage(buffer, mimeType, ext, `${organizationId}/whatsapp-media`);
@@ -299,7 +322,9 @@ async function recordInbound(params: {
     const documentLabel = mediaUrl ? body.match(/^\[Document(?:: (.*))?\]$/) : null;
     const preview = documentLabel
       ? `📄 ${documentLabel[1] || 'Document'}`
-      : mediaUrl
+      : mediaUrl && mediaPreview(body)
+        ? mediaPreview(body)!
+        : mediaUrl
         ? body.trim()
           ? body
           : '📷 Photo'
@@ -492,14 +517,27 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       const described = describeWhatsAppMessage(msg);
       const interactiveSelectionId = described.interactiveSelectionId;
       const doc = described.document;
+      const media = described.media;
       const mediaUrl = described.imageId
         ? await downloadWhatsAppMedia(organizationId, described.imageId)
         : doc
           ? await downloadWhatsAppMedia(organizationId, doc.id, doc)
-          : null;
+          : media
+            ? await downloadWhatsAppMedia(organizationId, media.id, null, media.kind)
+            : null;
       // A file we couldn't keep (too big, an unusual type, storage unavailable): say so in the chat.
       const lostDocument = doc && !mediaUrl ? `[Document${doc.filename ? `: ${doc.filename}` : ''} — the file couldn't be saved to the CRM]` : null;
-      const text = lostDocument ? (doc?.caption ? `${doc.caption}\n${lostDocument}` : lostDocument) : described.text;
+      const lostMedia = media && !mediaUrl ? `[${media.label} — the file couldn't be saved to the CRM]` : null;
+      const caption = media?.kind === 'video' && described.text !== '[Video]' ? described.text : null;
+      const text = lostDocument
+        ? doc?.caption
+          ? `${doc.caption}\n${lostDocument}`
+          : lostDocument
+        : lostMedia
+          ? caption
+            ? `${caption}\n${lostMedia}`
+            : lostMedia
+          : described.text;
       // Customer replied to a specific message. Button / list taps also carry this
       // but aren't a reply worth quoting — the tap itself says what it answers.
       const replyToWamid = type === 'interactive' || type === 'button' ? null : ((msg.context as { id?: string } | undefined)?.id ?? null);

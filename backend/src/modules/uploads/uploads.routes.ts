@@ -5,6 +5,7 @@ import { requireAuth } from '../../middleware/auth';
 import { BadRequest } from '../../lib/errors';
 import { asyncHandler } from '../../lib/http';
 import { uploadBufferToStorage } from '../../lib/storage';
+import { toOggOpus } from '../../lib/audio';
 
 const ALLOWED = new Map<string, string>([
   ['image/jpeg', 'jpg'],
@@ -125,6 +126,45 @@ router.post(
 
     const ext = DOCUMENT_ALLOWED.get(req.file.mimetype) ?? 'pdf';
     const url = await uploadBufferToStorage(req.file.buffer, req.file.mimetype, ext, `${req.auth!.organizationId}/documents`, req.file.originalname);
+    res.status(201).json({ url });
+  }),
+);
+
+// --- Voice notes (Inbox mic button) --------------------------------------------
+// Whatever the browser recorded (WebM / OGG / MP4) is converted to OGG Opus —
+// the only format WhatsApp plays as a voice note — then stored like any file.
+const VOICE_TYPES = new Set(['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/x-m4a', 'video/webm', 'video/mp4']);
+const VOICE_MAX_BYTES = 16 * 1024 * 1024; // WhatsApp's audio limit
+
+const uploadVoice = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: VOICE_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    // "audio/webm;codecs=opus" → "audio/webm"
+    if (VOICE_TYPES.has(file.mimetype.split(';')[0].trim().toLowerCase())) cb(null, true);
+    else cb(new Error('UNSUPPORTED_TYPE'));
+  },
+});
+
+router.post(
+  '/voice',
+  requireAuth,
+  (req: Request, res: Response, next) => {
+    uploadVoice.single('file')(req, res, (err: unknown) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return next(BadRequest('That voice note is too long (max 16 MB)'));
+      }
+      if (err instanceof Error && err.message === 'UNSUPPORTED_TYPE') {
+        return next(BadRequest('Unsupported recording format'));
+      }
+      return next(BadRequest('Could not read the recording'));
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw BadRequest('No recording was uploaded (field name must be "file")');
+    const ogg = await toOggOpus(req.file.buffer);
+    const url = await uploadBufferToStorage(ogg, 'audio/ogg', 'ogg', `${req.auth!.organizationId}/voice`);
     res.status(201).json({ url });
   }),
 );

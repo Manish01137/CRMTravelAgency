@@ -12,6 +12,8 @@ import {
   sendWhatsAppReaction,
   sendWhatsAppLocation,
   sendWhatsAppContact,
+  sendWhatsAppVideo,
+  sendWhatsAppAudioOrSticker,
   createWhatsAppTemplate,
   metaErrorText,
 } from '../../lib/meta';
@@ -49,6 +51,11 @@ function explainInstagramWindow(err: unknown): never {
  *  here trusting the URL (see PackageBrochurePage's own dayPhoto/heroPhoto). */
 // PDFs, and the Word / Excel / PowerPoint / text files customers send (forwarded on as documents).
 const isPdfUrl = (url: string) => /\.(pdf|docx?|xlsx?|pptx?|txt|csv)(?:[?#]|$)/i.test(url);
+const isVideoUrl = (url: string) => /\.(mp4|3gp|mov|webm)(?:[?#]|$)/i.test(url);
+const isAudioUrl = (url: string) => /\.(ogg|opus|mp3|m4a|aac|amr)(?:[?#]|$)/i.test(url);
+/** A sticker / voice note keeps its "[Sticker]"-style label as the body — it's never sent as text. */
+const MEDIA_LABEL = /^\[(Sticker|Voice message|Audio file)\]$/;
+const isStickerSend = (input: { mediaUrl?: string | null; body?: string | null }) => !!input.mediaUrl && input.body?.trim() === '[Sticker]';
 
 /** Recovers the human filename embedded by uploadBufferToStorage's document
  *  upload (see storage.ts) — the URL's last path segment, minus the
@@ -287,6 +294,12 @@ export async function sendMessage(
     if (conversation.channel === 'INSTAGRAM' && input.mediaUrl && isPdfUrl(input.mediaUrl)) {
       throw BadRequest('Instagram DMs only support photos, not documents');
     }
+    if (conversation.channel === 'INSTAGRAM' && input.mediaUrl && (isVideoUrl(input.mediaUrl) || isAudioUrl(input.mediaUrl) || isStickerSend(input))) {
+      throw BadRequest('From the CRM, Instagram DMs can only send photos — videos, voice notes and stickers work on WhatsApp');
+    }
+    if (conversation.channel === 'WHATSAPP' && input.mediaUrl && isVideoUrl(input.mediaUrl) && !/\.(mp4|3gp)(?:[?#]|$)/i.test(input.mediaUrl)) {
+      throw BadRequest('WhatsApp only accepts MP4 videos (up to 16 MB)');
+    }
 
     // Reply to a message: WhatsApp only, and not on a template (Meta's templates can't quote).
     let replyToId: string | undefined;
@@ -333,7 +346,19 @@ export async function sendMessage(
       : input.contact
         ? contactBody([{ name: input.contact.name, phones: [input.contact.phone] }])
         : input.body || null;
-    const preview = input.mediaUrl ? (input.body?.trim() ? input.body : '📷 Photo') : body ? (richPreview(body) ?? body) : '';
+    const preview = input.mediaUrl
+      ? body && MEDIA_LABEL.test(body.trim())
+        ? (richPreview(body) ?? body)
+        : input.body?.trim()
+          ? input.body
+          : isVideoUrl(input.mediaUrl)
+            ? '🎥 Video'
+            : isAudioUrl(input.mediaUrl)
+              ? '🎤 Voice message'
+              : '📷 Photo'
+      : body
+        ? (richPreview(body) ?? body)
+        : '';
     const message = await tx.message.create({
       data: {
         organizationId,
@@ -413,6 +438,15 @@ async function sendThroughMeta(plan: SendPlan, input: SendMessageInput): Promise
     if (input.contact) return sendWhatsAppContact(creds.phoneNumberId, creds.accessToken, to, input.contact, replyToWamid);
     if (input.mediaUrl && isPdfUrl(input.mediaUrl)) {
       return sendWhatsAppDocument(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, documentFilenameFromUrl(input.mediaUrl), input.body?.trim() || undefined, replyToWamid);
+    }
+    if (input.mediaUrl && isAudioUrl(input.mediaUrl)) {
+      return sendWhatsAppAudioOrSticker(creds.phoneNumberId, creds.accessToken, to, 'audio', input.mediaUrl, replyToWamid);
+    }
+    if (isStickerSend(input)) {
+      return sendWhatsAppAudioOrSticker(creds.phoneNumberId, creds.accessToken, to, 'sticker', input.mediaUrl!, replyToWamid);
+    }
+    if (input.mediaUrl && isVideoUrl(input.mediaUrl)) {
+      return sendWhatsAppVideo(creds.phoneNumberId, creds.accessToken, to, input.mediaUrl, input.body?.trim() || undefined, replyToWamid);
     }
     if (input.mediaUrl) {
       // WhatsApp supports a caption on the image itself — one message, not two.
@@ -584,7 +618,9 @@ function forwardInput(m: { body: string | null; mediaUrl: string | null }, chann
       : ({ body: `${p.name}: ${p.phones.join(', ')}` } as SendMessageInput);
   }
   // A file's "[Document: x.pdf]" label, "[Voice message]"… aren't text to send on.
-  const body = m.body && !isPlaceholderBody(m.body) ? m.body : undefined;
+  // …except a sticker's / voice note's label, which says what the file is (it isn't sent as text).
+  const label = m.mediaUrl && m.body && MEDIA_LABEL.test(m.body.trim()) ? m.body.trim() : undefined;
+  const body = label ?? (m.body && !isPlaceholderBody(m.body) ? m.body : undefined);
   if (!body && !m.mediaUrl) return null;
   return { body, mediaUrl: m.mediaUrl ?? undefined } as SendMessageInput;
 }
@@ -715,5 +751,50 @@ export async function createTemplate(organizationId: string, input: CreateTempla
         status: 'PENDING',
       },
     });
+  });
+}
+
+// --- Contact info: what's been shared in this chat ----------------------------------
+
+const SHARED_DOC = /\.(pdf|docx?|xlsx?|pptx?|txt|csv|ogg|opus|mp3|m4a|aac|amr)(?:[?#]|$)/i;
+const LINK = /https?:\/\/[^\s<>"')\]]+/g;
+
+/**
+ * Contact info panel: photos & videos, documents (and voice notes), and links
+ * shared either way in this chat — newest first — plus a little history.
+ */
+export async function listSharedItems(organizationId: string, conversationId: string) {
+  return withTenant(organizationId, async (tx) => {
+    const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { id: true, createdAt: true } });
+    if (!conversation) throw NotFound('Conversation not found');
+    const visible = { conversationId, deletedAt: null };
+    const [files, withLinks, counts, first] = await Promise.all([
+      tx.message.findMany({
+        where: { ...visible, mediaUrl: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        take: 300,
+        select: { id: true, direction: true, mediaUrl: true, body: true, createdAt: true },
+      }),
+      tx.message.findMany({
+        where: { ...visible, body: { contains: 'http' } },
+        orderBy: { createdAt: 'desc' },
+        take: 150,
+        select: { id: true, direction: true, body: true, createdAt: true },
+      }),
+      tx.message.groupBy({ by: ['direction'], where: visible, _count: { _all: true } }),
+      tx.message.findFirst({ where: visible, orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
+    ]);
+    const media = files.filter((m) => !SHARED_DOC.test(m.mediaUrl!));
+    const docs = files.filter((m) => SHARED_DOC.test(m.mediaUrl!));
+    const links = withLinks.flatMap((m) =>
+      [...new Set(m.body!.match(LINK) ?? [])].map((url) => ({ messageId: m.id, direction: m.direction, url: url.replace(/[.,!?]+$/, ''), createdAt: m.createdAt })),
+    );
+    const count = (d: 'INBOUND' | 'OUTBOUND') => counts.find((c) => c.direction === d)?._count._all ?? 0;
+    return {
+      media: media.slice(0, 120),
+      docs: docs.slice(0, 120),
+      links: links.slice(0, 120),
+      stats: { received: count('INBOUND'), sent: count('OUTBOUND'), firstMessageAt: first?.createdAt ?? conversation.createdAt },
+    };
   });
 }

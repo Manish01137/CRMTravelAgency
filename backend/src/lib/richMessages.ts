@@ -46,8 +46,17 @@ export function parseContactBody(body: string | null | undefined): SharedContact
   });
 }
 
+/** Chat-list text for a video / voice note / sticker label ("[Voice message]" → "🎤 Voice message"). */
+export function mediaPreview(body: string): string | null {
+  const m = body.trim().match(/^\[(Video|Voice message|Audio file|Sticker)\b/);
+  if (!m) return null;
+  return { Video: '🎥 Video', 'Voice message': '🎤 Voice message', 'Audio file': '🎵 Audio', Sticker: '🙂 Sticker' }[m[1]] ?? null;
+}
+
 /** What the chat list shows for one. */
 export function richPreview(body: string): string | null {
+  const media = mediaPreview(body);
+  if (media) return media;
   const loc = parseLocationBody(body);
   if (loc) return `📍 ${loc.name || 'Location'}`;
   if (/^\[Location\b/.test(body)) return '📍 Location';

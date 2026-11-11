@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery, ReactInput, StarInput, PinInput, BulkMessagesInput, ForwardInput, ResolveLocationInput } from './inbox.schemas';
+import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery, ReactInput, StarInput, PinInput, BulkMessagesInput, ForwardInput, ResolveLocationInput, ScheduleMessageInput, UpdateScheduledInput } from './inbox.schemas';
+import * as scheduled from './scheduled.service';
 import { controlChatBot, getChatBotState } from '../bot-flow/bot-flow.control';
 import { assertConversationVisible, conversationScope, viewerOf } from '../../lib/visibility';
 
@@ -88,6 +89,38 @@ export async function forwardMessages(req: Request, res: Response): Promise<void
   const viewer = viewerOf(req);
   for (const id of [fromConversationId, ...toConversationIds]) await assertConversationVisible(req.auth!.organizationId, viewer, id);
   res.json(await service.forwardMessages(req.auth!.organizationId, req.auth!.userId, fromConversationId, messageIds, toConversationIds));
+}
+
+export async function listSharedItems(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await service.listSharedItems(req.auth!.organizationId, req.params.id));
+}
+
+// --- Scheduled messages ---
+export async function listScheduled(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await scheduled.listScheduled(req.auth!.organizationId, req.params.id));
+}
+
+export async function scheduleMessage(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  const { sendAt, message } = req.body as ScheduleMessageInput;
+  res.status(201).json(await scheduled.scheduleMessage(req.auth!.organizationId, req.params.id, req.auth!.userId, sendAt, message));
+}
+
+export async function updateScheduled(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await scheduled.updateScheduled(req.auth!.organizationId, req.params.id, req.params.scheduledId, req.body as UpdateScheduledInput));
+}
+
+export async function cancelScheduled(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await scheduled.cancelScheduled(req.auth!.organizationId, req.params.id, req.params.scheduledId));
+}
+
+export async function sendScheduledNow(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await scheduled.sendScheduledNow(req.auth!.organizationId, req.params.id, req.params.scheduledId));
 }
 
 export async function resolveLocation(req: Request, res: Response): Promise<void> {

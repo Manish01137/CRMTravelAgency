@@ -1071,3 +1071,17 @@ export interface MessageInfo {
   starredAt: string | null;
   sentBy: { name: string } | null;
 }
+
+/** A message scheduled for later in an Inbox chat (GET /inbox/conversations/:id/scheduled). */
+export interface ScheduledMessage {
+  id: string;
+  sendAt: string;
+  preview: string;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
+  errorMessage: string | null;
+  payload: { body?: string; mediaUrl?: string; templateName?: string; location?: unknown; contact?: unknown };
+  messageId: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  createdBy: { id: string; name: string } | null;
+}

@@ -16,7 +16,8 @@ RUN npm run build
 # --- Runtime stage -------------------------------------------------------
 FROM node:22-alpine AS runtime
 WORKDIR /app
-RUN apk add --no-cache openssl
+# ffmpeg: converts voice notes recorded in the browser to OGG Opus for WhatsApp (lib/audio.ts).
+RUN apk add --no-cache openssl ffmpeg
 ENV NODE_ENV=production
 
 COPY package*.json ./
