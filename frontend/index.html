@@ -2,14 +2,72 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#4F46E5" />
+    <title>Joinetra — Travel CRM for agencies</title>
     <meta
       name="description"
-      content="A premium, multi-tenant CRM for travel agencies — leads, bookings, and team in one clean dashboard."
+      content="Joinetra is the travel CRM for tour operators and travel agencies — WhatsApp &amp; Instagram inbox, chatbots, leads, packages, bookings, invoices and your team in one place."
     />
-    <title>Joinetra</title>
+
+    <!-- Logo: browser tab, Google search results, phones' home screen -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#6C2BF2" />
+    <meta name="application-name" content="Joinetra" />
+    <meta name="apple-mobile-web-app-title" content="Joinetra" />
+
+    <!-- Link previews (WhatsApp, Facebook, LinkedIn, X) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Joinetra" />
+    <meta property="og:title" content="Joinetra — Travel CRM for agencies" />
+    <meta property="og:description" content="WhatsApp &amp; Instagram inbox, chatbots, leads, packages, bookings and invoices for travel agencies." />
+    <meta property="og:url" content="https://joinetra.com/" />
+    <meta property="og:image" content="https://joinetra.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Joinetra logo — Travel CRM for agencies" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Joinetra — Travel CRM for agencies" />
+    <meta name="twitter:description" content="WhatsApp &amp; Instagram inbox, chatbots, leads, packages, bookings and invoices for travel agencies." />
+    <meta name="twitter:image" content="https://joinetra.com/og-image.png" />
+
+    <!-- Google: site name + logo in search results -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://joinetra.com/#organization",
+            "name": "Joinetra",
+            "url": "https://joinetra.com/",
+            "logo": { "@type": "ImageObject", "url": "https://joinetra.com/icon-512.png", "width": 512, "height": 512 }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://joinetra.com/#website",
+            "name": "Joinetra",
+            "alternateName": ["Joinetra CRM", "Joinetra Travel CRM"],
+            "url": "https://joinetra.com/",
+            "publisher": { "@id": "https://joinetra.com/#organization" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Joinetra",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "url": "https://joinetra.com/",
+            "image": "https://joinetra.com/icon-512.png",
+            "description": "Travel CRM for tour operators and travel agencies — WhatsApp & Instagram inbox, chatbots, leads, packages, bookings and invoices.",
+            "publisher": { "@id": "https://joinetra.com/#organization" }
+          }
+        ]
+      }
+    </script>
 
     <!-- Site font: Figtree everywhere (the same family joinether.in uses),
          plus Caveat for handwritten annotations.

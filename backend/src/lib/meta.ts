@@ -864,6 +864,24 @@ export interface UpdateWhatsAppBusinessProfileInput {
   profilePictureHandle?: string;
 }
 
+/**
+ * The catalogue on a WhatsApp number's profile. The products themselves are
+ * made in Meta Commerce Manager and linked in WhatsApp Manager; this only
+ * shows / hides that catalogue (and the cart) for customers.
+ */
+export async function getWhatsAppCommerceSettings(phoneNumberId: string, accessToken: string): Promise<{ catalogVisible: boolean; cartEnabled: boolean }> {
+  const data = await graphFetch<{ data?: { is_catalog_visible?: boolean; is_cart_enabled?: boolean }[] }>(`/${phoneNumberId}/whatsapp_commerce_settings`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const s = data.data?.[0];
+  return { catalogVisible: !!s?.is_catalog_visible, cartEnabled: !!s?.is_cart_enabled };
+}
+
+export async function setWhatsAppCommerceSettings(phoneNumberId: string, accessToken: string, input: { catalogVisible: boolean; cartEnabled: boolean }): Promise<void> {
+  const q = new URLSearchParams({ is_catalog_visible: String(input.catalogVisible), is_cart_enabled: String(input.cartEnabled) });
+  await graphFetch(`/${phoneNumberId}/whatsapp_commerce_settings?${q}`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } });
+}
+
 export async function updateWhatsAppBusinessProfile(
   phoneNumberId: string,
   accessToken: string,

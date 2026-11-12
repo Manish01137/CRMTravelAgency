@@ -1,0 +1,13 @@
+# Joinetra — public pages can be indexed; the app itself (behind login) is private.
+User-agent: *
+Allow: /$
+Allow: /privacy
+Allow: /terms
+Allow: /data-deletion
+Allow: /signup
+Allow: /login
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /owner
+
+Sitemap: https://joinetra.com/sitemap.xml

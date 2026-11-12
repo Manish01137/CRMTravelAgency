@@ -23,6 +23,8 @@ import {
   subscribePageWebhook,
   getWhatsAppBusinessProfile as fetchWhatsAppBusinessProfile,
   updateWhatsAppBusinessProfile as pushWhatsAppBusinessProfile,
+  getWhatsAppCommerceSettings as fetchWhatsAppCommerceSettings,
+  setWhatsAppCommerceSettings as pushWhatsAppCommerceSettings,
   uploadWhatsAppProfilePhotoHandle,
   exchangeInstagramCode,
   exchangeInstagramLongLivedToken,
@@ -34,6 +36,7 @@ import {
 } from '../../lib/meta';
 import type { WhatsAppBusinessProfile, UpdateWhatsAppBusinessProfileInput, WhatsAppPhoneNumberStatus } from '../../lib/meta';
 import { AppError } from '../../lib/errors';
+import { toWhatsAppProfileJpeg } from '../../lib/profilePhoto';
 import type {
   ConnectEmailInput,
   ConnectInstagramInput,
@@ -683,13 +686,31 @@ export async function updateWhatsAppBusinessProfile(
 export async function uploadWhatsAppProfilePhoto(
   organizationId: string,
   buffer: Buffer,
-  mimeType: string,
+  _mimeType: string, // always re-encoded to JPEG below
 ): Promise<WhatsAppBusinessProfile> {
   const creds = await getConnectedWhatsAppCredentials(organizationId);
   await assertWhatsAppNumberLive(creds);
-  const handle = await uploadWhatsAppProfilePhotoHandle(buffer, mimeType, creds.accessToken);
+  // Square 640×640 JPEG whatever was uploaded (PNG logo, WebP…) — the only kind WhatsApp takes.
+  const jpeg = await toWhatsAppProfileJpeg(buffer);
+  const handle = await uploadWhatsAppProfilePhotoHandle(jpeg, 'image/jpeg', creds.accessToken);
   await pushWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken, { profilePictureHandle: handle });
   return fetchWhatsAppBusinessProfile(creds.phoneNumberId, creds.accessToken);
+}
+
+/** Is the catalogue shown on the WhatsApp profile (and is the cart on)? null when Meta can't say (e.g. no catalogue linked yet). */
+export async function getWhatsAppCommerce(organizationId: string): Promise<{ catalogVisible: boolean; cartEnabled: boolean } | null> {
+  const creds = await getConnectedWhatsAppCredentials(organizationId);
+  return fetchWhatsAppCommerceSettings(creds.phoneNumberId, creds.accessToken).catch((err) => {
+    console.warn('[channels] commerce settings unavailable:', err instanceof Error ? err.message : err);
+    return null;
+  });
+}
+
+export async function setWhatsAppCommerce(organizationId: string, input: { catalogVisible: boolean; cartEnabled: boolean }) {
+  const creds = await getConnectedWhatsAppCredentials(organizationId);
+  await assertWhatsAppNumberLive(creds);
+  await pushWhatsAppCommerceSettings(creds.phoneNumberId, creds.accessToken, input);
+  return fetchWhatsAppCommerceSettings(creds.phoneNumberId, creds.accessToken);
 }
 
 function toStatus(row: {

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Plane } from 'lucide-react';
+import { JoinetraLogo } from '@/components/JoinetraLogo';
 
 /** Shared chrome for standalone legal pages (Privacy Policy, Terms of Service) — a
  * lightweight version of the landing page's header/footer, without the marketing nav. */
@@ -18,9 +18,7 @@ export function LegalLayout({
       <header className="border-b border-border/60 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-[4.25rem] max-w-3xl items-center px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Plane className="size-5" />
-            </span>
+            <JoinetraLogo className="size-10" />
             <span className="font-display text-xl font-bold tracking-tight text-foreground">Joinetra</span>
           </Link>
         </div>

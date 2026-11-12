@@ -80,6 +80,8 @@ export const updateWhatsAppBusinessProfileSchema = z.object({
   vertical: z.enum(WHATSAPP_VERTICALS).optional(),
 });
 
+export const whatsappCommerceSchema = z.object({ catalogVisible: z.boolean(), cartEnabled: z.boolean() });
+
 export type ConnectWhatsAppInput = z.infer<typeof connectWhatsAppSchema>;
 export type ConnectInstagramInput = z.infer<typeof connectInstagramSchema>;
 export type RequestWhatsAppCodeInput = z.infer<typeof requestWhatsAppCodeSchema>;

@@ -15,15 +15,14 @@ import {
   requestWhatsAppCodeSchema,
   selectInstagramPageSchema,
   verifyWhatsAppCodeSchema,
-  updateWhatsAppBusinessProfileSchema,
-} from './channels.schemas';
+  updateWhatsAppBusinessProfileSchema, whatsappCommerceSchema } from './channels.schemas';
 
 // WhatsApp's own profile-picture requirement: JPEG only.
 const profilePhotoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'image/jpeg') cb(null, true);
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
     else cb(new Error('UNSUPPORTED_TYPE'));
   },
 });
@@ -101,12 +100,15 @@ router.post(
         return next(BadRequest('Photo is too large (max 5 MB)'));
       }
       if (err instanceof Error && err.message === 'UNSUPPORTED_TYPE') {
-        return next(BadRequest('Only JPEG photos are allowed for the WhatsApp profile picture'));
+        return next(BadRequest('Use a JPG, PNG or WebP picture for the WhatsApp profile photo'));
       }
       return next(BadRequest('Could not read the uploaded file'));
     });
   },
   asyncHandler(controller.uploadWhatsAppProfilePhoto),
 );
+// Catalogue on the WhatsApp profile (products live in Meta Commerce Manager).
+router.get('/whatsapp/commerce', asyncHandler(controller.getWhatsAppCommerce));
+router.patch('/whatsapp/commerce', requireRole('ADMIN'), validate({ body: whatsappCommerceSchema }), asyncHandler(controller.setWhatsAppCommerce));
 
 export default router;

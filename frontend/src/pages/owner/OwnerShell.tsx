@@ -18,6 +18,7 @@ import { usePlatformAdminAuth } from '@/context/PlatformAdminAuthContext';
 import { cn } from '@/lib/utils';
 import { GlobalSearch } from './GlobalSearch';
 import { ACCENT_CLASSES, type OwnerAccent } from './theme';
+import { JoinetraLogoTile } from '@/components/JoinetraLogo';
 
 interface OwnerNavItem {
   to: string;
@@ -87,9 +88,7 @@ export function OwnerShell({ children }: { children: ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card md:flex">
         <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
           <div className="mb-6 flex items-center gap-3 px-2 pt-1">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-violet-500 text-white shadow-sm">
-              <ShieldCheck className="size-4" />
-            </span>
+            <JoinetraLogoTile />
             <div className="min-w-0">
               <p className="truncate font-display text-sm font-semibold text-foreground">Owner Panel</p>
               <p className="truncate text-xs text-muted-foreground">Joinetra</p>

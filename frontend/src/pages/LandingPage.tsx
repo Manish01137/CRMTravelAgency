@@ -35,6 +35,7 @@ import { TrustIndicator } from '@/components/TrustIndicator';
 import { Button } from '@/components/ui/button';
 import { CountUp } from '@/components/ui/count-up';
 import { cn } from '@/lib/utils';
+import { JoinetraLogo, JoinetraLogoTile } from '@/components/JoinetraLogo';
 
 /* ------------------------------ Motion helpers ----------------------------- */
 
@@ -158,11 +159,7 @@ function SectionHeading({
 /* --------------------------------- Chrome ---------------------------------- */
 
 function LogoMark({ className }: { className?: string }) {
-  return (
-    <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm', className)}>
-      <Plane className="size-5" />
-    </span>
-  );
+  return <JoinetraLogo className={cn('size-10', className)} />;
 }
 
 function Nav() {
@@ -238,9 +235,7 @@ function ProductMock() {
         <div className="flex">
           <div className="hidden w-36 shrink-0 flex-col gap-1 border-r border-border bg-surface p-3 sm:flex">
             <div className="mb-2 flex items-center gap-1.5">
-              <span className="flex size-5 items-center justify-center rounded-md bg-primary text-white">
-                <Plane className="size-3" />
-              </span>
+              <JoinetraLogo className="size-5" />
               <span className="font-display text-[11px] font-bold">Joinetra</span>
             </div>
             {['Dashboard', 'Leads', 'Team', 'Settings'].map((item, i) => (
@@ -1474,7 +1469,7 @@ export function LandingPage() {
           <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1.3fr]">
             <div>
               <div className="flex items-center gap-2.5">
-                <LogoMark className="h-9 w-9" />
+                <JoinetraLogoTile className="size-10" />
                 <span className="font-display text-2xl font-bold tracking-tight">Joinetra</span>
               </div>
               <p className="mt-5 max-w-xs text-[15px] leading-relaxed text-white/60">

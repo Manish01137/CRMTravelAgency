@@ -67,6 +67,14 @@ export async function updateWhatsAppBusinessProfile(req: Request, res: Response)
   res.json(await service.updateWhatsAppBusinessProfile(req.auth!.organizationId, body));
 }
 
+export async function getWhatsAppCommerce(req: Request, res: Response): Promise<void> {
+  res.json(await service.getWhatsAppCommerce(req.auth!.organizationId));
+}
+
+export async function setWhatsAppCommerce(req: Request, res: Response): Promise<void> {
+  res.json(await service.setWhatsAppCommerce(req.auth!.organizationId, req.body as { catalogVisible: boolean; cartEnabled: boolean }));
+}
+
 export async function uploadWhatsAppProfilePhoto(req: Request, res: Response): Promise<void> {
   if (!req.file) throw BadRequest('No file was uploaded (field name must be "file")');
   res.json(await service.uploadWhatsAppProfilePhoto(req.auth!.organizationId, req.file.buffer, req.file.mimetype));

@@ -20,6 +20,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { launchWhatsAppEmbeddedSignup, launchInstagramLoginPopup, startInstagramRedirect, instagramRedirectUri } from '@/lib/metaSignup';
 import type { ConnectInstagramResult } from '@/types';
 import { WhatsAppBillingSection } from '@/components/channels/WhatsAppBilling';
+import { WhatsAppProfilePreview } from '@/components/channels/WhatsAppProfilePreview';
+import { useAuth } from '@/context/AuthContext';
+import { Switch } from '@/components/ui/switch';
 import { WhatsAppPendingSetup, WhatsAppRecheckButton } from '@/components/channels/WhatsAppPendingSetup';
 
 const VERTICAL_LABELS: Record<string, string> = {
@@ -239,8 +242,9 @@ const toFormValues = (p: WhatsAppBusinessProfile | undefined): BusinessProfileFo
  * Only shown once WhatsApp is connected (there's no phone number to attach
  * a profile to otherwise).
  */
-function WhatsAppBusinessProfileCard() {
+function WhatsAppBusinessProfileCard({ displayName }: { displayName: string | null }) {
   const queryClient = useQueryClient();
+  const { organization } = useAuth();
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const profileQuery = useQuery({
@@ -254,6 +258,22 @@ function WhatsAppBusinessProfileCard() {
   const { register, handleSubmit, control, watch } = useForm<BusinessProfileFormValues>({ values: formValues });
   const { fields, append, remove } = useFieldArray({ control, name: 'websites' });
   const aboutLength = watch('about')?.length ?? 0;
+  const live = watch();
+
+  // Catalogue on the profile (products are made in Meta Commerce Manager).
+  const commerceQuery = useQuery({
+    queryKey: ['whatsapp-commerce'],
+    queryFn: () => api.get<{ catalogVisible: boolean; cartEnabled: boolean } | null>('/channels/whatsapp/commerce'),
+  });
+  const commerceMutation = useMutation({
+    mutationFn: (v: { catalogVisible: boolean; cartEnabled: boolean }) => api.patch<{ catalogVisible: boolean; cartEnabled: boolean }>('/channels/whatsapp/commerce', v),
+    onSuccess: (v) => {
+      queryClient.setQueryData(['whatsapp-commerce'], v);
+      toast.success(v.catalogVisible ? 'Catalogue is now shown on your WhatsApp profile' : 'Catalogue hidden from your WhatsApp profile');
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not change the catalogue setting'),
+  });
+  const commerce = commerceQuery.data ?? { catalogVisible: false, cartEnabled: false };
 
   const saveMutation = useMutation({
     mutationFn: (v: BusinessProfileFormValues) =>
@@ -286,8 +306,8 @@ function WhatsAppBusinessProfileCard() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.type !== 'image/jpeg') {
-      toast.error('WhatsApp only accepts a JPEG photo for the Business Profile');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Use a JPG, PNG or WebP picture');
       return;
     }
     photoMutation.mutate(file);
@@ -308,9 +328,10 @@ function WhatsAppBusinessProfileCard() {
         {profileQuery.isLoading ? (
           <Skeleton className="h-56 rounded-lg" />
         ) : (
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_330px]">
           <form onSubmit={handleSubmit((v) => saveMutation.mutate(v))} className="space-y-4" noValidate>
             <div className="flex items-center gap-4">
-              <input ref={photoInputRef} type="file" accept="image/jpeg" className="hidden" onChange={handlePhotoSelected} />
+              <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handlePhotoSelected} />
               <button
                 type="button"
                 onClick={() => photoInputRef.current?.click()}
@@ -333,7 +354,7 @@ function WhatsAppBusinessProfileCard() {
               </button>
               <div className="text-xs text-muted-foreground">
                 <p className="font-medium text-foreground">Profile photo</p>
-                <p>JPEG only, up to 5 MB — shown as your business's DP inside WhatsApp.</p>
+                <p>JPG, PNG or WebP, up to 5 MB — made square automatically and shown as your business's DP in WhatsApp. A logo works best.</p>
               </div>
             </div>
 
@@ -392,7 +413,48 @@ function WhatsAppBusinessProfileCard() {
                 Save Business Profile
               </Button>
             </div>
+
+            {/* Catalogue */}
+            <div className="rounded-xl border border-border p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Show catalogue on my WhatsApp profile</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Your packages as products with photos and prices — customers browse them from your profile.</p>
+                </div>
+                <Switch
+                  checked={commerce.catalogVisible}
+                  disabled={commerceMutation.isPending || commerceQuery.isLoading}
+                  onCheckedChange={(on) => commerceMutation.mutate({ catalogVisible: on, cartEnabled: on ? commerce.cartEnabled : false })}
+                  aria-label="Show catalogue on WhatsApp profile"
+                />
+              </div>
+              <details className="mt-3 text-xs text-muted-foreground">
+                <summary className="cursor-pointer font-medium text-foreground">How to add products (one-time setup)</summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-4">
+                  <li>Open Meta Commerce Manager → Create catalogue → “Travel” or “Ecommerce”, and add each package as a product (photo, name, price, link to its page).</li>
+                  <li>In WhatsApp Manager → Catalogue, choose that catalogue for this number.</li>
+                  <li>Turn on the switch above. Products can take a few minutes to appear in WhatsApp.</li>
+                </ol>
+                <p className="mt-2">Cover photo and business hours can only be set in the WhatsApp Business phone app — Meta doesn’t allow them through the API.</p>
+              </details>
+            </div>
           </form>
+          <div className="lg:sticky lg:top-4 lg:self-start">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Preview — what customers see</p>
+            <WhatsAppProfilePreview
+              name={organization?.name ?? ''}
+              phone={displayName}
+              photoUrl={profileQuery.data?.profilePictureUrl ?? null}
+              about={live.about ?? ''}
+              description={live.description ?? ''}
+              category={VERTICAL_LABELS[live.vertical] ?? live.vertical ?? ''}
+              address={live.address ?? ''}
+              email={live.email ?? ''}
+              websites={(live.websites ?? []).map((w) => w.value)}
+              catalogVisible={commerce.catalogVisible}
+            />
+          </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -745,7 +807,7 @@ export function ChannelsSettingsPage() {
             disconnecting={disconnectMutation.isPending && disconnectMutation.variables === 'INSTAGRAM'}
           />
           <EmailChannelCard status={email ?? { channel: 'EMAIL', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
-          {whatsapp?.status === 'CONNECTED' && <WhatsAppBusinessProfileCard />}
+          {whatsapp?.status === 'CONNECTED' && <WhatsAppBusinessProfileCard displayName={whatsapp.displayName} />}
           {whatsapp?.status === 'CONNECTED' && <TemplatesCard />}
         </div>
       )}

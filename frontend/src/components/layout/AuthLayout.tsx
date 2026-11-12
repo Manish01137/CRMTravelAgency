@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Plane } from 'lucide-react';
+import { JoinetraLogo } from '@/components/JoinetraLogo';
 
 export function AuthLayout({
   title,
@@ -46,9 +46,9 @@ export function AuthLayout({
                 transition={
                   reduce ? { duration: 0.2 } : { type: 'spring', stiffness: 260, damping: 15 }
                 }
-                className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-pop"
+                className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-pop ring-1 ring-black/5"
               >
-                <Plane className="size-6" />
+                <JoinetraLogo className="size-11" />
               </motion.div>
             </div>
 
