@@ -39,6 +39,8 @@ import {
   CalendarClock,
   Video as VideoIcon,
   Mic,
+  Users,
+  Sticker as StickerIcon,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -89,6 +91,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { VoiceNote, isAudioUrl, isMediaLabel, isStickerMessage } from '@/components/inbox/MediaPlayers';
 import { ContactInfoPanel } from '@/components/inbox/ContactInfoPanel';
 import { VoiceRecorderBar, canRecordVoice } from '@/components/inbox/VoiceRecorder';
+import { GroupsDialog } from '@/components/inbox/GroupsDialog';
+import { StickerPicker } from '@/components/inbox/StickerPicker';
 import { ScheduleDialog, ScheduledListDialog, ScheduledStrip } from '@/components/inbox/ScheduleDialogs';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
 import {
@@ -1379,6 +1383,9 @@ export function InboxPage() {
   const openSchedule = () => setScheduleOpen(true);
 
   // --- Voice notes: record → the server converts to OGG Opus → sent as a WhatsApp voice note
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [stickersOpen, setStickersOpen] = useState(false);
+  useEffect(() => setStickersOpen(false), [selectedId]);
   const [recording, setRecording] = useState(false);
   useEffect(() => setRecording(false), [selectedId]);
   const voiceMutation = useMutation({
@@ -1514,7 +1521,20 @@ export function InboxPage() {
           <div className={cn(compact && 'hidden')}>
             <div className="flex items-center justify-between px-4 pb-2 pt-4">
               <h2 className={cn('text-[22px] font-bold tracking-tight', wa ? 'text-[#111b21]' : 'text-[#000]')}>{wa ? 'Chats' : 'Messages'}</h2>
-              {stageCounts && <span className={cn('text-xs', wa ? 'text-[#667781]' : 'text-[#737373]')}>{stageCounts.total} chats</span>}
+              <div className="flex items-center gap-2">
+                {stageCounts && <span className={cn('text-xs', wa ? 'text-[#667781]' : 'text-[#737373]')}>{stageCounts.total} chats</span>}
+                <button
+                  type="button"
+                  onClick={() => setGroupsOpen(true)}
+                  title="Groups — message many customers at once"
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                    wa ? 'bg-[#e7fce3] text-[#008069] hover:bg-[#d1f4cc]' : 'bg-[#e8f3fe] text-[#0064e0] hover:bg-[#d6eafd]',
+                  )}
+                >
+                  <Users className="size-3.5" /> Groups
+                </button>
+              </div>
             </div>
             <div className="px-3 pb-2">
               <div className="relative">
@@ -2104,6 +2124,17 @@ export function InboxPage() {
 
               {/* Composer */}
               <div className={cn('relative shrink-0 px-2 pb-2 pt-2 sm:px-4', wa ? 'bg-[#f0f2f5]' : 'border-t border-[#efefef] bg-white', selecting && 'hidden')}>
+                {stickersOpen && wa && (
+                  <div className="absolute bottom-full left-2 z-30 mb-2 sm:left-4">
+                    <StickerPicker
+                      onClose={() => setStickersOpen(false)}
+                      onPick={(url) => {
+                        setStickersOpen(false);
+                        sendMutation.mutate({ mediaUrl: url, body: '[Sticker]', replyToMessageId: replyingTo?.id });
+                      }}
+                    />
+                  </div>
+                )}
                 {emojiFor && (
                   <div className="absolute bottom-full left-2 z-30 mb-2 sm:left-4">
                     <EmojiPicker
@@ -2264,6 +2295,12 @@ export function InboxPage() {
                             <FileText className="size-3.5" />
                           </span>
                           Document (PDF)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setStickersOpen(true)}>
+                          <span className="flex size-7 items-center justify-center rounded-full bg-[#ffbc38] text-white">
+                            <StickerIcon className="size-3.5" />
+                          </span>
+                          Sticker
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setShareDialog('location')}>
                           <span className="flex size-7 items-center justify-center rounded-full bg-[#1fa855] text-white">
@@ -2450,6 +2487,8 @@ export function InboxPage() {
           )}
         </div>
       </div>
+
+      <GroupsDialog open={groupsOpen} onOpenChange={setGroupsOpen} channel={channel} onOpenChat={openChat} />
 
       {selectedId && selected && (
         <>

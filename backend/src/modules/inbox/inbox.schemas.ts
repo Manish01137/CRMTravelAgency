@@ -86,7 +86,7 @@ export const sendMessageSchema = z
   })
   // A plain text message still requires real text; an image message can go out
   // with just a caption-less mediaUrl, same as WhatsApp/Instagram themselves allow.
-  .refine((v) => !!v.body?.trim() || !!v.mediaUrl || !!v.location || !!v.contact, { message: 'Message cannot be empty', path: ['body'] });
+  .refine((v) => !!v.body?.trim() || !!v.mediaUrl || !!v.location || !!v.contact || !!v.templateName, { message: 'Message cannot be empty', path: ['body'] });
 
 export const createTemplateSchema = z.object({
   name: z
@@ -123,3 +123,20 @@ export const updateScheduledSchema = z
   .refine((v) => v.sendAt || v.body, { message: 'Nothing to change' });
 export type ScheduleMessageInput = z.infer<typeof scheduleMessageSchema>;
 export type UpdateScheduledInput = z.infer<typeof updateScheduledSchema>;
+
+// --- Contact groups (broadcast lists) ------------------------------------------------
+export const groupIdParam = z.object({ groupId: z.string().uuid('Invalid group id') });
+export const groupMemberParam = z.object({ groupId: z.string().uuid('Invalid group id'), conversationId: z.string().uuid('Invalid conversation id') });
+export const listGroupsQuerySchema = z.object({ channel: z.enum(['WHATSAPP', 'INSTAGRAM']) });
+export const createGroupSchema = z.object({
+  channel: z.enum(['WHATSAPP', 'INSTAGRAM']),
+  name: z.string().trim().min(1, 'Give the group a name').max(80),
+  description: z.string().trim().max(300).optional(),
+  conversationIds: z.array(z.string().uuid()).max(100, 'A group can have up to 100 chats').default([]),
+});
+export const updateGroupSchema = z
+  .object({ name: z.string().trim().min(1, 'Give the group a name').max(80).optional(), description: z.string().trim().max(300).nullable().optional() })
+  .refine((v) => v.name !== undefined || v.description !== undefined, { message: 'Nothing to change' });
+export const groupMembersSchema = z.object({ conversationIds: z.array(z.string().uuid()).min(1, 'Pick at least one chat').max(100) });
+export type CreateGroupInput = z.infer<typeof createGroupSchema>;
+export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;

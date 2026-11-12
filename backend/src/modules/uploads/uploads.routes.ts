@@ -6,6 +6,7 @@ import { BadRequest } from '../../lib/errors';
 import { asyncHandler } from '../../lib/http';
 import { uploadBufferToStorage } from '../../lib/storage';
 import { toOggOpus } from '../../lib/audio';
+import { toWhatsAppSticker } from '../../lib/sticker';
 
 const ALLOWED = new Map<string, string>([
   ['image/jpeg', 'jpg'],
@@ -165,6 +166,34 @@ router.post(
     if (!req.file) throw BadRequest('No recording was uploaded (field name must be "file")');
     const ogg = await toOggOpus(req.file.buffer);
     const url = await uploadBufferToStorage(ogg, 'audio/ogg', 'ogg', `${req.auth!.organizationId}/voice`);
+    res.status(201).json({ url });
+  }),
+);
+
+// --- Stickers (Inbox sticker picker) ------------------------------------------
+// Any picture → a 512×512 WebP sticker under 100 KB (WhatsApp's rules).
+const STICKER_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const uploadSticker = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => (STICKER_TYPES.has(file.mimetype) ? cb(null, true) : cb(new Error('UNSUPPORTED_TYPE'))),
+});
+
+router.post(
+  '/sticker',
+  requireAuth,
+  (req: Request, res: Response, next) => {
+    uploadSticker.single('file')(req, res, (err: unknown) => {
+      if (!err) return next();
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return next(BadRequest('That picture is too large (max 8 MB)'));
+      if (err instanceof Error && err.message === 'UNSUPPORTED_TYPE') return next(BadRequest('Use a PNG, JPG, WebP or GIF picture'));
+      return next(BadRequest('Could not read the picture'));
+    });
+  },
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.file) throw BadRequest('No picture was uploaded (field name must be "file")');
+    const webp = await toWhatsAppSticker(req.file.buffer);
+    const url = await uploadBufferToStorage(webp, 'image/webp', 'webp', `${req.auth!.organizationId}/stickers`);
     res.status(201).json({ url });
   }),
 );

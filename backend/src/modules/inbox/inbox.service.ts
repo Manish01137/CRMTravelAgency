@@ -312,6 +312,8 @@ export async function sendMessage(
     }
 
     let plan: SendPlan;
+    // A template sent without its text (e.g. to a group): the chat shows its text, filled in for this customer.
+    let templateText: string | null = null;
     if (conversation.channel === 'WHATSAPP') {
       let template: Extract<SendPlan, { channel: 'WHATSAPP' }>['template'] = null;
       if (input.templateName) {
@@ -329,6 +331,7 @@ export async function sendMessage(
           params: variables.length === 1 ? [conversation.contactName?.trim() || 'there'] : [],
           paramNames: variables.map((v) => (v.named ? v.key : null)),
         };
+        templateText = variables.length === 1 ? row.bodyText.replace(new RegExp(`\\{\\{\\s*${variables[0].key}\\s*\\}\\}`, 'g'), () => template!.params[0]) : row.bodyText;
       }
       plan = { channel: 'WHATSAPP', creds: decryptJson<WhatsAppCredentials>(connection.credentials), to: conversation.externalContactId, template, replyToWamid };
     } else {
@@ -345,7 +348,7 @@ export async function sendMessage(
       ? locationBody(input.location)
       : input.contact
         ? contactBody([{ name: input.contact.name, phones: [input.contact.phone] }])
-        : input.body || null;
+        : input.body || templateText || null;
     const preview = input.mediaUrl
       ? body && MEDIA_LABEL.test(body.trim())
         ? (richPreview(body) ?? body)
@@ -796,5 +799,20 @@ export async function listSharedItems(organizationId: string, conversationId: st
       links: links.slice(0, 120),
       stats: { received: count('INBOUND'), sent: count('OUTBOUND'), firstMessageAt: first?.createdAt ?? conversation.createdAt },
     };
+  });
+}
+
+// --- Stickers ---------------------------------------------------------------------
+
+/** Stickers this business has received or sent (newest first) — the sticker picker's list. */
+export async function listRecentStickers(organizationId: string) {
+  return withTenant(organizationId, async (tx) => {
+    const rows = await tx.message.findMany({
+      where: { body: '[Sticker]', mediaUrl: { not: null }, deletedAt: null, conversation: { channel: 'WHATSAPP' } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { mediaUrl: true },
+    });
+    return [...new Set(rows.map((r) => r.mediaUrl!))].slice(0, 48);
   });
 }

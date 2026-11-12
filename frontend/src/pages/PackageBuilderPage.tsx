@@ -33,6 +33,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Field } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Card } from '@/components/ui/card';
 import {
   Select,
@@ -1238,6 +1239,27 @@ export function PackageBuilderPage() {
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-96 w-full rounded-lg" />
       </div>
+    );
+  }
+
+  // A deleted package (or an old link): say so — never show a blank form that would save a new one.
+  if (isEdit && pkgQuery.isError) {
+    const gone = pkgQuery.error instanceof ApiError && pkgQuery.error.status === 404;
+    return (
+      <EmptyState
+        title={gone ? 'Package not found' : 'Could not load this package'}
+        description={gone ? 'It may have been deleted by a teammate.' : 'Check your connection and try again.'}
+        action={
+          <div className="flex gap-2">
+            {!gone && (
+              <Button variant="outline" onClick={() => pkgQuery.refetch()}>
+                Try again
+              </Button>
+            )}
+            <Button onClick={() => navigate('/packages')}>Back to packages</Button>
+          </div>
+        }
+      />
     );
   }
 

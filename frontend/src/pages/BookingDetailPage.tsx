@@ -124,7 +124,7 @@ function InvoicesTab({ booking }: { booking: Booking }) {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       toast.success('Invoice generated');
     },
-    onError: () => toast.error('Could not generate invoice'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not generate invoice'),
   });
 
   return (

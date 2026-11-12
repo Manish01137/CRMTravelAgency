@@ -269,9 +269,11 @@ model Organization {
   adPackageMappings         AdPackageMapping[]
   botInteractionLogs        BotInteractionLog[]
 
-  eventLeads        EventLead[]
-  quickReplies      QuickReply[]
-  scheduledMessages ScheduledMessage[]
+  eventLeads          EventLead[]
+  quickReplies        QuickReply[]
+  scheduledMessages   ScheduledMessage[]
+  contactGroups       ContactGroup[]
+  contactGroupMembers ContactGroupMember[]
 
   @@map("organizations")
 }
@@ -379,6 +381,7 @@ model User {
   eventLeadsAdded          EventLead[]        @relation("EventLeadAddedBy")
   quickRepliesCreated      QuickReply[]       @relation("QuickReplyCreatedBy")
   scheduledMessagesCreated ScheduledMessage[] @relation("ScheduledMessageCreatedBy")
+  contactGroupsCreated     ContactGroup[]     @relation("ContactGroupCreatedBy")
   messagesDeleted          Message[]          @relation("MessageDeletedBy")
 
   @@index([organizationId])
@@ -910,12 +913,13 @@ model Conversation {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
-  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  lead              Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  messages          Message[]
-  scheduledMessages ScheduledMessage[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead                Lead?                @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages            Message[]
+  scheduledMessages   ScheduledMessage[]
+  contactGroupMembers ContactGroupMember[]
   // Phase 4 (Bot Flow) — additive back-relation, same pattern Phase 3 used on Lead.
-  botFlowSession    BotFlowSession?
+  botFlowSession      BotFlowSession?
 
   @@unique([organizationId, channel, externalContactId])
   @@index([organizationId])
@@ -1009,6 +1013,44 @@ model ScheduledMessage {
   @@index([conversationId, sendAt])
   @@index([status, sendAt])
   @@map("scheduled_messages")
+}
+
+/// A named list of chats on one channel ("Manali Dec batch") — the team sends
+/// one message to all of them at once; each customer gets it individually
+/// (like WhatsApp broadcast lists). Real WhatsApp groups need Meta's Groups API,
+/// which is limited to Official Business Accounts; Instagram has no groups API.
+model ContactGroup {
+  id             String              @id @default(uuid()) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  channel        ConversationChannel
+  name           String
+  description    String?
+  createdById    String?             @map("created_by_id") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?                @relation("ContactGroupCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  members      ContactGroupMember[]
+
+  @@index([organizationId, channel])
+  @@map("contact_groups")
+}
+
+model ContactGroupMember {
+  groupId        String   @map("group_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  addedAt        DateTime @default(now()) @map("added_at")
+
+  group        ContactGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, conversationId])
+  @@index([conversationId])
+  @@index([organizationId])
+  @@map("contact_group_members")
 }
 
 /// WhatsApp message template (needed to message a contact outside the 24h

@@ -1085,3 +1085,23 @@ export interface ScheduledMessage {
   createdAt: string;
   createdBy: { id: string; name: string } | null;
 }
+
+/** A contact group (broadcast list) in the Inbox. */
+export interface ContactGroupSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  channel: ConversationChannel;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; name: string } | null;
+}
+export interface ContactGroupDetail extends Omit<ContactGroupSummary, 'memberCount'> {
+  members: (Pick<Conversation, 'id' | 'channel' | 'contactName' | 'contactPhone' | 'contactAvatarUrl' | 'externalContactId' | 'lastInboundAt'> & { addedAt: string })[];
+}
+export interface GroupSendResult {
+  sent: number;
+  failed: number;
+  results: { conversationId: string; name: string; sent: boolean; error?: string }[];
+}

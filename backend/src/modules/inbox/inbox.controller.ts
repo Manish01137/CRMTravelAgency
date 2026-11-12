@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import * as service from './inbox.service';
-import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery, ReactInput, StarInput, PinInput, BulkMessagesInput, ForwardInput, ResolveLocationInput, ScheduleMessageInput, UpdateScheduledInput } from './inbox.schemas';
+import type { BotControlInput, CreateTemplateInput, ListConversationsQuery, SendMessageInput, SetFavoriteInput, StageCountsQuery, ListMessagesQuery, ReactInput, StarInput, PinInput, BulkMessagesInput, ForwardInput, ResolveLocationInput, ScheduleMessageInput, UpdateScheduledInput, CreateGroupInput, UpdateGroupInput } from './inbox.schemas';
+import * as groups from './groups.service';
 import * as scheduled from './scheduled.service';
 import { controlChatBot, getChatBotState } from '../bot-flow/bot-flow.control';
 import { assertConversationVisible, conversationScope, viewerOf } from '../../lib/visibility';
@@ -121,6 +122,53 @@ export async function cancelScheduled(req: Request, res: Response): Promise<void
 export async function sendScheduledNow(req: Request, res: Response): Promise<void> {
   await checkAccess(req);
   res.json(await scheduled.sendScheduledNow(req.auth!.organizationId, req.params.id, req.params.scheduledId));
+}
+
+// --- Contact groups (broadcast lists) ---
+const scopeOf = (req: Request) => conversationScope(viewerOf(req));
+const editorOf = (req: Request) => ({ userId: req.auth!.userId, isAdmin: req.auth!.role === 'ADMIN' });
+
+export async function listGroups(req: Request, res: Response): Promise<void> {
+  const { channel } = req.query as { channel: 'WHATSAPP' | 'INSTAGRAM' };
+  res.json(await groups.listGroups(req.auth!.organizationId, channel, scopeOf(req)));
+}
+
+export async function getGroup(req: Request, res: Response): Promise<void> {
+  res.json(await groups.getGroup(req.auth!.organizationId, req.params.groupId, scopeOf(req)));
+}
+
+export async function createGroup(req: Request, res: Response): Promise<void> {
+  res.status(201).json(await groups.createGroup(req.auth!.organizationId, req.auth!.userId, req.body as CreateGroupInput, scopeOf(req)));
+}
+
+export async function updateGroup(req: Request, res: Response): Promise<void> {
+  res.json(await groups.updateGroup(req.auth!.organizationId, req.params.groupId, req.body as UpdateGroupInput, scopeOf(req), editorOf(req)));
+}
+
+export async function deleteGroup(req: Request, res: Response): Promise<void> {
+  res.json(await groups.deleteGroup(req.auth!.organizationId, req.params.groupId, editorOf(req)));
+}
+
+export async function addGroupMembers(req: Request, res: Response): Promise<void> {
+  const { conversationIds } = req.body as { conversationIds: string[] };
+  res.json(await groups.addMembers(req.auth!.organizationId, req.params.groupId, conversationIds, scopeOf(req)));
+}
+
+export async function removeGroupMember(req: Request, res: Response): Promise<void> {
+  res.json(await groups.removeMember(req.auth!.organizationId, req.params.groupId, req.params.conversationId, scopeOf(req)));
+}
+
+export async function sendToGroup(req: Request, res: Response): Promise<void> {
+  res.json(await groups.sendToGroup(req.auth!.organizationId, req.params.groupId, req.auth!.userId, req.body as SendMessageInput, scopeOf(req)));
+}
+
+export async function groupsOfChat(req: Request, res: Response): Promise<void> {
+  await checkAccess(req);
+  res.json(await groups.groupsOfChat(req.auth!.organizationId, req.params.id));
+}
+
+export async function listStickers(req: Request, res: Response): Promise<void> {
+  res.json(await service.listRecentStickers(req.auth!.organizationId));
 }
 
 export async function resolveLocation(req: Request, res: Response): Promise<void> {
