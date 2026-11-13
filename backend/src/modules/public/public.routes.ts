@@ -153,6 +153,9 @@ router.get(
         brandSecondaryColor: true,
         hostLinks: true,
         contactPhone: true,
+        contactEmail: true,
+        secondaryPhone: true,
+        address: true,
         // Same bank details already printed on invoices (Organization's tax-invoice
         // fields) — reused here so the PDF brochure's payment section can show a
         // real bank transfer option instead of a fabricated one. All optional:
@@ -170,23 +173,54 @@ router.get(
     const rawWhatsapp = org?.contactPhone ?? pkg.contactNumber ?? null;
     const whatsappNumber = rawWhatsapp ? rawWhatsapp.replace(/\D/g, '') || null : null;
     const { hostLinks: _hl, contactPhone: _cp, ...publicOrg } = org ?? {};
+    // Social / website links (the Adventure brochure's icon row and contact page).
+    const socialLinks = links.filter((l) => /^https?:\/\//i.test(l.url)).slice(0, 8).map((l) => ({ label: l.label, url: l.url }));
+    const phones = [org?.contactPhone, org?.secondaryPhone].filter((p): p is string => !!p?.trim());
 
     // Customer reviews for the brochure's "Reviews" page — org-wide testimonials
     // (same source as the Host Page), not package-specific; there's no
     // per-package review model. Capped at 6 to match the brochure's fixed grid.
-    const reviews = await withTenant(pkg.organizationId, (tx) =>
-      tx.hostReview.findMany({
+    const { reviews, departures } = await withTenant(pkg.organizationId, async (tx) => {
+      const reviews = await tx.hostReview.findMany({
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         take: 6,
         select: { id: true, reviewerName: true, photoUrl: true, quote: true, rating: true },
-      }),
-    );
+      });
+      // Upcoming live departures of this package — the Adventure brochure's batch dates.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const batches = await tx.batch.findMany({
+        where: { packageId: pkg.id, status: 'LIVE', departureDate: { gte: today } },
+        orderBy: { departureDate: 'asc' },
+        take: 52,
+        select: { id: true, departureDate: true, returnDate: true, capacity: true },
+      });
+      const booked = batches.length
+        ? await tx.booking.groupBy({
+            by: ['batchId'],
+            where: { batchId: { in: batches.map((b) => b.id) }, status: { not: 'CANCELLED' } },
+            _sum: { travelerCount: true },
+            _count: { _all: true },
+          })
+        : [];
+      const departures = batches.map((b) => ({
+        departureDate: b.departureDate.toISOString().slice(0, 10),
+        returnDate: b.returnDate?.toISOString().slice(0, 10) ?? null,
+        // Seats taken: travellers on its bookings (a booking without a count is one seat).
+        full: (() => {
+          const g = booked.find((x) => x.batchId === b.id);
+          return Math.max(g?._sum.travelerCount ?? 0, g?._count._all ?? 0) >= b.capacity;
+        })(),
+      }));
+      return { reviews, departures };
+    });
 
     const { organizationId: _orgId, ...publicPkg } = pkg;
     res.json({
       package: publicPkg,
-      organization: org ? { ...publicOrg, instagramUrl, whatsappNumber } : null,
+      organization: org ? { ...publicOrg, instagramUrl, whatsappNumber, socialLinks, phones } : null,
       reviews,
+      departures,
     });
   }),
 );

@@ -1,0 +1,12 @@
+{
+  "name": "package-brochures",
+  "private": true,
+  "description": "Travel package brochures (1080×1350 pages) — one template, one data file per trip.",
+  "scripts": {
+    "export": "node export.js",
+    "export:all": "node export.js all"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

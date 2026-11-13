@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Package Brochures</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Poppins',sans-serif;background:#f3f6fb;color:#1c1c1c;padding:48px 20px}
+  main{max-width:880px;margin:0 auto}
+  h1{font-family:'Oswald',sans-serif;color:#08458c;font-size:44px;text-transform:uppercase}
+  p.lead{color:#4a4a4a;margin-top:4px}
+  ul{list-style:none;margin-top:28px;display:grid;gap:14px}
+  li a{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#fff;border-radius:14px;padding:18px 22px;
+    text-decoration:none;color:inherit;box-shadow:0 2px 10px rgba(0,0,0,.06);border:2px solid transparent;transition:border-color .15s}
+  li a:hover{border-color:#2f8fe0}
+  .t{font-weight:600;font-size:20px}
+  .m{color:#4a4a4a;font-size:14px}
+  .go{flex:none;background:#0b5cb5;color:#fff;border-radius:999px;padding:6px 16px;font-size:14px;font-weight:600}
+  .err{color:#e23b3b;font-size:14px}
+  code{background:#e8eef7;padding:1px 6px;border-radius:4px}
+  footer{margin-top:28px;color:#4a4a4a;font-size:14px;line-height:1.6}
+</style>
+</head>
+<body>
+<main>
+  <h1>Package brochures</h1>
+  <p class="lead" id="brand"></p>
+  <ul id="list"></ul>
+  <footer>
+    Open a brochure, then <b>Print → Save as PDF</b> (Margins: None, Background graphics: on) — or run
+    <code>node export.js &lt;slug&gt;</code> / <code>node export.js all</code> to save <code>pdf/&lt;slug&gt;.pdf</code>.
+  </footer>
+</main>
+<script src="brand.js"></script>
+<script src="packages/list.js"></script>
+<script>
+  document.getElementById("brand").textContent = `${window.BRAND.name} · ${window.PACKAGE_LIST.length} package${window.PACKAGE_LIST.length === 1 ? "" : "s"}`;
+  const list = document.getElementById("list");
+  // Each package file sets window.PACKAGE — load them one at a time to read their titles.
+  (async () => {
+    for (const slug of window.PACKAGE_LIST) {
+      const li = document.createElement("li");
+      list.appendChild(li);
+      try {
+        await new Promise((ok, fail) => {
+          const s = document.createElement("script");
+          s.src = `packages/${slug}.js`; s.onload = ok; s.onerror = () => fail(new Error(`packages/${slug}.js is missing`));
+          document.head.appendChild(s);
+        });
+        const P = window.PACKAGE;
+        li.innerHTML = `<a href="template.html?pkg=${slug}"><span><span class="t">${P.title}</span><br>
+          <span class="m">${P.route} · ${P.duration} · ${P.days.length} days · ${P.batches.length} batches</span></span>
+          <span class="go">Open brochure</span></a>`;
+      } catch (e) {
+        li.innerHTML = `<a><span class="err">${slug}: ${e.message}</span></a>`;
+      }
+    }
+  })();
+</script>
+</body>
+</html>

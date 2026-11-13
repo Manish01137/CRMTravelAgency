@@ -559,7 +559,7 @@ model Package {
   isActive       Boolean @default(true) @map("is_active")
   showOnLinktree Boolean @default(false) @map("show_on_linktree")
   showOnHostpage Boolean @default(false) @map("show_on_hostpage")
-  pdfTemplateId  String  @default("signature") @map("pdf_template_id") // fixed — single "Signature" PDF design for every package
+  pdfTemplateId  String  @default("signature") @map("pdf_template_id") // brochure design: "signature" | "adventure"
 
   // --- Premium builder fields (Basics) ---
   code                String? // package code, auto-generated if blank
@@ -579,6 +579,9 @@ model Package {
   whatsappDescription String? @map("whatsapp_description")
   contactNumber       String? @map("contact_number")
   contactEmail        String? @map("contact_email")
+  // Adventure brochure: the trip's start/end ("Delhi to Delhi") and the amount that books a seat.
+  route               String?
+  bookingAmount       Int?    @map("booking_amount")
 
   // --- Itinerary / logistics / policies / faqs / extras ---
   itinerary          Json    @default("[]") // {day, title, description}[]

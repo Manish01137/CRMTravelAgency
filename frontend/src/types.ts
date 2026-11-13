@@ -245,8 +245,8 @@ export type InvoiceStatus = 'DRAFT' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELLED';
 export type BillCategory = 'HOTEL' | 'FLIGHT' | 'TRANSPORT' | 'ACTIVITY' | 'VISA' | 'FOOD' | 'OTHER';
 export type BillStatus = 'UNPAID' | 'PAID';
 
-/** The package PDF brochure has a single fixed design — every package uses it. */
-export type PdfTemplateId = 'signature';
+/** The package PDF brochure design: "signature" (yellow-bordered book) or "adventure" (1080×1350 group-trip brochure). */
+export type PdfTemplateId = 'signature' | 'adventure';
 
 /** Which "Signature" template color variant a package renders in — set only by picking a template in the builder, never an independent field. */
 export type SignatureTheme = 'SUNRISE' | 'OCEAN' | 'HERITAGE';
@@ -274,6 +274,9 @@ export interface PackageItineraryDay {
   meals?: string;
   images?: string[];
   activityBlocks?: DayActivityBlock[];
+  /** Adventure brochure: the day's distance ("225 Kms") and its NOTE box (one note per line). */
+  distance?: string;
+  notes?: string;
 }
 export interface PackageFaq {
   question: string;
@@ -306,6 +309,9 @@ export interface TravelPackage {
   whatsappDescription: string | null;
   contactNumber: string | null;
   contactEmail: string | null;
+  /** Adventure brochure: "Delhi to Delhi", and the amount that books a seat. */
+  route: string | null;
+  bookingAmount: number | null;
   itinerary: PackageItineraryDay[];
   thingsToCarry: string | null;
   pickupPoints: string | null;

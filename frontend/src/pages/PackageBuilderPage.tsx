@@ -78,6 +78,8 @@ export interface Values {
   description: string;
   contactNumber: string;
   contactEmail: string;
+  route: string;
+  bookingAmount: string;
   itinerary: {
     day: string;
     title: string;
@@ -88,6 +90,9 @@ export interface Values {
     meals: string;
     images: string[];
     activityBlocks: { name: string; description: string; imageUrl: string }[];
+    /** Adventure brochure: "225 Kms" and the day's NOTE box (one per line). */
+    distance?: string;
+    notes?: string;
   }[];
   inclusions: string;
   exclusions: string;
@@ -219,6 +224,8 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
     description: pkg?.description ?? '',
     contactNumber: pkg?.contactNumber ?? '',
     contactEmail: pkg?.contactEmail ?? '',
+    route: pkg?.route ?? '',
+    bookingAmount: pkg?.bookingAmount != null ? String(pkg.bookingAmount) : '',
     itinerary: (pkg?.itinerary ?? []).map((d) => ({
       day: String(d.day),
       title: d.title,
@@ -233,6 +240,8 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
         description: b.description ?? '',
         imageUrl: b.imageUrl ?? '',
       })),
+      distance: d.distance ?? '',
+      notes: d.notes ?? '',
     })),
     inclusions: pkg?.inclusions ?? '',
     exclusions: pkg?.exclusions ?? '',
@@ -289,6 +298,8 @@ function toPayload(v: Values): Record<string, unknown> {
     description: v.description.trim() || null,
     contactNumber: v.contactNumber.trim() || null,
     contactEmail: v.contactEmail.trim() || null,
+    route: v.route.trim() || null,
+    bookingAmount: num(v.bookingAmount),
     // A day is kept if it has ANY content — picking sightseeing (or a hotel,
     // photo, plan) before typing a title used to drop the whole day silently,
     // so it never reached the package page or PDF. Untitled days get "Day N".
@@ -314,6 +325,8 @@ function toPayload(v: Values): Record<string, unknown> {
             description: b.description.trim() || undefined,
             imageUrl: b.imageUrl.trim() || undefined,
           })),
+        distance: d.distance?.trim() || undefined,
+        notes: d.notes?.trim() || undefined,
       })),
     inclusions: v.inclusions.trim() || null,
     exclusions: v.exclusions.trim() || null,
@@ -388,6 +401,84 @@ function CategoryChips({ control }: { control: Control<Values> }) {
 
 /* ------------------------------- step content ------------------------------ */
 
+/** The two brochure designs, each with a small drawn preview. */
+function BrochureDesignPicker({ value, onChange }: { value: PdfTemplateId; onChange: (v: PdfTemplateId) => void }) {
+  const designs: { id: PdfTemplateId; name: string; text: string; preview: ReactNode }[] = [
+    {
+      id: 'signature',
+      name: 'Signature',
+      text: 'Bordered booklet — clean pages, prices table, colour themes.',
+      preview: (
+        <div className="flex h-full flex-col items-center gap-1 rounded-[6px] border-[5px] border-[#FFC83D] bg-white p-1.5">
+          <span className="size-3 rounded-full bg-[#1E6FD9]/20 ring-1 ring-[#1E6FD9]" />
+          <span className="h-1.5 w-12 rounded-sm bg-[#1E3A8A]" />
+          <span className="h-2 w-14 rounded-full bg-[#1E6FD9]" />
+          <span className="mt-0.5 w-full flex-1 rounded-md bg-gradient-to-br from-sky-200 to-emerald-200" />
+        </div>
+      ),
+    },
+    {
+      id: 'adventure',
+      name: 'Adventure',
+      text: 'Group-trip brochure — big gold title, day-by-day photo pages, batch dates, booking & handbook.',
+      preview: (
+        <div className="relative h-full overflow-hidden rounded-[6px] bg-gradient-to-b from-[#3d9be9] via-[#cfe7f7] to-[#e4f3c4]">
+          <div className="flex justify-around">
+            {['#2a6fdb', '#fff', '#e23b3b', '#2fb44a', '#ffd21f'].map((c) => (
+              <span key={c} className="h-2 w-2" style={{ background: c }} />
+            ))}
+          </div>
+          <p className="mt-1.5 text-center font-[Georgia,serif] text-[10px] font-black leading-none text-[#ffd75a] drop-shadow">TRIP</p>
+          <span className="mx-auto mt-1 block h-1.5 w-6 rounded-full bg-[#0b5cb5]" />
+          <div className="absolute bottom-2 left-1.5 right-3 flex h-2.5">
+            <span className="w-4 rounded-l-sm bg-[#ffd21f]" />
+            <span className="flex-1 bg-gradient-to-r from-[#08458c] to-[#2f8fe0]" />
+          </div>
+        </div>
+      ),
+    },
+  ];
+  return (
+    <div className="mb-4 rounded-xl border border-border bg-card p-3.5">
+      <p className="text-sm font-semibold text-foreground">Brochure design</p>
+      <p className="text-xs text-muted-foreground">How this package’s PDF looks. Fill the details and photos below — the brochure builds itself in this design.</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {designs.map((d) => {
+          const on = value === d.id;
+          return (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onChange(d.id)}
+              aria-pressed={on}
+              className={cn(
+                'flex items-center gap-3 rounded-xl border-2 p-2.5 text-left transition-colors',
+                on ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40',
+              )}
+            >
+              <span className="h-[86px] w-[68px] shrink-0 shadow-sm">{d.preview}</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                  {d.name}
+                  {on && <CheckCircle2 className="size-4 text-primary" />}
+                </span>
+                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{d.text}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {value === 'adventure' && (
+        <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          <b className="text-foreground">For this design:</b> banner = cover photo · gallery = photo pages · description = the About page (put place names in **double stars** to highlight them) ·
+          highlights = “Why travel with us” · each day’s photo, distance and notes · Route and Booking amount (above) · batch dates come from this package’s live Events ·
+          things to carry (“Clothing: jacket, gloves”) and terms (“Code of conduct:” then lines) become their own pages.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
   const { register, control, formState: { errors } } = form;
   const pricing = useFieldArray({ control, name: 'pricingOptions' });
@@ -440,9 +531,17 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
         </Field>
       </div>
 
-      <Field label="Currency" htmlFor="priceCurrency" className="sm:max-w-[120px]">
-        <Input id="priceCurrency" maxLength={3} className="uppercase" {...register('priceCurrency')} />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-[120px_1fr_1fr]">
+        <Field label="Currency" htmlFor="priceCurrency">
+          <Input id="priceCurrency" maxLength={3} className="uppercase" {...register('priceCurrency')} />
+        </Field>
+        <Field label="Route" htmlFor="route" hint="Where the trip starts and ends — shown on the brochure cover.">
+          <Input id="route" maxLength={120} placeholder="Delhi to Delhi" {...register('route')} />
+        </Field>
+        <Field label="Booking amount" htmlFor="bookingAmount" hint="Advance that books a seat (“Book now @ ₹5,000”).">
+          <Input id="bookingAmount" type="number" min={0} placeholder="5000" {...register('bookingAmount')} />
+        </Field>
+      </div>
 
       <div>
         <SectionLabel hint="Add any number of labelled prices — e.g. Single / Double / Triple sharing, Child With Bed, Extra Bed. Tag any as Peak season (Christmas/New Year etc.) to show them as a separate pricing block on the brochure.">
@@ -696,6 +795,14 @@ function ItineraryStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
               <div className="grid gap-2 sm:grid-cols-2">
                 <Input placeholder="Activities — rafting, bonfire, trek… (comma separated)" {...register(`itinerary.${i}.activities`)} />
                 <Input placeholder="Meals — e.g. Breakfast, Dinner" {...register(`itinerary.${i}.meals`)} />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-[200px_1fr]">
+                <Input placeholder="Distance — e.g. 225 Kms" {...register(`itinerary.${i}.distance`)} />
+                <Textarea
+                  rows={2}
+                  placeholder="Notes for this day (one per line) — e.g. Standard check-in time is 1:00 PM"
+                  {...register(`itinerary.${i}.notes`)}
+                />
               </div>
               {/* Day photos → the collage on this day's brochure page */}
               <Controller
@@ -1323,6 +1430,15 @@ export function PackageBuilderPage() {
           </button>
         ))}
       </div>
+
+      {/* Brochure design: how this package's PDF looks */}
+      {step === 0 && (
+        <Controller
+          control={form.control}
+          name="pdfTemplateId"
+          render={({ field }) => <BrochureDesignPicker value={field.value} onChange={field.onChange} />}
+        />
+      )}
 
       {/* Optional: start from a premium template — a simple dropdown on Basics */}
       {step === 0 && (

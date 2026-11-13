@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/format';
 import { BODY_FONT, DISPLAY_FONT, HAIRLINE, INK, MUTED, THEME_VARS } from '@/lib/signatureTheme';
+import { AdventureBrochure, type AdventureDeparture, type AdventureReview } from '@/components/brochure/AdventureBrochure';
+import { ADVENTURE_FONT_FAMILIES, ADVENTURE_FONTS_HREF } from '@/components/brochure/adventureCss';
 
 /**
  * JOINETRA — the PDF download of a package: fixed 800×1130 "book" pages with
@@ -42,10 +44,16 @@ interface BrochureOrg {
   bankName: string | null;
   bankAccountNumber: string | null;
   ifscCode: string | null;
+  contactEmail?: string | null;
+  address?: string | null;
+  phones?: string[];
+  socialLinks?: { label: string; url: string }[];
 }
 interface PublicBrochure {
   package: TravelPackage;
   organization: BrochureOrg | null;
+  reviews?: AdventureReview[];
+  departures?: AdventureDeparture[];
 }
 
 // --- Small text/data helpers --------------------------------------------------
@@ -182,15 +190,19 @@ const BROCHURE_FONTS = ['Poppins', 'Baloo 2', 'Caveat', 'Figtree'];
  * labels like "3 NIGHTS" wrap. Latin + Latin Extended only (the latter has
  * ₹); fetched once per visit.
  */
-let brochureFontCss: Promise<string | undefined> | null = null;
-function loadBrochureFontCss(): Promise<string | undefined> {
-  brochureFontCss ??= (async () => {
-    const link = document.querySelector<HTMLLinkElement>('link[href*="fonts.googleapis.com/css"]');
-    if (!link) return undefined;
-    const css = await (await fetch(link.href)).text();
+const brochureFontCss = new Map<string, Promise<string | undefined>>();
+/** `href`: the design's own Google Fonts stylesheet (default: the app's, which the Signature design uses). */
+function loadBrochureFontCss(href?: string, families: string[] = BROCHURE_FONTS): Promise<string | undefined> {
+  const key = href ?? 'app';
+  let pending = brochureFontCss.get(key);
+  if (pending) return pending;
+  pending = (async () => {
+    const linkHref = href ?? document.querySelector<HTMLLinkElement>('link[href*="fonts.googleapis.com/css"]')?.href;
+    if (!linkHref) return undefined;
+    const css = await (await fetch(linkHref)).text();
     const faces = (css.match(/@font-face\s*{[^}]*}/g) ?? []).filter(
       (face) =>
-        BROCHURE_FONTS.some((f) => face.includes(`font-family: '${f}'`)) &&
+        families.some((f) => face.includes(`font-family: '${f}'`)) &&
         /unicode-range:[^;]*(U\+0000-00FF|U\+0100-02BA)/.test(face),
     );
     const embedded = await Promise.all(
@@ -204,10 +216,11 @@ function loadBrochureFontCss(): Promise<string | undefined> {
     return embedded.join('\n');
   })().catch((err) => {
     console.warn('Brochure fonts could not be embedded for the PDF:', err);
-    brochureFontCss = null; // try again next time
+    brochureFontCss.delete(key); // try again next time
     return undefined;
   });
-  return brochureFontCss;
+  brochureFontCss.set(key, pending);
+  return pending;
 }
 
 /** Turns "Nagpur Getaway ✈ 2026" into a safe download filename. */
@@ -262,23 +275,25 @@ export function PackageBrochurePage() {
   async function downloadPdf() {
     const container = pagesRef.current;
     if (!container || !pkg) return;
-    const pages = Array.from(container.querySelectorAll<HTMLElement>('.pbx-page'));
+    const adventure = pkg.pdfTemplateId === 'adventure';
+    const pages = Array.from(container.querySelectorAll<HTMLElement>(adventure ? '[data-pdf-page]' : '.pbx-page'));
     if (pages.length === 0) return;
 
     setExporting(true);
     setProgress({ done: 0, total: pages.length });
     const skipped: string[] = [];
     try {
-      const fontCss = await loadBrochureFontCss();
+      const fontCss = adventure ? await loadBrochureFontCss(ADVENTURE_FONTS_HREF, ADVENTURE_FONT_FAMILIES) : await loadBrochureFontCss();
       let doc: jsPDF | null = null;
       for (let i = 0; i < pages.length; i += 1) {
         const page = pages[i];
-        const label = page.querySelector('.pbx-page-label')?.textContent || `page ${i + 1}`;
+        const label = page.dataset.name || page.querySelector('.pbx-page-label')?.textContent || `page ${i + 1}`;
         const width = page.offsetWidth;
         const height = page.offsetHeight;
         try {
           const canvas = await domToCanvas(page, {
-            scale: exportScale(width, height),
+            // The Adventure design's pages are bigger (1080×1350) — 2× keeps them sharp without a huge file.
+            scale: adventure ? 2 : exportScale(width, height),
             width,
             height,
             backgroundColor: '#ffffff',
@@ -337,6 +352,37 @@ export function PackageBrochurePage() {
         <Button variant="outline" className="mt-4" onClick={() => navigate('/packages')}>
           <ArrowLeft /> Back
         </Button>
+      </div>
+    );
+  }
+
+  if (pkg.pdfTemplateId === 'adventure') {
+    return (
+      <div style={{ minHeight: '100dvh', background: '#2b2b2b', padding: '28px 0 80px' }}>
+        <div className="mx-auto mb-6 flex max-w-[1080px] items-center justify-between px-4 print:hidden">
+          <Button variant="ghost" className="text-white hover:bg-white/10 hover:text-white" disabled={exporting} onClick={() => navigate(-1)}>
+            <ArrowLeft /> Back
+          </Button>
+          <Button onClick={downloadPdf} disabled={exporting}>
+            {exporting ? (
+              <>
+                <Loader2 className="animate-spin" /> Preparing… {progress.done}/{progress.total}
+              </>
+            ) : (
+              <>
+                <Download /> Download PDF
+              </>
+            )}
+          </Button>
+        </div>
+        <AdventureBrochure
+          ref={pagesRef}
+          pkg={pkg}
+          org={org ?? null}
+          reviews={pkgQuery.data?.reviews ?? []}
+          departures={pkgQuery.data?.departures ?? []}
+          bookingUrl={`${window.location.origin}/p/${pkg.id}`}
+        />
       </div>
     );
   }

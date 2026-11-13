@@ -26,6 +26,9 @@ const itineraryDaySchema = z.object({
   activities: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   meals: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
   images: z.array(z.string().url().max(2000)).max(6).optional(), // photo collage on the day's PDF page
+  // Adventure brochure: the day's distance ("225 Kms") and its NOTE box (one note per line).
+  distance: z.preprocess(emptyToUndefined, z.string().trim().max(80).optional()),
+  notes: z.preprocess(emptyToUndefined, z.string().max(3000).optional()),
   // Activity blocks pulled from the Sightseeing library — INDEPENDENT COPIES.
   // Editing these here never writes back to the Sightseeing entry.
   activityBlocks: z
@@ -47,10 +50,9 @@ const categoriesSchema = z.array(z.string().trim().min(1).max(60)).max(20);
 const highlightsSchema = z.array(z.string().trim().min(1).max(200)).max(30);
 const gallerySchema = z.array(z.string().url().max(2000)).max(30);
 
-// The package PDF brochure has a single fixed design — "Signature" — used for
-// every package. This field is kept (rather than removed) so existing rows
-// stay valid; the renderer no longer branches on it.
-const PDF_TEMPLATES = ['signature'] as const;
+// The package PDF brochure design, chosen in the builder: "signature" (the
+// yellow-bordered book) or "adventure" (the 1080×1350 group-trip brochure).
+const PDF_TEMPLATES = ['signature', 'adventure'] as const;
 
 // Which "Signature" template color variant a package renders in — set only
 // by the builder's template picker (Basics step), never an independent field.
@@ -79,6 +81,8 @@ const builderFields = {
   whatsappDescription: optText(2000),
   contactNumber: optText(40),
   contactEmail: z.preprocess(emptyToUndefined, z.string().email('Enter a valid email').max(200).optional()),
+  route: optText(120),
+  bookingAmount: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
   itinerary: z.array(itineraryDaySchema).max(200).default([]),
   thingsToCarry: optText(3000),
   pickupPoints: optText(3000),
@@ -140,6 +144,8 @@ export const updatePackageSchema = z
     whatsappDescription: nullText(2000),
     contactNumber: nullText(40),
     contactEmail: z.preprocess(emptyToNull, z.string().email().max(200).nullable()).optional(),
+    route: nullText(120),
+    bookingAmount: z.preprocess(emptyToNull, z.coerce.number().int().nonnegative().max(1_000_000_000).nullable()).optional(),
     itinerary: z.array(itineraryDaySchema).max(200).optional(),
     thingsToCarry: nullText(3000),
     pickupPoints: nullText(3000),

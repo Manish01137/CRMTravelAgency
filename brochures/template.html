@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Package Brochure</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=Yellowtail&family=Cinzel:wght@700;900&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+<!--
+  ============================================================
+  TRAVEL PACKAGE BROCHURE TEMPLATE  (CSS + renderer only)
+  - Open as template.html?pkg=<slug>  → loads brand.js and packages/<slug>.js
+  - Every page is 1080 x 1350 px. Export: `node export.js <slug>` (or Chrome →
+    Print → Save as PDF, Margins: None, Background graphics ON).
+  - Text formatting inside any string:  **word**  -> blue bold highlight
+                                         __word__  -> italic bold (used in notes)
+  ============================================================
+-->
+<style>
+:root{
+  --blue:#0b5cb5; --blue-dark:#08458c; --blue-deep:#06306a; --sky:#2f8fe0;
+  --yellow:#ffd21f; --yellow-2:#ffe45c; --orange:#f26a1b; --red:#e23b3b; --green:#2fb44a;
+  --ink:#1c1c1c; --muted:#4a4a4a;
+  --brown:#6b3a10;
+  --pw:1080px; --ph:1350px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#2b2b2b}
+body{font-family:'Poppins',sans-serif;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:30px;padding:30px 0}
+.page{width:var(--pw);height:var(--ph);position:relative;overflow:hidden;background:#fff;flex:none}
+b.hl{color:var(--blue);font-weight:600}
+.cond{font-family:'Oswald','Arial Narrow',Impact,sans-serif;text-transform:uppercase;letter-spacing:.5px}
+
+/* ---------- shared backgrounds ---------- */
+.bg-sky{background:
+  linear-gradient(180deg,#3d9be9 0%,#8cc8f2 14%,#e8f4fb 34%,#f6fbef 62%,#e4f3c4 100%)}
+.bg-paper{background:
+  radial-gradient(ellipse at 30% 20%,#ffffff 0%,#f1f1ef 60%,#e6e6e3 100%)}
+.bg-light{background:linear-gradient(160deg,#fdfdf6 0%,#f4f9e6 45%,#e6f3d6 100%)}
+.bg-blue{background:
+  radial-gradient(circle at 80% 15%,rgba(255,255,255,.12) 0 120px,transparent 121px),
+  linear-gradient(170deg,#1b6fd6 0%,#0f5fc4 40%,#118b8f 78%,#2fbf4e 100%)}
+.mountains{position:absolute;left:0;right:0;bottom:0;height:420px;pointer-events:none;opacity:.55}
+.logo-badge{position:absolute;top:34px;right:40px;width:62px;height:62px;border-radius:50%;
+  background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;
+  font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-size:20px;color:var(--sky);overflow:hidden;z-index:5}
+.logo-badge img{width:100%;height:100%;object-fit:contain}
+
+/* placeholder photo when no image url given */
+.ph-img{background:
+  linear-gradient(180deg,#7fb6e6 0%,#bfdcf3 45%,#ffffff 46%,#e9eef3 60%,#9fb0bf 100%);position:relative}
+.ph-img::after{content:"ADD PHOTO";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:28px;color:rgba(6,48,106,.35);letter-spacing:4px}
+.ph-img.has::after{display:none}
+.ph-img img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ---------- COVER ---------- */
+.cover .photo{position:absolute;inset:0}
+.cover .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,40,90,.55) 0%,rgba(0,0,0,0) 35%,rgba(0,0,0,0) 60%,rgba(0,0,0,.35) 100%)}
+.cover .flags{position:absolute;top:0;left:0;right:0;height:90px;display:flex;justify-content:space-around}
+.cover .flags span{width:70px;height:80px;clip-path:polygon(0 0,100% 0,85% 100%,10% 90%);opacity:.9}
+.cover .title-wrap{position:absolute;top:150px;left:0;right:0;text-align:center;color:#fff}
+.cover .route{font-family:'Montserrat',Arial,sans-serif;font-weight:800;font-size:30px;letter-spacing:1px;display:inline-flex;align-items:center;gap:14px}
+.cover .route::after{content:"";width:120px;height:2px;background:#fff}
+.cover h1{font-family:'Cinzel',serif;font-weight:900;font-size:118px;line-height:1;
+  background:linear-gradient(180deg,#fff6c9 0%,#ffd75a 45%,#e7a91c 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 4px 6px rgba(0,0,0,.45));margin-top:6px}
+.cover .dur{display:inline-block;margin-top:10px;margin-left:520px;background:var(--blue);color:#fff;font-family:'Montserrat',Arial,sans-serif;font-weight:800;
+  font-size:22px;padding:4px 18px;border-radius:20px}
+.cover .socials{position:absolute;bottom:150px;left:0;right:0;display:flex;justify-content:center;gap:22px}
+.cover .socials span{width:56px;height:56px;border-radius:12px;background:var(--blue);border:3px solid #fff;color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;box-shadow:0 3px 8px rgba(0,0,0,.35)}
+.cover .awards{position:absolute;bottom:22px;left:50px;right:50px;height:92px;background:#fff;border-radius:14px;
+  display:flex;align-items:center;justify-content:space-around;padding:0 20px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.cover .awards .lbl{position:absolute;top:-16px;left:50%;transform:translateX(-50%);background:#fff;padding:3px 18px;border-radius:10px;
+  font-size:13px;font-weight:700;letter-spacing:2px;color:var(--blue)}
+.cover .awards .a{font-family:'Montserrat',Arial,sans-serif;font-weight:800;font-size:15px;color:#333;text-align:center;max-width:140px}
+
+/* ---------- TOC ---------- */
+.toc .side{position:absolute;left:0;top:0;bottom:0;width:470px}
+.toc .side .ph-img{position:absolute;inset:0}
+.toc .panel{position:absolute;right:60px;top:0;bottom:120px;width:480px;background:#fff;
+  box-shadow:0 0 0 1px #eee, -10px 0 25px rgba(0,0,0,.15);padding:50px 50px}
+.toc h2{font-family:'Oswald','Arial Narrow',Impact,sans-serif;color:var(--blue);line-height:.95}
+.toc h2 small{display:block;font-size:40px}
+.toc h2 span{font-size:72px;color:var(--blue)}
+.toc ol{list-style:none;margin-top:40px}
+.toc li{display:flex;align-items:center;gap:24px;font-size:22px;margin-bottom:20px}
+.toc li i{font-family:'Yellowtail','Brush Script MT',cursive;font-style:normal;color:var(--blue);font-size:40px;width:36px;text-align:right}
+
+/* ---------- ABOUT ---------- */
+.about{padding:60px 70px 0}
+.about .script{font-family:'Yellowtail','Brush Script MT',cursive;color:var(--brown);font-size:56px;text-align:center;margin-left:80px;line-height:1}
+.about .big{font-family:'Yellowtail','Brush Script MT',cursive;color:var(--blue-deep);font-size:130px;text-align:center;line-height:.9;margin-top:-6px}
+.about .via{text-align:center;font-family:'Montserrat',Arial,sans-serif;font-weight:800;color:var(--brown);font-size:24px;margin-top:-6px}
+.about p{font-size:19.5px;line-height:1.38;text-align:justify;margin-top:16px;color:#222}
+.about .why{text-align:center;margin-top:36px;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:50px;color:var(--brown);text-transform:uppercase}
+.about .why span{font-family:'Montserrat',Arial,sans-serif;text-transform:none;color:var(--sky);font-size:60px;font-weight:800}
+.about .why-box{margin:26px auto 0;width:900px;background:#fff;border-radius:22px;box-shadow:0 4px 18px rgba(0,0,0,.12);
+  padding:26px;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.about .why-box div{border:2px solid #e3eefb;border-radius:14px;padding:16px;text-align:center}
+.about .why-box b{display:block;font-family:'Oswald','Arial Narrow',Impact,sans-serif;color:var(--blue);font-size:26px}
+.about .why-box small{font-size:15px;color:#444}
+.about .ratings{position:absolute;bottom:34px;left:0;right:0;display:flex;justify-content:center;gap:20px}
+.about .ratings span{background:#3a4a2a;color:#fff;border-radius:22px;padding:8px 22px;font-weight:600;font-size:18px}
+.about .ratings span em{font-style:normal;color:var(--yellow)}
+
+/* ---------- GALLERY ---------- */
+.gallery{padding:60px 50px;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:28px;height:100%}
+.gallery .ph-img{border:10px solid #fff;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+.gallery .ph-img:nth-child(odd){transform:rotate(-1.5deg)}
+.gallery .ph-img:nth-child(even){transform:rotate(1.5deg)}
+.gallery .wide{grid-column:span 2}
+
+/* ---------- BRIEF ITINERARY ---------- */
+.brief{padding:56px 70px}
+.brief h2{font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:76px;color:var(--blue-dark);text-align:center;line-height:1}
+.brief .sub{text-align:center;color:var(--red);font-weight:700;font-size:22px}
+.brief .rows{margin-top:40px;width:560px}
+.brief .row{margin-bottom:22px}
+.brief .row .d{display:inline-block;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:17px;color:var(--blue-dark);border:2px solid var(--blue-dark);
+  border-radius:4px;padding:0 8px;line-height:22px;background:#fff}
+.brief .row .t{font-size:24px;font-weight:600;margin-top:3px}
+.brief .row .t .r{color:var(--red)}
+.brief .row .t small{font-size:15px;color:var(--orange);font-weight:600}
+.brief .row .t .sub2{display:block;font-size:15px;color:var(--blue);font-weight:500}
+.brief .polaroids{position:absolute;right:60px;top:210px;width:340px;display:flex;flex-direction:column;gap:30px}
+.brief .polaroids .ph-img{height:240px;border:9px solid #fff;box-shadow:0 5px 14px rgba(0,0,0,.25)}
+.brief .polaroids .ph-img:nth-child(1){transform:rotate(3deg)}
+.brief .polaroids .ph-img:nth-child(2){transform:rotate(-3deg)}
+.brief .polaroids .ph-img:nth-child(3){transform:rotate(2deg)}
+
+/* ---------- DAY PAGE ---------- */
+.dayp .head{font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:58px;color:var(--yellow);text-align:center;padding-top:36px;
+  text-shadow:0 3px 0 var(--blue-deep),0 0 12px rgba(0,0,0,.2)}
+.dayp .photo{position:absolute;left:70px;right:70px;height:560px;background:#fff;padding:16px;
+  box-shadow:0 8px 20px rgba(0,0,0,.25);transform:rotate(-.6deg);
+  clip-path:polygon(0 1%,4% 0,9% 1.2%,15% .2%,22% 1%,30% 0,38% 1.3%,46% .3%,55% 1%,63% 0,72% 1.2%,80% .2%,88% 1%,95% 0,100% 1%,99.4% 10%,100% 22%,99.3% 35%,100% 48%,99.4% 61%,100% 74%,99.3% 87%,100% 99%,94% 100%,86% 98.8%,78% 100%,70% 99%,61% 100%,52% 98.9%,43% 100%,35% 99%,26% 100%,18% 98.8%,10% 100%,3% 99%,0 100%,.6% 88%,0 75%,.7% 62%,0 49%,.6% 36%,0 23%,.7% 11%)}
+.dayp .photo .ph-img{width:100%;height:100%}
+.dayp .bar{position:absolute;left:44px;display:flex;align-items:center;gap:0;height:66px}
+.dayp .bar .dn{background:var(--yellow);color:var(--blue-deep);font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-weight:600;font-size:40px;padding:0 16px;
+  height:66px;display:flex;align-items:center;border-radius:12px 0 0 12px;position:relative;z-index:2}
+.dayp .bar .dn::after{content:"";position:absolute;right:-18px;top:0;border-left:18px solid var(--yellow);border-top:33px solid transparent;border-bottom:33px solid transparent}
+.dayp .bar .tt{background:linear-gradient(90deg,var(--blue-dark),var(--sky));color:#fff;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-weight:600;font-size:38px;
+  height:58px;display:flex;align-items:center;padding:0 40px 0 34px;margin-left:-2px;
+  clip-path:polygon(0 0,100% 0,97% 100%,0 100%)}
+.dayp .bar .km{margin-left:14px;background:var(--yellow);border:2px solid #e2a800;color:#222;font-weight:700;font-size:22px;padding:2px 14px;border-radius:8px}
+.dayp .bar .km.small{font-size:16px;font-weight:600}
+.dayp ul.pts{position:absolute;left:62px;right:62px;list-style:none}
+.dayp ul.pts li{font-size:21px;line-height:1.35;margin-bottom:10px;padding-left:34px;position:relative;text-align:justify}
+.dayp ul.pts li::before,.note-list li::before{content:"»";position:absolute;left:0;top:-6px;font-size:34px;color:var(--blue-dark);font-weight:700}
+.dayp .note{position:absolute;left:50px;right:60px;bottom:120px;display:flex;align-items:flex-start;gap:16px}
+.dayp .note .tag{flex:none;background:var(--blue);color:#fff;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:24px;padding:2px 16px 2px 12px;border-radius:10px;
+  display:flex;align-items:center;gap:8px;box-shadow:0 2px 0 var(--blue-deep)}
+.dayp .note .tag::before{content:"";width:18px;height:20px;background:var(--yellow);border-radius:3px;clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%)}
+.note-list{list-style:none}
+.note-list li{font-style:italic;font-size:18.5px;line-height:1.3;padding-left:28px;position:relative;color:#222}
+.note-list li::before{font-style:normal;font-size:26px;top:-5px}
+.note-list li i.b{font-weight:700;font-style:italic;color:var(--blue-deep)}
+
+/* ---------- REVIEWS ---------- */
+.reviews{padding:50px 50px}
+.reviews h2{font-family:'Yellowtail','Brush Script MT',cursive;font-size:110px;color:var(--blue-dark);line-height:1;margin-left:120px}
+.reviews .sub{font-family:'Montserrat',Arial,sans-serif;font-weight:800;letter-spacing:3px;color:var(--orange);font-size:24px;margin-left:200px}
+.reviews .grid{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:30px}
+.reviews .card{background:#fff;border-radius:14px;box-shadow:0 3px 14px rgba(0,0,0,.12);padding:20px 22px}
+.reviews .card .who{display:flex;gap:12px;align-items:center}
+.reviews .card .av{width:48px;height:48px;border-radius:50%;background:var(--sky);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}
+.reviews .card .nm{font-weight:600;font-size:17px}
+.reviews .card .st{color:#f6b400;font-size:16px}
+.reviews .card p{font-size:15.5px;line-height:1.4;margin-top:10px;color:#333}
+
+/* ---------- BATCHES ---------- */
+.batches{padding-top:70px}
+.batches h2{font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:80px;color:var(--blue-dark);text-align:center;line-height:1}
+.batches .sub{text-align:center;font-family:'Montserrat',Arial,sans-serif;font-weight:800;color:var(--blue-dark);font-size:26px;margin-top:6px}
+.batches .list{margin:26px 34px 0;display:flex;flex-direction:column;gap:6px}
+.batches .b{display:flex;height:62px;background:linear-gradient(180deg,#1a6fd0,#0b55ab);border:2px solid #0a4a96;border-radius:6px;
+  box-shadow:0 2px 0 rgba(0,0,0,.2)}
+.batches .b .n{width:220px;border-right:3px solid #fff;color:#fff;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-style:italic;font-weight:600;font-size:34px;
+  display:flex;align-items:center;justify-content:center}
+.batches .b .dt{flex:1;color:var(--yellow);font-weight:600;font-size:28px;display:flex;align-items:center;justify-content:center}
+.batches .b .dt sup{font-size:16px}
+.batches .b.full{opacity:.55}
+.batches .b.full .dt::after{content:"SOLD OUT";margin-left:14px;font-size:14px;background:var(--red);color:#fff;padding:2px 8px;border-radius:4px}
+
+/* ---------- INCLUSIONS / EXCLUSIONS ---------- */
+.incl{padding:80px 80px}
+.incl h2{text-align:center;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:56px;line-height:1}
+.incl h2 span{background:linear-gradient(180deg,transparent 45%,var(--yellow-2) 45%,var(--yellow-2) 92%,transparent 92%);padding:0 6px}
+.incl.in h2{color:var(--green)}
+.incl.ex h2{color:var(--brown)}
+.incl ul{list-style:none;margin-top:60px}
+.incl li{font-size:21px;line-height:1.35;margin-bottom:18px;padding-left:38px;position:relative}
+.incl li::before{position:absolute;left:0;top:3px;width:24px;height:24px;border-radius:50%;color:#fff;font-size:15px;font-weight:700;
+  display:flex;align-items:center;justify-content:center}
+.incl.in li::before{content:"✓";background:transparent;border:2px solid var(--green);color:var(--green)}
+.incl.ex li::before{content:"✕";background:var(--red)}
+
+/* ---------- COSTING ---------- */
+.costing{padding-top:80px;text-align:center}
+.costing .sale{position:absolute;top:30px;left:30px;background:var(--red);color:#fff;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:26px;padding:4px 16px;transform:rotate(-4deg)}
+.costing h2{font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-size:96px;color:var(--blue-dark);letter-spacing:2px}
+.costing .route{display:inline-block;color:var(--red);font-weight:700;font-size:22px;border-bottom:2px solid var(--red)}
+.costing .cols{display:flex;justify-content:center;gap:110px;margin-top:40px}
+.costing .col .lb{font-size:24px;color:#222}
+.costing .col .lb b{display:block;color:var(--blue);font-weight:600}
+.costing .price{margin-top:22px;width:300px;height:84px;background:var(--blue-dark);border:3px solid #fff;outline:3px solid var(--blue-dark);
+  color:#fff;font-weight:600;font-size:42px;display:flex;align-items:center;justify-content:center;border-radius:6px}
+.costing .gst{font-size:15px;margin-top:6px}
+.costing .old{margin-top:30px;background:var(--orange);outline-color:var(--orange);position:relative}
+.costing .old::after{content:"";position:absolute;left:20px;right:20px;top:50%;height:4px;background:#fff;transform:rotate(-8deg)}
+.costing .notes{margin:50px auto 0;width:760px;border:2px solid var(--blue);border-radius:14px;padding:26px 24px 16px;position:relative}
+.costing .notes .t{position:absolute;top:-17px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;font-weight:700;
+  font-size:16px;padding:3px 18px;border-radius:14px;letter-spacing:1px;white-space:nowrap}
+.costing .notes p{color:var(--blue);font-weight:600;font-size:18px;line-height:1.35}
+.costing .book{display:inline-flex;margin-top:28px;border:3px solid var(--orange);border-radius:6px;font-size:28px;color:var(--red);font-weight:500;overflow:hidden}
+.costing .book span{padding:6px 14px}
+.costing .book b{background:var(--orange);color:#fff;padding:6px 18px;font-weight:700}
+.costing .soc{display:flex;justify-content:center;gap:28px;margin-top:40px}
+.costing .soc span{width:60px;height:60px;border-radius:12px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.costing .redir{margin-top:20px;font-size:22px}
+.costing .redir b{color:var(--blue);font-weight:600}
+.costing .foot{position:absolute;bottom:0;left:0;right:0;height:46px;background:var(--blue);color:#fff;display:flex;justify-content:space-around;
+  align-items:center;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-style:italic;font-size:20px;letter-spacing:1px}
+
+/* ---------- BOOKING ---------- */
+.white-title{text-align:center;color:#fff;padding-top:90px}
+.white-title h2{font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-size:66px;letter-spacing:14px}
+.white-title small{display:block;font-family:'Montserrat',Arial,sans-serif;font-weight:700;letter-spacing:12px;font-size:22px}
+.booking .phone{position:absolute;left:80px;top:300px;width:360px;height:680px;border-radius:46px;background:#111;padding:14px;transform:rotate(-8deg);
+  box-shadow:0 20px 40px rgba(0,0,0,.4)}
+.booking .phone .ph-img{width:100%;height:100%;border-radius:34px;overflow:hidden}
+.booking .bank{position:absolute;left:300px;top:300px;width:470px;background:#fff;border-radius:22px;padding:22px 26px;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.booking .bank .h{display:inline-block;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-size:24px;border:2px solid #333;border-radius:20px;padding:0 16px;margin-bottom:12px}
+.booking .bank p{font-size:18px;line-height:1.45}
+.booking .bank p b{font-weight:700}
+.booking .upi{margin-top:14px;background:#f2f4f8;border-radius:12px;padding:8px 14px;font-weight:700;font-size:16px}
+.booking .bn{display:inline-block;margin-top:14px;background:var(--green);color:#fff;font-weight:700;padding:8px 24px;border-radius:20px}
+.booking .pay{position:absolute;right:90px;top:560px;width:270px}
+.booking .pay .c{background:#fff;border-radius:12px;padding:16px;text-align:center;margin-bottom:26px;box-shadow:0 6px 16px rgba(0,0,0,.25)}
+.booking .pay .c .l{display:inline-block;background:var(--blue-dark);color:#fff;font-size:13px;font-weight:700;padding:2px 12px;border-radius:10px;margin-bottom:8px}
+.booking .pay .c .gw{font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-style:italic;font-size:36px;color:var(--blue-deep)}
+.booking .pay .qr{width:210px;height:210px;margin:6px auto 0;background:
+  repeating-linear-gradient(90deg,#000 0 10px,#fff 10px 20px),#fff;
+  -webkit-mask:repeating-linear-gradient(0deg,#000 0 10px,transparent 10px 17px);opacity:.85}
+.booking .pay .qr.img{background:none;-webkit-mask:none;opacity:1}
+.booking .pay .qr.img img{width:100%;height:100%}
+.booking .emi{position:absolute;left:60px;right:60px;bottom:60px;height:110px;background:#fff;border-radius:16px;display:flex;align-items:center;
+  justify-content:center;font-family:'Montserrat',Arial,sans-serif;font-weight:800;font-size:30px;color:var(--blue-deep);gap:16px}
+.booking .emi b{background:var(--orange);color:#fff;padding:4px 16px;border-radius:8px}
+
+/* ---------- POLICIES ---------- */
+.policy .white-title{padding-top:60px}
+.policy table{margin:24px auto 0;border-collapse:separate;border-spacing:14px 0;color:#fff}
+.policy th{font-weight:600;font-size:19px;padding:10px 0}
+.policy td{text-align:center;font-size:15px;font-weight:600;height:72px;width:170px;background:rgba(255,255,255,.07)}
+.policy td.rl{background:none;font-family:'Montserrat',Arial,sans-serif;font-weight:800;font-size:14px;text-align:center;width:110px;line-height:1.1}
+.policy td.rl big{display:block;font-size:26px}
+.policy .ok,.policy .no{display:inline-flex;width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;font-weight:800;font-size:20px;border:3px solid #fff}
+.policy .ok{background:var(--green)}
+.policy .no{background:var(--red)}
+.policy .comp{display:inline-block;background:#fff;color:var(--blue);padding:4px 10px;border-radius:6px;font-weight:700;letter-spacing:1px}
+.policy .redtag{display:inline-block;background:#fff;color:var(--red);padding:4px 10px;border-radius:6px;font-weight:700}
+
+/* ---------- CARRY ---------- */
+.carry{padding:60px 60px}
+.carry h2{font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-size:58px;color:var(--brown);text-align:center}
+.carry .scr{font-family:'Yellowtail','Brush Script MT',cursive;text-align:center;color:var(--brown);font-size:64px;margin-top:-16px}
+.carry .cols{display:grid;grid-template-columns:1fr 1fr;gap:26px 50px;margin-top:20px}
+.carry .grp h3{display:inline-block;font-family:'Yellowtail','Brush Script MT',cursive;font-weight:400;font-size:40px;color:#fff;background:var(--blue);padding:0 22px;border-radius:8px;margin-bottom:10px}
+.carry .grp ul{list-style:none}
+.carry .grp li{font-size:17px;line-height:1.35;padding-left:18px;position:relative}
+.carry .grp li::before{content:"•";position:absolute;left:0;color:var(--blue);font-weight:700}
+
+/* ---------- HANDBOOK ---------- */
+.hand{padding:56px 70px}
+.hand h2{font-family:'Cinzel';font-size:66px;color:var(--blue-deep);text-align:center;line-height:1}
+.hand .s1{text-align:center;font-family:'Cinzel';font-size:30px;color:var(--brown)}
+.hand .s2{text-align:center;font-weight:700;font-size:14px;letter-spacing:2px;color:var(--blue-deep);margin-bottom:10px}
+.hand .sec{margin-top:16px}
+.hand .sec h4{display:table;margin:0 auto 8px;background:var(--yellow-2);border:1px solid #c9a400;font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-weight:500;color:var(--brown);font-size:19px;padding:2px 18px}
+.hand .sec ul{list-style:none}
+.hand .sec li{font-size:16px;line-height:1.38;padding-left:18px;position:relative;margin-bottom:3px}
+.hand .sec li::before{content:"•";position:absolute;left:2px}
+.hand .sec li b{font-weight:700;color:var(--blue-deep)}
+
+/* ---------- CONTACT ---------- */
+.contact{text-align:center}
+.contact .vid{margin:130px auto 0;width:520px;height:380px;border:8px solid #fff;box-shadow:0 6px 18px rgba(0,0,0,.25);position:relative}
+.contact .vid .ph-img{width:100%;height:100%}
+.contact .vid .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:90px;height:64px;background:var(--red);border-radius:16px}
+.contact .vid .play::after{content:"";position:absolute;left:36px;top:18px;border-left:26px solid #fff;border-top:14px solid transparent;border-bottom:14px solid transparent}
+.contact .brand{margin-top:90px;font-family:'Montserrat',Arial,sans-serif;font-weight:900;font-size:70px;color:var(--blue)}
+.contact .tag{font-size:16px;letter-spacing:3px;color:#444}
+.contact .addr{margin-top:22px;font-weight:700;font-size:22px;line-height:1.4}
+.contact .chips{display:flex;justify-content:center;gap:40px;margin-top:70px}
+.contact .chips span{border:2px solid var(--green);border-radius:24px;padding:8px 22px;font-size:18px;font-weight:500}
+.contact .rate{display:flex;justify-content:center;gap:20px;margin-top:60px}
+.contact .rate span{border:2px solid var(--blue);border-radius:22px;padding:6px 20px;font-weight:600;color:var(--blue)}
+
+/* ---------- fit helpers (used only when a page's text would not fit) ---------- */
+.dayp .bar .dn,.dayp .bar .km{flex:none;white-space:nowrap}
+.dayp .bar .tt{white-space:nowrap}
+.dayp .bar.two{height:auto}
+.dayp .bar.two .tt{white-space:normal;height:auto;min-height:58px;line-height:1.08;padding-top:7px;padding-bottom:7px}
+.incl ul.two{columns:2;column-gap:44px}
+.incl ul.two li{break-inside:avoid}
+
+@media print{
+  @page{size:1080px 1350px;margin:0}
+  html,body{background:none;padding:0;gap:0;display:block}
+  .page{page-break-after:always;break-after:page}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =====================================================================
+   RENDERER — reads BRAND (brand.js) and PACKAGE (packages/<slug>.js).
+   No need to edit below this line for a new package.
+   ===================================================================== */
+let BRAND;
+
+const fmt = s => (s || "")
+  .replace(/\*\*(.+?)\*\*/g, '<b class="hl">$1</b>')
+  .replace(/__(.+?)__/g, '<i class="b">$1</i>');
+// A photo that isn't in assets/ yet falls back to the "ADD PHOTO" placeholder.
+const img = (src, cls = "", style = "") =>
+  `<div class="ph-img ${src ? "has" : ""} ${cls}" style="${style}">${src ? `<img src="${src}" alt="" onerror="this.parentNode.classList.remove('has');this.remove()">` : ""}</div>`;
+const logo = () => `<div class="logo-badge">${BRAND.logo
+  ? `<img src="${BRAND.logo}" alt="" onerror="this.parentNode.textContent=${JSON.stringify(BRAND.shortLogoText).replace(/"/g, "&quot;")}">`
+  : BRAND.shortLogoText}</div>`;
+const ord = d => { const [n, m] = d.split(" "); const x = +n;
+  const s = (x % 10 === 1 && x !== 11) ? "st" : (x % 10 === 2 && x !== 12) ? "nd" : (x % 10 === 3 && x !== 13) ? "rd" : "th";
+  return `${n}<sup>${s}</sup> ${m}`; };
+const mountains = (c = "#c9d6c0") => `<svg class="mountains" viewBox="0 0 1080 420" preserveAspectRatio="none">
+  <path d="M0 420 L0 300 L120 200 L210 260 L330 120 L450 250 L540 190 L660 300 L780 150 L900 260 L1000 210 L1080 260 L1080 420Z" fill="${c}"/>
+  <path d="M0 420 L0 350 L160 280 L300 340 L470 260 L620 350 L800 290 L960 350 L1080 320 L1080 420Z" fill="${c}" opacity=".8"/></svg>`;
+const page = (cls, html, name = "") => `<section class="page ${cls}" data-name="${name}">${html}</section>`;
+
+function cover(P) {
+  const flagC = ["#2a6fdb", "#ffffff", "#e23b3b", "#2fb44a", "#ffd21f"];
+  return page("cover", `
+    ${img(P.coverImage, "photo")}
+    <div class="shade"></div>
+    <div class="flags">${Array.from({ length: 12 }, (_, i) => `<span style="background:${flagC[i % 5]}"></span>`).join("")}</div>
+    ${logo()}
+    <div class="title-wrap">
+      <div class="route">${P.route.toUpperCase()}</div>
+      <h1>${P.title.toUpperCase()}</h1>
+      <div class="dur">${P.duration}</div>
+    </div>
+    <div class="socials">${BRAND.socials.map(s => `<span>${s}</span>`).join("")}</div>
+    <div class="awards"><div class="lbl">AWARDS &amp; RECOGNITION</div>${BRAND.awards.map(a => `<div class="a">${a}</div>`).join("")}</div>`, "Cover");
+}
+function toc(P, sections) {
+  return page("toc bg-paper", `
+    <div class="side">${img(P.tocImage)}</div>
+    <div class="panel">
+      <h2><small>TABLE OF</small><span>CONTENTS</span></h2>
+      <ol>${sections.map((s, i) => `<li><i>${i + 1}</i>${s}</li>`).join("")}</ol>
+    </div>${logo()}`, "Contents");
+}
+function about(P) {
+  return page("about bg-light", `${logo()}
+    <div class="script">${P.scriptLine}</div>
+    <div class="big">${P.scriptTitle}</div>
+    <div class="via">${P.via}</div>
+    ${P.intro.map(p => `<p>${fmt(p)}</p>`).join("")}
+    <div class="why">Why travel with <span>${BRAND.name}</span>?</div>
+    <div class="why-box">${BRAND.whyUs.map(w => `<div><b>${w.t}</b><small>${w.d}</small></div>`).join("")}</div>
+    <div class="ratings"><span>${BRAND.rating} <em>★★★★★</em></span><span>${BRAND.reviewsCount} Reviews</span></div>`, "About");
+}
+function gallery(P) {
+  return page("bg-sky", `<div class="gallery">${P.gallery.map((g, i) => img(g, i === 0 ? "wide" : "")).join("")}</div>${logo()}`, "Gallery");
+}
+function brief(P) {
+  return page("brief bg-sky", `${logo()}${mountains()}
+    <h2>BRIEF ITINERARY</h2><div class="sub">${P.route}</div>
+    <div class="rows">${P.days.map(d => {
+      const t = d.brief ? fmt(d.brief) : d.title.replace(/^(.+?) to (.+)$/, '<span class="r">$1</span> to <b class="hl">$2</b>');
+      return `<div class="row"><span class="d">DAY ${d.day}</span>
+        <div class="t">${t}${d.km && !d.kmSmall ? ` <small>(${d.km})</small>` : ""}${d.kmSmall ? `<span class="sub2">${d.km}</span>` : ""}</div></div>`;
+    }).join("")}</div>
+    <div class="polaroids">${P.briefImages.map(s => img(s)).join("")}</div>`, "Brief itinerary");
+}
+function dayPage(d, first) {
+  const top = first ? 130 : 46;
+  const photoH = 560;
+  const barTop = top + photoH + 50;
+  return page("dayp bg-sky", `${logo()}${mountains()}
+    ${first ? `<div class="head">DETAILED ITINERARY</div>` : ""}
+    <div class="photo" style="top:${top}px">${img(d.image)}</div>
+    <div class="bar" style="top:${barTop}px">
+      <div class="dn">DAY ${d.day}</div>
+      <div class="tt">${d.title.toUpperCase()}</div>
+      ${d.km ? `<div class="km ${d.kmSmall ? "small" : ""}">${d.km}</div>` : ""}
+    </div>
+    <ul class="pts" style="top:${barTop + 96}px">${d.points.map(p => `<li>${fmt(p)}</li>`).join("")}</ul>
+    ${d.notes && d.notes.length ? `<div class="note"><div class="tag">NOTE</div>
+      <ul class="note-list">${d.notes.map(n => `<li>${fmt(n)}</li>`).join("")}</ul></div>` : ""}`, `Day ${d.day}`);
+}
+function reviews(P) {
+  return page("reviews bg-light", `${logo()}
+    <h2>Reviews</h2><div class="sub">${P.title.toUpperCase()}</div>
+    <div class="grid">${BRAND.reviews.map(r => `<div class="card"><div class="who"><div class="av">${r.name[0]}</div>
+      <div><div class="nm">${r.name}</div><div class="st">★★★★★</div></div></div><p>${r.text}</p></div>`).join("")}</div>`, "Reviews");
+}
+function batches(P) {
+  const per = 13, out = [];
+  for (let i = 0; i < P.batches.length; i += per) {
+    out.push(page("batches bg-paper", `${logo()}${mountains("#d7dde3")}
+      <h2>GROUP TOUR DATES</h2><div class="sub">${P.title.toUpperCase()}</div>
+      <div class="list">${P.batches.slice(i, i + per).map((b, j) =>
+        `<div class="b ${b.full ? "full" : ""}"><div class="n">BATCH ${i + j + 1}</div><div class="dt">${ord(b.from)}&nbsp;to&nbsp;${ord(b.to)}</div></div>`).join("")}</div>`, "Batches"));
+  }
+  return out.join("");
+}
+function inclusions(P) {
+  return page("incl in bg-paper", `${logo()}${mountains("#e3e3e3")}<h2><span>TRIP INCLUSIONS</span></h2>
+    <ul>${P.inclusions.map(x => `<li>${fmt(x)}</li>`).join("")}</ul>`, "Inclusions");
+}
+function exclusions(P) {
+  return page("incl ex bg-paper", `${logo()}${mountains("#e3e3e3")}<h2><span>TRIP EXCLUSIONS</span></h2>
+    <ul>${P.exclusions.map(x => `<li>${fmt(x)}</li>`).join("")}</ul>`, "Exclusions");
+}
+function costing(P) {
+  const C = P.costing;
+  return page("costing bg-light", `${logo()}
+    ${C.saleTag ? `<div class="sale">${C.saleTag}</div>` : ""}
+    <h2>COSTING</h2><div class="route">● ${C.route}</div>
+    <div class="cols">${C.options.map(o => `<div class="col">
+      <div class="lb">Offer Price<b>${o.label}</b></div>
+      <div class="price">INR ${o.price}/-</div><div class="gst">${C.gstNote}</div>
+      ${o.oldPrice ? `<div class="price old">INR ${o.oldPrice}/-</div><div class="gst">${C.gstNote}</div>` : ""}
+    </div>`).join("")}</div>
+    <div class="notes"><div class="t">✈ TRAVELER NOTES ✈</div>${C.notes.map(n => `<p>${n}</p>`).join("")}</div>
+    <a class="book" href="${C.bookingLink}" style="text-decoration:none"><span>BOOK NOW @</span><b>INR ${C.bookingAmount}/- ➜</b></a>
+    <div class="soc">${BRAND.socials.slice(0, 6).map(s => `<span>${s}</span>`).join("")}</div>
+    <div class="redir">This button will redirect you to the <b>Booking Page.</b></div>
+    <div class="foot"><span>${BRAND.footerSlogan}</span><span>${BRAND.footerSlogan}</span><span>${BRAND.footerSlogan}</span></div>`, "Costing");
+}
+function booking() {
+  const B = BRAND.bank;
+  return page("booking bg-blue", `${logo()}
+    <div class="white-title"><h2>BOOKING</h2><small>PROCESS</small></div>
+    <div class="phone">${img("")}</div>
+    <div class="bank"><div class="h">BOOK YOUR NEXT ADVENTURE!</div>
+      <p><b>Banking Details:</b><br>${B.accountName}<br>${B.bankName}<br>A/c No : <b>${B.accountNo}</b><br>IFSC : <b>${B.ifsc}</b></p>
+      <div class="upi">UPI ▸ ${B.upi}</div><div class="bn">BOOK NOW</div></div>
+    <div class="pay">
+      <div class="c"><div class="l">CLICK TO PAY USING</div><div class="gw">${BRAND.gateway}</div></div>
+      <div class="c"><div class="l">SCAN QR TO PAY USING</div><div>GPay · PhonePe · Paytm</div>
+        <div class="qr ${BRAND.qrImage ? "img" : ""}">${BRAND.qrImage ? `<img src="${BRAND.qrImage}" onerror="this.parentNode.classList.remove('img');this.remove()">` : ""}</div></div>
+    </div>
+    <div class="emi">Avail <b>${BRAND.emiText}</b></div>`, "Booking");
+}
+function cell(v) {
+  if (v === "OK") return `<span class="ok">✓</span>`;
+  if (v === "NO") return `<span class="no">✕</span>`;
+  if (v === "COMP") return `<span class="comp">Compulsory</span>`;
+  if (v.startsWith("RED:")) return `<span class="redtag">${v.slice(4)}</span>`;
+  return v;
+}
+function table(T) {
+  return `<table><tr><th></th>${T.cols.map(c => `<th>${c}</th>`).join("")}</tr>
+    ${T.rows.map(r => `<tr><td class="rl">${r.label}</td>${r.cells.map(c => `<td>${cell(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+function policy() {
+  return page("policy bg-blue", `${logo()}
+    <div class="white-title"><h2>PAYMENT</h2><small>POLICY</small></div>${table(BRAND.payment)}
+    <div class="white-title" style="padding-top:70px"><h2>CANCELLATION</h2><small>POLICY</small></div>${table(BRAND.cancellation)}`, "Policies");
+}
+function carry(P) {
+  return page("carry bg-light", `${logo()}
+    <h2>THINGS TO CARRY</h2><div class="scr">${P.title}</div>
+    <div class="cols">${Object.entries(P.carry).map(([h, items]) =>
+      `<div class="grp"><h3>${h}</h3><ul>${items.map(i => `<li>${i}</li>`).join("")}</ul></div>`).join("")}</div>`, "Things to carry");
+}
+function handbook(P) {
+  // split sections across pages (~3 sections per page)
+  const out = [], per = 3;
+  for (let i = 0; i < P.handbook.length; i += per) {
+    out.push(page("hand bg-sky", `${logo()}
+      ${i === 0 ? `<h2>${P.title.toUpperCase()}</h2><div class="s1">BACKPACKING HANDBOOK</div>
+        <div class="s2">GUIDELINES, EXPECTATIONS &amp; CODE OF CONDUCT</div>` : ""}
+      ${P.handbook.slice(i, i + per).map(s => `<div class="sec"><h4>${s.h.toUpperCase()}</h4>
+        <ul>${s.items.map(x => `<li>${fmt(x)}</li>`).join("")}</ul></div>`).join("")}`, "Handbook"));
+  }
+  return out.join("");
+}
+function contact(P) {
+  return page("contact bg-sky", `${logo()}${mountains()}
+    <div class="vid">${img(P.coverImage)}<div class="play"></div></div>
+    <div class="brand">${BRAND.name}</div><div class="tag">${BRAND.tagline}</div>
+    <div class="addr">${BRAND.address}</div>
+    <div class="chips"><span>🌐 ${BRAND.website}</span><span>📞 ${BRAND.phones.join("<br>")}</span><span>✉ ${BRAND.email}</span></div>
+    <div class="rate"><span>${BRAND.rating} ★★★★★</span><span>${BRAND.reviewsCount} Reviews</span></div>`, "Contact");
+}
+
+function render(P) {
+  const sections = ["About Us", "Group Pictures", "Brief Itinerary", "Detailed Itinerary", "Reviews", "Batches",
+    "Inclusion & Exclusion", "Costing", "Booking Process", "Payment & Cancellation", "Things to Carry", "Backpacking Handbook", "Contact Us"];
+  document.title = `${P.title} ${P.duration} — ${BRAND.name}`;
+  document.getElementById("app").innerHTML = [
+    cover(P), toc(P, sections), about(P), gallery(P), brief(P),
+    ...P.days.map((d, i) => dayPage(d, i === 0)),
+    reviews(P), batches(P), inclusions(P), exclusions(P), costing(P),
+    booking(), policy(), carry(P), handbook(P), contact(P)
+  ].join("");
+}
+
+/* =====================================================================
+   FIT — text never overlaps or runs off a page. Where it would, the
+   font shrinks a little (and on a day page, the photo gets a bit
+   shorter as a last step). Runs after fonts load. Anything that still
+   doesn't fit is listed in window.__BROCHURE_WARNINGS (export.js prints it).
+   ===================================================================== */
+const warnings = [];
+const bottomOf = (el) => el.offsetTop + el.offsetHeight;          // relative to its page (.page is position:relative)
+const lastFlowBottom = (pageEl, sel) => Math.max(0, ...[...pageEl.querySelectorAll(sel)].map((el) => {
+  let y = 0, n = el; while (n && n !== pageEl) { y += n.offsetTop; n = n.offsetParent; } return y + el.offsetHeight;
+}));
+const setSize = (els, px) => els.forEach((el) => { el.style.fontSize = px + "px"; });
+
+/** Shrinks `els` from `start` down to `min` px (0.5px steps) while `overflows()` says the text doesn't fit. */
+function shrink(els, start, min, overflows, scale = []) {
+  let size = start;
+  while (overflows() && size > min) {
+    size = Math.max(min, +(size - 0.5).toFixed(1));
+    setSize(els, size);
+    scale.forEach(([more, base]) => setSize(more, +(base * size / start).toFixed(1)));
+  }
+  return !overflows();
+}
+
+function fitDayPage(pg) {
+  const name = pg.dataset.name;
+  // 1. The title bar must stay inside the page.
+  const bar = pg.querySelector(".bar"), tt = pg.querySelector(".bar .tt");
+  const barFits = () => bar.offsetLeft + bar.scrollWidth <= pg.clientWidth - 24;
+  if (!shrink([tt], 38, 30, () => !barFits())) {
+    // A very long title: two lines in the same bar.
+    bar.classList.add("two");
+    const others = [...bar.children].filter((c) => c !== tt).reduce((w, c) => w + c.offsetWidth + 14, 0);
+    tt.style.maxWidth = pg.clientWidth - 24 - bar.offsetLeft - others + "px";
+    tt.style.fontSize = "32px";
+    if (!shrink([tt], 32, 24, () => !barFits() || tt.offsetHeight > 96)) warnings.push(`${name}: title is too long for the bar`);
+  }
+  // 2. Points must end above the NOTE box (or the page bottom when there are no notes).
+  const pts = pg.querySelector("ul.pts"), note = pg.querySelector(".note");
+  const lis = [...pts.querySelectorAll("li")], notes = note ? [...note.querySelectorAll(".note-list li")] : [];
+  const limit = () => (note ? note.offsetTop - 18 : pg.clientHeight - 70);
+  const overlaps = () => bottomOf(pts) > limit();
+  // Points start below the bar (which may be two lines tall).
+  const placePoints = () => { pts.style.top = bar.offsetTop + bar.offsetHeight + 30 + "px"; };
+  placePoints();
+  if (shrink(lis, 21, 16.5, overlaps, [[notes, 18.5]])) return;
+  // 3. Still too much text: make the photo shorter, moving the bar and points up.
+  const photo = pg.querySelector(".photo");
+  const photoTop = photo.offsetTop;
+  for (let h = 540; h >= 300 && overlaps(); h -= 20) {
+    photo.style.height = h + "px";
+    bar.style.top = photoTop + h + 50 + "px";
+    placePoints();
+  }
+  if (overlaps()) warnings.push(`${name}: too much text — shorten the points or notes`);
+}
+
+function fitAll() {
+  const pages = [...document.querySelectorAll(".page")];
+  for (const pg of pages) {
+    const name = pg.dataset.name, H = pg.clientHeight;
+    if (pg.classList.contains("dayp")) { fitDayPage(pg); continue; }
+    let ok = true;
+    if (pg.classList.contains("about")) {
+      const ratingsTop = pg.querySelector(".ratings").offsetTop;
+      ok = shrink([...pg.querySelectorAll(":scope > p")], 19.5, 15, () => lastFlowBottom(pg, ".why-box") > ratingsTop - 16);
+    } else if (pg.classList.contains("brief")) {
+      const rows = [...pg.querySelectorAll(".row .t")];
+      ok = shrink(rows, 24, 16, () => lastFlowBottom(pg, ".rows") > H - 40);
+      if (!ok) [...pg.querySelectorAll(".row")].forEach((r) => (r.style.marginBottom = "12px")), (ok = lastFlowBottom(pg, ".rows") <= H - 40);
+    } else if (pg.classList.contains("incl")) {
+      const lis = [...pg.querySelectorAll("li")], fits = () => lastFlowBottom(pg, "ul") <= H - 50;
+      ok = shrink(lis, 21, 17, () => !fits());
+      if (!ok) {
+        // A long list: two columns.
+        pg.querySelector("ul").classList.add("two");
+        setSize(lis, 19);
+        ok = shrink(lis, 19, 14.5, () => !fits());
+      }
+    } else if (pg.classList.contains("carry")) {
+      ok = shrink([...pg.querySelectorAll(".grp li")], 17, 13.5, () => lastFlowBottom(pg, ".cols") > H - 40);
+    } else if (pg.classList.contains("hand")) {
+      ok = shrink([...pg.querySelectorAll(".sec li")], 16, 13, () => lastFlowBottom(pg, ".sec") > H - 40);
+    } else if (pg.classList.contains("reviews")) {
+      ok = shrink([...pg.querySelectorAll(".card p")], 15.5, 12.5, () => lastFlowBottom(pg, ".grid") > H - 40);
+    } else if (pg.classList.contains("costing")) {
+      ok = shrink([...pg.querySelectorAll(".notes p")], 18, 14, () => lastFlowBottom(pg, ".redir") > H - 46 - 12);
+    } else if (pg.classList.contains("toc")) {
+      ok = lastFlowBottom(pg, ".panel ol") <= pg.querySelector(".panel").offsetHeight;
+    }
+    if (!ok) warnings.push(`${name}: content doesn't fit the page`);
+  }
+}
+
+/* ----- load brand.js + packages/<slug>.js, render, wait for fonts & images, fit ----- */
+const loadScript = (src) => new Promise((resolve, reject) => {
+  const s = document.createElement("script");
+  s.src = src; s.onload = resolve; s.onerror = () => reject(new Error(`Could not load ${src}`));
+  document.head.appendChild(s);
+});
+
+(async () => {
+  const slug = new URLSearchParams(location.search).get("pkg") || "winter-spiti";
+  try {
+    if (!/^[a-z0-9-]+$/.test(slug)) throw new Error(`"${slug}" isn't a valid package name`);
+    await loadScript("brand.js");
+    await loadScript(`packages/${slug}.js`);
+    BRAND = window.BRAND;
+    render(window.PACKAGE);
+    await document.fonts.ready;
+    await Promise.all([...document.images].map((im) => im.complete ? null : new Promise((r) => { im.onload = r; im.addEventListener("error", r); })));
+    fitAll();
+  } catch (err) {
+    document.getElementById("app").innerHTML = `<div style="color:#fff;font:18px Poppins,sans-serif;padding:40px">${err.message}</div>`;
+    warnings.push(err.message);
+  }
+  window.__BROCHURE_WARNINGS = warnings;
+  window.__BROCHURE_READY = true;
+})();
+</script>
+</body>
+</html>
