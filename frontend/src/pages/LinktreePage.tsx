@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { LinktreeFont, LinktreeModulePackage, LinktreeModulePayload } from '@/types';
 import { formatCurrency, formatTravelDate, initials } from '@/lib/format';
+import { BookTripSheet } from '@/components/linktree/BookTripSheet';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -47,6 +48,8 @@ export function LinktreePage() {
   const [videoReady, setVideoReady] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
+  const [booking, setBooking] = useState<LinktreeModulePackage | null>(null);
+  const closeBooking = useCallback(() => setBooking(null), []);
   const [tabsOverflow, setTabsOverflow] = useState(false);
 
   const query = useQuery({
@@ -284,13 +287,14 @@ export function LinktreePage() {
                 <a href={`/p/${p.id}/pdf`} target="_blank" rel="noreferrer" className={pill}>
                   PDF
                 </a>
-                <a
-                  href={`/p/${p.id}#enquire`}
+                <button
+                  type="button"
+                  onClick={() => setBooking(p)}
                   className={cn(pill, accent && 'border-transparent text-[#0B1024] hover:opacity-90')}
                   style={accent ? { backgroundColor: accent } : undefined}
                 >
                   BOOK
-                </a>
+                </button>
                 {waDigits && (
                   <a
                     href={waHref(p)}
@@ -318,6 +322,8 @@ export function LinktreePage() {
           Explore all trips
         </motion.a>
       </main>
+
+      <BookTripSheet slug={org.slug} pkg={booking} agencyName={name} whatsappHref={booking && waDigits ? waHref(booking) : null} onClose={closeBooking} />
 
       <footer className="relative bg-black py-6 text-center text-sm text-white/45">
         Powered by{' '}
