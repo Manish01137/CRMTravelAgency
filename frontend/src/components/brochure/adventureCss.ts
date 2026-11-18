@@ -217,7 +217,15 @@ b.hl{color:var(--blue);font-weight:600}
 .dayp .bar.two .tt{white-space:normal;height:auto;min-height:58px;line-height:1.08;padding-top:7px;padding-bottom:7px}
 .incl ul.two{columns:2;column-gap:44px}
 .incl ul.two li{break-inside:avoid}
-.costing .cols.many{gap:40px;flex-wrap:wrap;padding:0 60px}
+.costing .cols.many{gap:26px 40px;flex-wrap:wrap;padding:0 60px}
+.costing .cols.many .price{width:280px;height:74px}
+.costing .price{white-space:nowrap;overflow:hidden;padding:0 12px}
+.cover .awards{height:auto;min-height:92px;padding:16px 20px 12px;gap:14px}
+.cover .awards .a{max-width:200px;font-size:14px;line-height:1.25}
+.cover .dur.center{margin-left:0}
+.cover h1{padding:0 50px}
+.contact .brand{padding:0 60px;line-height:1.1}
+.contact .addr{padding:0 60px}
 `;
 
 /** Prefixes every rule with the scope (":root" becomes the scope itself). */

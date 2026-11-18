@@ -482,12 +482,35 @@ function fitDay(pg: HTMLElement) {
   }
 }
 
+/** A heading too big for its place shrinks (down to `min` px) until it is at most `maxH` tall. */
+function fitHeading(el: HTMLElement | null, start: number, min: number, maxH: number, also: [HTMLElement | null, number][] = []) {
+  if (!el) return;
+  shrink([el], start, min, () => el.offsetHeight > maxH, also.filter((a): a is [HTMLElement, number] => !!a[0]).map(([e, b]) => [[e], b]));
+}
+/** One-line text (a price) that must not spill out of its box. */
+function fitWidth(el: HTMLElement, start: number, min: number) {
+  shrink([el], start, min, () => el.scrollWidth > el.clientWidth + 1);
+}
+
 function fitAll(root: HTMLElement) {
   for (const pg of root.querySelectorAll<HTMLElement>('.page')) {
     const H = pg.clientHeight;
     const all = (sel: string) => [...pg.querySelectorAll<HTMLElement>(sel)];
+    const one = (sel: string) => pg.querySelector<HTMLElement>(sel);
+    if (pg.classList.contains('cover')) {
+      // Long trip names: at most two lines of the gold title (three for very long ones).
+      const h1 = one('h1');
+      fitHeading(h1, 118, 64, 250);
+      if (h1 && h1.offsetHeight > 250) fitHeading(h1, 64, 52, 200);
+      if (h1 && h1.offsetHeight > 130) one('.dur')?.classList.add('center');
+      const box = one('.awards');
+      if (box) shrink(all('.awards .a'), 14, 11, () => box.offsetHeight > 120);
+      continue;
+    }
     if (pg.classList.contains('dayp')) fitDay(pg);
     else if (pg.classList.contains('about')) {
+      fitHeading(one('.big'), 130, 72, 240);
+      fitHeading(one('.why'), 50, 30, 70, [[one('.why span'), 60]]);
       const r = pg.querySelector<HTMLElement>('.ratings');
       const limit = r ? r.offsetTop - 16 : H - 40;
       shrink(all(':scope > p'), 19.5, 14, () => bottomIn(pg, ':scope > p, .why-box') > limit);
@@ -501,10 +524,19 @@ function fitAll(root: HTMLElement) {
         setSize(lis, 19);
         shrink(lis, 19, 14, () => !fits());
       }
-    } else if (pg.classList.contains('carry')) shrink(all('.grp li'), 17, 13, () => bottomIn(pg, '.cols') > H - 40);
-    else if (pg.classList.contains('hand')) shrink(all('.sec li'), 16, 12.5, () => bottomIn(pg, '.sec') > H - 40);
+    } else if (pg.classList.contains('carry')) {
+      fitHeading(one('.scr'), 64, 36, 80);
+      shrink(all('.grp li'), 17, 13, () => bottomIn(pg, '.cols') > H - 40);
+    } else if (pg.classList.contains('hand')) {
+      fitHeading(one('h2'), 66, 40, 140);
+      shrink(all('.sec li'), 16, 12.5, () => bottomIn(pg, '.sec') > H - 40);
+    } else if (pg.classList.contains('contact')) fitHeading(one('.brand'), 70, 40, 160);
     else if (pg.classList.contains('reviews')) shrink(all('.card p'), 15.5, 12, () => bottomIn(pg, '.grid') > H - 40);
-    else if (pg.classList.contains('costing')) shrink(all('.notes p'), 18, 13, () => bottomIn(pg, '.redir') > H - 58);
+    else if (pg.classList.contains('costing')) {
+      all('.price').forEach((el) => fitWidth(el, el.closest('.many') ? 36 : 42, 22));
+      all('.col .lb b').forEach((el) => fitWidth(el, 24, 16));
+      shrink(all('.notes p'), 18, 13, () => bottomIn(pg, '.redir') > H - 58);
+    }
     else if (pg.classList.contains('policy')) shrink(all('.pl li'), 18, 13, () => bottomIn(pg, '.pl') > H - 40);
   }
 }
