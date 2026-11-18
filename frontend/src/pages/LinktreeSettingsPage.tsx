@@ -4,7 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Check, Copy, ExternalLink, Film, ListTree, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { LinktreeBackgroundType, LinktreeFont, LinktreeTheme, Organization } from '@/types';
 import { useAuth } from '@/context/AuthContext';
@@ -39,6 +39,16 @@ interface FormValues {
   backgroundColor: string;
   allowVideoOnMobile: boolean;
 }
+
+const FIELD_LABELS: Record<string, string> = {
+  instagramUrl: 'Instagram',
+  websiteUrl: 'Website',
+  whatsappNumber: 'WhatsApp number',
+  shortBio: 'Bio',
+  logoUrl: 'Logo',
+  backgroundImageUrl: 'Background image',
+  backgroundVideoUrl: 'Background video',
+};
 
 /** LinkTree module settings — entirely separate from Host Page settings. */
 export function LinktreeSettingsPage() {
@@ -93,7 +103,13 @@ export function LinktreeSettingsPage() {
       await refresh?.();
       toast.success('LinkTree updated');
     },
-    onError: () => toast.error('Could not save — check the fields (URLs must be full links)'),
+    // Say which field is wrong ("Validation failed — instagramUrl: Enter your Instagram link…").
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message.replace(/^Validation failed — /, 'Could not save — ').replace(/linktreeTheme\./g, '').replace(/\b(instagramUrl|websiteUrl|whatsappNumber|shortBio|logoUrl|backgroundImageUrl|backgroundVideoUrl)\b/g, (k) => FIELD_LABELS[k] ?? k)
+          : 'Could not save — please try again',
+      ),
   });
 
   const onVideoPick = async (file: File | undefined) => {
@@ -165,19 +181,19 @@ export function LinktreeSettingsPage() {
                 <Input id="ltName" placeholder={organization?.name} {...register('agencyName')} />
               </Field>
               <Field label="Short bio" htmlFor="ltBio">
-                <Textarea id="ltBio" rows={2} maxLength={300} placeholder="Treks | Tours | Trusted travel partner ✈" {...register('shortBio')} />
+                <Textarea id="ltBio" rows={2} maxLength={500} placeholder="Treks | Tours | Trusted travel partner ✈" {...register('shortBio')} />
               </Field>
             </div>
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <Field label="Instagram URL" htmlFor="ltInsta">
-              <Input id="ltInsta" placeholder="https://instagram.com/…" {...register('instagramUrl')} />
+              <Input id="ltInsta" placeholder="instagram.com/youragency or @youragency" {...register('instagramUrl')} />
             </Field>
             <Field label="WhatsApp number" htmlFor="ltWa" hint="With country code, e.g. 918130117871">
               <Input id="ltWa" placeholder="91XXXXXXXXXX" {...register('whatsappNumber')} />
             </Field>
             <Field label="Website (optional)" htmlFor="ltWeb">
-              <Input id="ltWeb" placeholder="https://…" {...register('websiteUrl')} />
+              <Input id="ltWeb" placeholder="www.youragency.com" {...register('websiteUrl')} />
             </Field>
           </div>
         </Card>
