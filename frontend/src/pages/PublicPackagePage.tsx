@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -29,6 +29,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, initials } from '@/lib/format';
 import { Banner, BulletList, BODY_FONT, DISPLAY_FONT, HAIRLINE, INK, MUTED, THEME_VARS } from '@/lib/signatureTheme';
+import { BookTripSheet } from '@/components/linktree/BookTripSheet';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -65,6 +66,9 @@ export function PublicPackagePage() {
   const { id } = useParams<{ id: string }>();
   const reduce = useReducedMotion();
   const [sent, setSent] = useState(false);
+  // "PDF": the visitor leaves their details first (it becomes a lead), then opens the brochure.
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const closePdf = useCallback(() => setPdfOpen(false), []);
 
   const query = useQuery({
     queryKey: ['public-package', id],
@@ -207,7 +211,7 @@ export function PublicPackagePage() {
             </p>
             <p className="text-xs" style={{ color: MUTED }}>per person</p>
           </div>
-          <Button variant="outline" onClick={() => window.open(`/p/${pkg.id}/pdf`, '_blank')}>
+          <Button variant="outline" onClick={() => setPdfOpen(true)}>
             <Download /> PDF
           </Button>
         </motion.div>
@@ -495,6 +499,17 @@ export function PublicPackagePage() {
           <Send className="size-4" /> Book on WhatsApp
         </a>
       )}
+
+      <BookTripSheet
+        slug={org?.slug ?? pkg.id}
+        pkg={pdfOpen ? pkg : null}
+        mode="pdf"
+        agencyName={org?.name ?? 'Our team'}
+        whatsappHref={waHref ?? null}
+        endpoint={`/public/package/${pkg.id}/enquiry`}
+        showTripLink={false}
+        onClose={closePdf}
+      />
     </div>
   );
 }

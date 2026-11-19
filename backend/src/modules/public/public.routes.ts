@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { asyncHandler } from '../../lib/http';
 import { validate } from '../../lib/validate';
 import { systemPrisma, withTenant } from '../../lib/prisma';
@@ -433,56 +434,83 @@ const linktreeEnquirySchema = z.object({
     .refine((v) => v.replace(/\D/g, '').length >= 7 && v.replace(/\D/g, '').length <= 15, 'Enter a valid phone number'),
   email: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().email('Enter a valid email').max(200).optional()),
   website: z.string().max(200).optional(),
+  /** "book" (BOOK button) or "pdf" (asked for the brochure first). */
+  intent: z.enum(['book', 'pdf']).default('book'),
 });
+
+type TripEnquiry = z.infer<typeof linktreeEnquirySchema>;
+
+/**
+ * Files the lead for a trip enquiry (BOOK, or a brochure request). Skips bots
+ * (honeypot) and repeats: same phone + same trip within 30 minutes.
+ */
+async function createTripLead(organizationId: string, body: TripEnquiry, where: string, pkgWhere: Prisma.PackageWhereInput) {
+  if (body.website) return; // a bot — pretend it worked, file nothing
+  await withTenant(organizationId, async (tx) => {
+    const pkg = await tx.package.findFirst({
+      where: { id: body.packageId, ...pkgWhere },
+      select: { id: true, name: true, destination: true, nights: true, days: true },
+    });
+    if (!pkg) throw NotFound('This trip is no longer available');
+    const phone = body.phone.trim();
+    const digits = phone.replace(/\D/g, '');
+    // Compared by digits only: "+91 98765 11122" and "9876511122" are the same person.
+    const recent = await tx.lead.findMany({
+      where: { packageId: pkg.id, createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }, phone: { not: null } },
+      select: { phone: true },
+      take: 200,
+    });
+    if (recent.some((l) => (l.phone ?? '').replace(/\D/g, '').slice(-10) === digits.slice(-10))) return;
+    const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, phone, body.email ?? null);
+    await tx.lead.create({
+      data: {
+        organizationId,
+        name: body.name,
+        phone,
+        email: body.email ?? null,
+        destination: pkg.destination,
+        packageId: pkg.id,
+        notes: `${body.intent === 'pdf' ? 'Downloaded the brochure (PDF)' : 'Booking enquiry'} from ${where} — ${pkg.name} (${pkg.days}D/${pkg.nights}N)`,
+        source: 'WEBSITE',
+        status: 'NEW',
+        isRepeatCustomer: !!repeatBooking,
+        repeatBookingId: repeatBooking?.id,
+      },
+    });
+  });
+}
+
+const enquiryThanks = { ok: true, message: 'Thank you! Our team will call you shortly.' };
 
 router.post(
   '/linktree/:slug/enquiry',
   linktreeEnquiryLimiter,
   validate({ params: slugParam, body: linktreeEnquirySchema }),
   asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as z.infer<typeof linktreeEnquirySchema>;
-    const thanks = { ok: true, message: 'Thank you! Our team will call you shortly.' };
-    if (body.website) {
-      res.status(201).json(thanks); // a bot — pretend it worked, file nothing
-      return;
+    const body = req.body as TripEnquiry;
+    if (!body.website) {
+      const org = await systemPrisma.organization.findUnique({ where: { slug: req.params.slug }, select: { id: true } });
+      if (!org) throw NotFound('This page does not exist');
+      await createTripLead(org.id, body, 'LinkTree', { isActive: true, showOnLinktree: true });
     }
-    const org = await systemPrisma.organization.findUnique({ where: { slug: req.params.slug }, select: { id: true } });
-    if (!org) throw NotFound('This page does not exist');
+    res.status(201).json(enquiryThanks);
+  }),
+);
 
-    await withTenant(org.id, async (tx) => {
-      const pkg = await tx.package.findFirst({
-        where: { id: body.packageId, isActive: true, showOnLinktree: true },
-        select: { id: true, name: true, destination: true, nights: true, days: true },
-      });
+/** The trip page's (/p/:id) "PDF" form — the package id is the trip; the agency comes from it. */
+router.post(
+  '/package/:id/enquiry',
+  linktreeEnquiryLimiter,
+  validate({ params: packageIdParam, body: linktreeEnquirySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as TripEnquiry;
+    if (!body.website) {
+      if (body.packageId !== req.params.id) throw NotFound('This trip is no longer available');
+      const pkg = await systemPrisma.package.findUnique({ where: { id: req.params.id }, select: { organizationId: true } });
       if (!pkg) throw NotFound('This trip is no longer available');
-      const phone = body.phone.trim();
-      const digits = phone.replace(/\D/g, '');
-      // Same person, same trip, a moment ago (double tap / resend) → keep the lead they already have.
-      // Compared by digits only: "+91 98765 11122" and "9876511122" are the same person.
-      const recent = await tx.lead.findMany({
-        where: { packageId: pkg.id, createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }, phone: { not: null } },
-        select: { phone: true },
-        take: 200,
-      });
-      if (recent.some((l) => (l.phone ?? '').replace(/\D/g, '').slice(-10) === digits.slice(-10))) return;
-      const repeatBooking = await findRepeatCustomerBooking(tx, org.id, phone, body.email ?? null);
-      await tx.lead.create({
-        data: {
-          organizationId: org.id,
-          name: body.name,
-          phone,
-          email: body.email ?? null,
-          destination: pkg.destination,
-          packageId: pkg.id,
-          notes: `Booking enquiry from LinkTree — ${pkg.name} (${pkg.days}D/${pkg.nights}N)`,
-          source: 'WEBSITE',
-          status: 'NEW',
-          isRepeatCustomer: !!repeatBooking,
-          repeatBookingId: repeatBooking?.id,
-        },
-      });
-    });
-    res.status(201).json(thanks);
+      await createTripLead(pkg.organizationId, body, 'the trip page', {});
+    }
+    res.status(201).json(enquiryThanks);
   }),
 );
 

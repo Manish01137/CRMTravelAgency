@@ -48,7 +48,7 @@ export function LinktreePage() {
   const [videoReady, setVideoReady] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
-  const [booking, setBooking] = useState<LinktreeModulePackage | null>(null);
+  const [booking, setBooking] = useState<{ pkg: LinktreeModulePackage; mode: 'book' | 'pdf' } | null>(null);
   const closeBooking = useCallback(() => setBooking(null), []);
   const [tabsOverflow, setTabsOverflow] = useState(false);
 
@@ -284,12 +284,12 @@ export function LinktreePage() {
                 </span>
               </a>
               <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                <a href={`/p/${p.id}/pdf`} target="_blank" rel="noreferrer" className={pill}>
+                <button type="button" onClick={() => setBooking({ pkg: p, mode: 'pdf' })} className={pill}>
                   PDF
-                </a>
+                </button>
                 <button
                   type="button"
-                  onClick={() => setBooking(p)}
+                  onClick={() => setBooking({ pkg: p, mode: 'book' })}
                   className={cn(pill, accent && 'border-transparent text-[#0B1024] hover:opacity-90')}
                   style={accent ? { backgroundColor: accent } : undefined}
                 >
@@ -323,7 +323,14 @@ export function LinktreePage() {
         </motion.a>
       </main>
 
-      <BookTripSheet slug={org.slug} pkg={booking} agencyName={name} whatsappHref={booking && waDigits ? waHref(booking) : null} onClose={closeBooking} />
+      <BookTripSheet
+        slug={org.slug}
+        pkg={booking?.pkg ?? null}
+        mode={booking?.mode}
+        agencyName={name}
+        whatsappHref={booking && waDigits ? waHref(booking.pkg) : null}
+        onClose={closeBooking}
+      />
 
       <footer className="relative bg-black py-6 text-center text-sm text-white/45">
         Powered by{' '}
