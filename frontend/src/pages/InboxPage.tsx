@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   AlertCircle,
@@ -20,6 +21,11 @@ import {
   MailOpen,
   Pause,
   Phone,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
+  ShieldCheck,
   RotateCcw,
   Bot,
   Search,
@@ -92,6 +98,8 @@ import { VoiceNote, isAudioUrl, isMediaLabel, isStickerMessage } from '@/compone
 import { ContactInfoPanel } from '@/components/inbox/ContactInfoPanel';
 import { VoiceRecorderBar, canRecordVoice } from '@/components/inbox/VoiceRecorder';
 import { GroupsDialog } from '@/components/inbox/GroupsDialog';
+import { useCalls } from '@/components/calls/CallProvider';
+import { CallPermissionDialog } from '@/components/calls/CallPermissionDialog';
 import { StickerPicker } from '@/components/inbox/StickerPicker';
 import { ScheduleDialog, ScheduledListDialog, ScheduledStrip } from '@/components/inbox/ScheduleDialogs';
 import { AddPaymentMethodLink, WhatsAppBillingBanner, isWhatsAppPaymentError } from '@/components/channels/WhatsAppBilling';
@@ -777,6 +785,24 @@ function SelectableRow({
   );
 }
 
+/** Call records in the chat ("📞 Missed WhatsApp call", "[📞 Allowed WhatsApp calls …]") — shown as a centred line, not a bubble. */
+const isCallNote = (body: string | null | undefined) => !!body && /^(📞 (WhatsApp call|Missed WhatsApp call|Called$)|\[📞 )/.test(body);
+
+function CallNotePill({ m }: { m: ChannelMessage }) {
+  const text = (m.body ?? '').replace(/^\[|\]$/g, '').replace(/^📞 /, '');
+  const missed = /^Missed|declined|no answer|couldn't connect|failed|^Declined/i.test(text);
+  const Icon = /^(Allowed|Declined) WhatsApp calls/.test(text) ? ShieldCheck : /^Missed/.test(text) ? PhoneMissed : /answered by|declined by/.test(text) ? PhoneIncoming : PhoneOutgoing;
+  return (
+    <div className="my-2 flex justify-center px-3">
+      <span className="inline-flex max-w-full items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-[12.5px] text-[#54656f] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+        <Icon className={cn('size-4 shrink-0', missed ? 'text-[#f15c6d]' : 'text-[#25d366]')} />
+        <span className="min-w-0 truncate">{text}</span>
+        <span className="shrink-0 text-[11px] text-[#667781]">{clockTime(m.createdAt)}</span>
+      </span>
+    </div>
+  );
+}
+
 export function InboxPage() {
   const queryClient = useQueryClient();
   const [channel, setChannel] = useState<ConversationChannel>('WHATSAPP');
@@ -877,7 +903,7 @@ export function InboxPage() {
   const selectedLeadId = (fromThread ?? listed)?.lead?.id ?? selected?.leadId ?? null;
   const selectedTags = (fromThread ?? listed)?.lead?.tags ?? [];
   const selectedAssignee = (fromThread ?? listed)?.lead?.assignedTo ?? null;
-  const { user: me, isAdmin } = useAuth();
+  const { user: me, isAdmin, organization } = useAuth();
 
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
   // WhatsApp templates failing because the Meta account has no payment method.
@@ -1039,6 +1065,15 @@ export function InboxPage() {
     },
   });
 
+  // WhatsApp calls (in the browser) — see components/calls/CallProvider.
+  const { startCall: startWhatsAppCall, busy: callBusy } = useCalls();
+  const [callPermissionOpen, setCallPermissionOpen] = useState(false);
+  const placeWhatsAppCall = async () => {
+    if (!selected) return;
+    const result = await startWhatsAppCall(selected.id, { name: selected.contactName, phone: selected.contactPhone ?? selected.externalContactId });
+    if (result === 'permission') setCallPermissionOpen(true);
+  };
+
   // AI Agent Builder (Phase 4) — human-in-the-loop only: these fill the
   // composer / show a summary for an agent to review, never send anything themselves.
   const [summary, setSummary] = useState<string | null>(null);
@@ -1134,6 +1169,21 @@ export function InboxPage() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+  // Opened from a call card (/inbox?chat=<id>): jump to that WhatsApp chat.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const chatParam = searchParams.get('chat');
+  useEffect(() => {
+    if (!chatParam) return;
+    if (channel !== 'WHATSAPP') {
+      setChannel('WHATSAPP');
+      return; // runs again once the channel switch (which clears the selection) is done
+    }
+    openChat(chatParam);
+    setSearchParams((p) => {
+      p.delete('chat');
+      return p;
+    }, { replace: true });
+  }, [chatParam, channel]); // eslint-disable-line react-hooks/exhaustive-deps
   const chatOverPhone = !wideScreen && !!selected;
   useEffect(() => {
     if (!chatOverPhone) return;
@@ -1866,16 +1916,32 @@ export function InboxPage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}
-                  {wa && selected.contactPhone && (
-                    <a
-                      href={`tel:${selected.contactPhone}`}
-                      onClick={() => logCallMutation.mutate()}
-                      className={cn(headerIconBtn, 'hidden sm:inline-flex')}
-                      aria-label="Call"
-                      title={`Call ${selected.contactPhone}`}
-                    >
-                      <Phone className="size-5" />
-                    </a>
+                  {wa && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" className={cn(headerIconBtn, 'hidden sm:inline-flex')} aria-label="Call" title="Call">
+                          <Phone className="size-5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuItem disabled={callBusy} onSelect={() => void placeWhatsAppCall()}>
+                          <PhoneCall className="size-4" /> WhatsApp call
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setCallPermissionOpen(true)}>
+                          <ShieldCheck className="size-4" /> Ask permission to call
+                        </DropdownMenuItem>
+                        {selected.contactPhone && (
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              logCallMutation.mutate();
+                              window.location.href = `tel:${selected.contactPhone}`;
+                            }}
+                          >
+                            <Phone className="size-4" /> Call from my phone
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                   <button
                     type="button"
@@ -1916,6 +1982,16 @@ export function InboxPage() {
                       <DropdownMenuItem disabled={messages.length === 0} onSelect={() => summarizeMutation.mutate()}>
                         <FileText className="size-4" /> Summarize chat
                       </DropdownMenuItem>
+                      {wa && (
+                        <>
+                          <DropdownMenuItem disabled={callBusy} onSelect={() => void placeWhatsAppCall()}>
+                            <PhoneCall className="size-4" /> WhatsApp call
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setCallPermissionOpen(true)}>
+                            <ShieldCheck className="size-4" /> Ask permission to call
+                          </DropdownMenuItem>
+                        </>
+                      )}
                       {wa && selected.contactPhone && (
                         <DropdownMenuItem
                           onSelect={() => {
@@ -1923,7 +1999,7 @@ export function InboxPage() {
                             window.location.href = `tel:${selected.contactPhone}`;
                           }}
                         >
-                          <Phone className="size-4" /> Call {selected.contactPhone}
+                          <Phone className="size-4" /> Call from my phone
                         </DropdownMenuItem>
                       )}
                       {selectedLeadId && (
@@ -2037,6 +2113,9 @@ export function InboxPage() {
                               {dayLabel(m.createdAt)} {clockTime(m.createdAt)}
                             </p>
                           )}
+                          {wa && isCallNote(m.body) ? (
+                            <CallNotePill m={m} />
+                          ) : (
                           <SelectableRow
                             selecting={selecting && !isSending(m)}
                             checked={!!selectedMsgs?.includes(m.id)}
@@ -2064,6 +2143,7 @@ export function InboxPage() {
                               />
                             )}
                           </SelectableRow>
+                          )}
                         </div>
                       );
                     })}
@@ -2469,6 +2549,15 @@ export function InboxPage() {
                   </div>
                 )}
               </div>
+              {wa && (
+                <CallPermissionDialog
+                  conversationId={selected.id}
+                  open={callPermissionOpen}
+                  onOpenChange={setCallPermissionOpen}
+                  agencyName={organization?.name}
+                  onCall={() => void placeWhatsAppCall()}
+                />
+              )}
               {contactInfoOpen && (
                 <ContactInfoPanel
                   conversation={{ ...selected, lead: (fromThread ?? listed)?.lead ?? selected.lead }}

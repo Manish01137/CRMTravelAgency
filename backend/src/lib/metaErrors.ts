@@ -50,6 +50,17 @@ const FRIENDLY: Record<number, string> = {
   132016: 'Meta disabled this template — create a new one.',
   133006: 'This WhatsApp number must be verified with a code first — open Settings → Channels → WhatsApp.',
   133010: "This WhatsApp number isn't activated on Meta yet — open Settings → Channels → WhatsApp and press Re-check status.",
+  // WhatsApp Calling
+  138000: 'Calling is not switched on for this WhatsApp number — turn it on in Settings → Channels → WhatsApp → Calling.',
+  138001: "This customer can't take WhatsApp calls right now (their app may be out of date).",
+  138002: 'Too many calls are running on this number at once — try again when one ends.',
+  138003: 'This call is already being handled.',
+  138004: 'The call could not connect — check your internet connection and microphone, then try again.',
+  138005: 'Too many calls to this customer in a short time — wait a while before calling again.',
+  138006: "This customer hasn't allowed calls from you yet — ask for permission to call first.",
+  138007: "The call didn't connect in time — try again.",
+  138009: 'You have already asked this customer for call permission recently — WhatsApp allows 1 request a day and 2 a week.',
+  138012: "This number has reached WhatsApp's daily limit of business-started calls — try again tomorrow.",
   368: 'Meta has temporarily blocked this account for a policy issue — check Meta Business Suite for details.',
 };
 

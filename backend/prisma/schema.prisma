@@ -274,6 +274,7 @@ model Organization {
   scheduledMessages   ScheduledMessage[]
   contactGroups       ContactGroup[]
   contactGroupMembers ContactGroupMember[]
+  whatsappCalls       WhatsAppCall[]
 
   @@map("organizations")
 }
@@ -382,6 +383,8 @@ model User {
   quickRepliesCreated      QuickReply[]       @relation("QuickReplyCreatedBy")
   scheduledMessagesCreated ScheduledMessage[] @relation("ScheduledMessageCreatedBy")
   contactGroupsCreated     ContactGroup[]     @relation("ContactGroupCreatedBy")
+  callsAnswered            WhatsAppCall[]     @relation("CallAnsweredBy")
+  callsStarted             WhatsAppCall[]     @relation("CallStartedBy")
   messagesDeleted          Message[]          @relation("MessageDeletedBy")
 
   @@index([organizationId])
@@ -921,6 +924,7 @@ model Conversation {
   messages            Message[]
   scheduledMessages   ScheduledMessage[]
   contactGroupMembers ContactGroupMember[]
+  whatsappCalls       WhatsAppCall[]
   // Phase 4 (Bot Flow) — additive back-relation, same pattern Phase 3 used on Lead.
   botFlowSession      BotFlowSession?
 
@@ -1054,6 +1058,53 @@ model ContactGroupMember {
   @@index([conversationId])
   @@index([organizationId])
   @@map("contact_group_members")
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  RINGING // inbound: ringing in the CRM · outbound: calling the customer
+  ANSWERED // connected — the conversation is happening
+  COMPLETED // ended after being answered
+  MISSED // inbound, nobody answered
+  DECLINED // inbound: a teammate declined · outbound: the customer declined
+  NO_ANSWER // outbound, the customer didn't pick up
+  FAILED
+}
+
+/// A WhatsApp voice call (Cloud API Calling) with a customer — answered in
+/// the browser (WebRTC). Media never touches our servers; this is the record.
+model WhatsAppCall {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  /// Meta's call id ("wacid…").
+  externalCallId String        @unique @map("external_call_id")
+  direction      CallDirection
+  status         CallStatus    @default(RINGING)
+  /// The customer's side of the WebRTC handshake: their SDP offer (inbound) or answer (outbound). Cleared when the call ends.
+  remoteSdp      String?       @map("remote_sdp")
+  answeredById   String?       @map("answered_by_id") @db.Uuid
+  startedById    String?       @map("started_by_id") @db.Uuid
+  answeredAt     DateTime?     @map("answered_at")
+  endedAt        DateTime?     @map("ended_at")
+  durationSec    Int?          @map("duration_sec")
+  errorMessage   String?       @map("error_message")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  answeredBy   User?        @relation("CallAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+  startedBy    User?        @relation("CallStartedBy", fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([status])
+  @@map("whatsapp_calls")
 }
 
 /// WhatsApp message template (needed to message a contact outside the 24h

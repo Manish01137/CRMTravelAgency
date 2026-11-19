@@ -952,6 +952,127 @@ export async function uploadWhatsAppProfilePhotoHandle(buffer: Buffer, mimeType:
   return putData.h;
 }
 
+// --- WhatsApp Calling (Cloud API) ------------------------------------------
+// The audio itself goes browser ↔ WhatsApp over WebRTC; these calls only do
+// the signalling (SDP offer/answer) and the call controls.
+
+export type WhatsAppCallAction = 'pre_accept' | 'accept' | 'reject' | 'terminate';
+
+/** Answer / decline / hang up a call. `sdp` (our SDP answer) is needed for pre_accept and accept. */
+export async function whatsappCallAction(
+  phoneNumberId: string,
+  accessToken: string,
+  callId: string,
+  action: WhatsAppCallAction,
+  sdp?: string,
+): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/calls`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      call_id: callId,
+      action,
+      ...(sdp ? { session: { sdp_type: 'answer', sdp } } : {}),
+    }),
+  });
+}
+
+/** Rings the customer's WhatsApp. `sdp` is our SDP offer; their answer comes back on the "calls" webhook. Returns Meta's call id. */
+export async function startWhatsAppCall(phoneNumberId: string, accessToken: string, to: string, sdp: string, callbackData?: string): Promise<string> {
+  const data = await graphFetch<{ calls?: { id?: string }[] }>(`/${phoneNumberId}/calls`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to,
+      action: 'connect',
+      session: { sdp_type: 'offer', sdp },
+      ...(callbackData ? { biz_opaque_callback_data: callbackData.slice(0, 512) } : {}),
+    }),
+  });
+  const id = data.calls?.[0]?.id;
+  if (!id) throw new AppError(502, 'META_API_ERROR', "WhatsApp didn't start the call — please try again");
+  return id;
+}
+
+export interface WhatsAppCallPermission {
+  /** no_permission | temporary | permanent */
+  status: string;
+  /** Unix seconds — when a temporary permission runs out. */
+  expiresAt: number | null;
+  canCall: boolean;
+  canAsk: boolean;
+}
+
+/** Whether we may call this customer right now, and whether we may ask them for permission. */
+export async function getWhatsAppCallPermission(phoneNumberId: string, accessToken: string, userWaId: string): Promise<WhatsAppCallPermission> {
+  const data = await graphFetch<{
+    permission?: { status?: string; expiration_time?: number };
+    actions?: { action_name?: string; can_perform_action?: boolean }[];
+  }>(`/${phoneNumberId}/call_permissions?user_wa_id=${encodeURIComponent(userWaId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const can = (name: string) => !!data.actions?.find((a) => a.action_name === name)?.can_perform_action;
+  return {
+    status: data.permission?.status ?? 'no_permission',
+    expiresAt: data.permission?.expiration_time ?? null,
+    canCall: can('start_call'),
+    canAsk: can('send_call_permission_request'),
+  };
+}
+
+/** The "Allow calls?" message (only inside the 24h window). Returns the message wamid. */
+export async function sendWhatsAppCallPermissionRequest(phoneNumberId: string, accessToken: string, to: string, text: string): Promise<string | undefined> {
+  const data = await graphFetch<{ messages?: { id?: string }[] }>(`/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: { type: 'call_permission_request', action: { name: 'call_permission_request' }, body: { text } },
+    }),
+  });
+  return data.messages?.[0]?.id;
+}
+
+export interface WhatsAppCallingSettings {
+  enabled: boolean;
+  /** DEFAULT = customers see the call button · DISABLE_ALL = hidden */
+  callIconVisibility: 'DEFAULT' | 'DISABLE_ALL';
+  /** ENABLED = when a customer calls, they're asked to allow call-backs */
+  callbackPermission: 'ENABLED' | 'DISABLED';
+}
+
+export async function getWhatsAppCallingSettings(phoneNumberId: string, accessToken: string): Promise<WhatsAppCallingSettings> {
+  const data = await graphFetch<{ calling?: { status?: string; call_icon_visibility?: string; callback_permission_status?: string } }>(
+    `/${phoneNumberId}/settings`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  const c = data.calling ?? {};
+  return {
+    enabled: c.status === 'ENABLED',
+    callIconVisibility: c.call_icon_visibility === 'DISABLE_ALL' ? 'DISABLE_ALL' : 'DEFAULT',
+    callbackPermission: c.callback_permission_status === 'ENABLED' ? 'ENABLED' : 'DISABLED',
+  };
+}
+
+export async function updateWhatsAppCallingSettings(phoneNumberId: string, accessToken: string, s: WhatsAppCallingSettings): Promise<void> {
+  await graphFetch(`/${phoneNumberId}/settings`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      calling: {
+        status: s.enabled ? 'ENABLED' : 'DISABLED',
+        call_icon_visibility: s.callIconVisibility,
+        callback_permission_status: s.callbackPermission,
+      },
+    }),
+  });
+}
+
 // --- Instagram (Facebook Login flow — classic Instagram Graph API, reached
 // through a connected Facebook Page). Shares the same Meta App ID/Secret as
 // WhatsApp above; no separate Instagram app or credentials are used. --------

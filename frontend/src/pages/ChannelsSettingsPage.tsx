@@ -21,6 +21,7 @@ import { launchWhatsAppEmbeddedSignup, launchInstagramLoginPopup, startInstagram
 import type { ConnectInstagramResult } from '@/types';
 import { WhatsAppBillingSection } from '@/components/channels/WhatsAppBilling';
 import { WhatsAppProfilePreview } from '@/components/channels/WhatsAppProfilePreview';
+import { WhatsAppCallingCard } from '@/components/channels/WhatsAppCallingCard';
 import { useAuth } from '@/context/AuthContext';
 import { Switch } from '@/components/ui/switch';
 import { WhatsAppPendingSetup, WhatsAppRecheckButton } from '@/components/channels/WhatsAppPendingSetup';
@@ -808,6 +809,7 @@ export function ChannelsSettingsPage() {
           />
           <EmailChannelCard status={email ?? { channel: 'EMAIL', status: 'NOT_CONNECTED', displayName: null, lastError: null, connectedAt: null }} />
           {whatsapp?.status === 'CONNECTED' && <WhatsAppBusinessProfileCard displayName={whatsapp.displayName} />}
+          {whatsapp?.status === 'CONNECTED' && <WhatsAppCallingCard />}
           {whatsapp?.status === 'CONNECTED' && <TemplatesCard />}
         </div>
       )}

@@ -23,6 +23,8 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "db:roles": "tsx prisma/rls/apply-roles.ts",
     "owner:create": "tsx prisma/create-owner.ts",
+    "owner:list": "tsx prisma/owner-tools.ts list",
+    "owner:reset-password": "tsx prisma/owner-tools.ts reset",
     "test:isolation": "tsx tests/isolation.test.ts"
   },
   "dependencies": {

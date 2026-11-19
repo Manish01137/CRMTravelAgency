@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import callsRoutes from './modules/calls/calls.routes';
 import authRoutes from './modules/auth/auth.routes';
 import orgRoutes from './modules/organizations/org.routes';
 import usersRoutes from './modules/users/users.routes';
@@ -59,6 +60,7 @@ router.use('/inbox', inboxRoutes);
 router.use('/quick-replies', quickRepliesRoutes);
 router.use('/communications', communicationsRoutes);
 router.use('/call-log', callLogRoutes);
+router.use('/calls', callsRoutes);
 // Phase 4 — Automation & AI
 router.use('/bot-flows', botFlowRoutes);
 router.use('/ad-package-mappings', adPackageMappingsRoutes);

@@ -31,9 +31,12 @@ export function isPlaceholderBody(body: string | null | undefined): boolean {
   return !!body && /^\[[^\n]*\]$/.test(body.trim());
 }
 
-/** An emoji reaction (or its removal) — not a reply to anything, so bots should let it pass silently. */
+/**
+ * An emoji reaction (or its removal), or the customer's answer to "Allow
+ * calls?" — not a reply to anything, so bots should let it pass silently.
+ */
 export function isReactionBody(body: string | null | undefined): boolean {
-  return !!body && /^\[(Reacted |Removed a reaction\])/.test(body.trim());
+  return !!body && /^\[(Reacted |Removed a reaction\]|📞 )/.test(body.trim());
 }
 
 /** What a bot sends back when the traveller's reply isn't something it can read. */

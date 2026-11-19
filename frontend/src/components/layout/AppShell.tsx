@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Menu } from 'lucide-react';
 import { BrandMark, SidebarContent } from './Sidebar';
 import { UserMenu } from './UserMenu';
+import { CallProvider } from '@/components/calls/CallProvider';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [location.pathname]);
 
   return (
+    <CallProvider>
     <div className="min-h-dvh bg-surface">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card md:flex">
@@ -61,5 +63,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>
     </div>
+    </CallProvider>
   );
 }

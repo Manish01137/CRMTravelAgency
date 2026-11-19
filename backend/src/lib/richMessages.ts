@@ -62,5 +62,7 @@ export function richPreview(body: string): string | null {
   if (/^\[Location\b/.test(body)) return '📍 Location';
   const people = parseContactBody(body);
   if (people) return `👤 ${people.map((p) => p.name).join(', ')}`;
+  const call = body.match(/^\[(📞 [^\]]*)\]$/); // the customer's answer to "Allow calls?"
+  if (call) return call[1];
   return null;
 }

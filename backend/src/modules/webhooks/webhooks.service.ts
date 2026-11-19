@@ -14,6 +14,7 @@ import { findAdPackages, sharedDestination } from '../ad-package-mappings/ad-pac
 import { describeWhatsAppMessage, type WhatsAppMediaKind } from '../../lib/whatsappInbound';
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
+import { callPermissionReplyBody, handleCallsWebhook } from '../calls/calls.service';
 
 /**
  * Meta sends WhatsApp + Instagram events to ONE shared webhook URL, so we
@@ -212,6 +213,90 @@ async function resolveInstagramContactInfo(
   }
 }
 
+type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
+
+/**
+ * The chat (and, for a brand-new contact, its lead) for someone who just
+ * reached us — by message or by WhatsApp call. Runs inside the caller's
+ * transaction.
+ */
+export async function ensureContactConversation(
+  tx: Tx,
+  params: {
+    organizationId: string;
+    channel: 'WHATSAPP' | 'INSTAGRAM';
+    externalContactId: string;
+    contactName: string | null;
+    contactAvatarUrl?: string | null;
+    contactPhone: string | null;
+    leadSource: InboundLeadSource;
+    adId?: string | null;
+  },
+) {
+  const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, leadSource, adId } = params;
+  const existing = await tx.conversation.findUnique({
+    where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
+  });
+  const isNewConversation = !existing;
+
+  // Resolved in this same transaction so the lead is already tagged by the
+  // time the message becomes visible to the Bot Flow poller — the engine
+  // relies on that tag to send the ad's package first (bot-flow.engine.ts).
+  const adPackages = adId ? await findAdPackages(tx, organizationId, adId) : [];
+  let adTaggedNewLead = false;
+
+  let leadId: string | undefined;
+  if (!existing) {
+    // Auto-create (or attach to) a Lead for a brand-new contact.
+    let lead = contactPhone
+      ? await tx.lead.findFirst({ where: { organizationId, phone: contactPhone } })
+      : null;
+    if (!lead) {
+      const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, contactPhone, null);
+      lead = await tx.lead.create({
+        data: {
+          organizationId,
+          name: contactName || (contactPhone ? contactPhone : `${channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} contact`),
+          phone: contactPhone ?? undefined,
+          source: leadSource,
+          isRepeatCustomer: !!repeatBooking,
+          repeatBookingId: repeatBooking?.id,
+          ...(adId && { sourceAdId: adId }),
+          // sourcePackageId drives the "Ad: <package>" badge — the first
+          // package; destination only when every linked package shares one.
+          ...(adPackages.length > 0 && {
+            sourcePackageId: adPackages[0].id,
+            destination: sharedDestination(adPackages) ?? undefined,
+          }),
+        },
+      });
+      adTaggedNewLead = adPackages.length > 0;
+    }
+    leadId = lead.id;
+  }
+
+  // upsert, not findUnique-then-create: two webhook deliveries for the same
+  // brand-new contact can arrive as separate concurrent requests, each
+  // seeing `existing` as null. A plain create() then races on the unique
+  // constraint below — and catching that failure doesn't work either:
+  // Postgres aborts the WHOLE transaction on a constraint violation, so any
+  // further statement in it (even a harmless re-fetch) fails with 25P02
+  // until rollback — confirmed by testing that approach here first, before
+  // landing on upsert. Postgres resolves the conflict inside one atomic
+  // INSERT ... ON CONFLICT statement instead, so there's never a separate
+  // failed statement to recover from.
+  const conversation = await tx.conversation.upsert({
+    where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
+    create: { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, leadId },
+    update: {
+      ...(contactName ? { contactName } : {}),
+      ...(contactAvatarUrl ? { contactAvatarUrl } : {}),
+    },
+  });
+
+  return { conversation, isNewConversation, adPackages, adTaggedNewLead };
+}
+
 /** Finds-or-creates the Lead + Conversation for an inbound message, then records it. */
 async function recordInbound(params: {
   organizationId: string;
@@ -242,64 +327,15 @@ async function recordInbound(params: {
   const { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, body, mediaUrl, interactiveSelectionId, externalMessageId, replyToWamid, leadSource, adId } = params;
 
   return withTenant(organizationId, async (tx) => {
-    const existing = await tx.conversation.findUnique({
-      where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
-    });
-    const isNewConversation = !existing;
-
-    // Resolved in this same transaction so the lead is already tagged by the
-    // time the message becomes visible to the Bot Flow poller — the engine
-    // relies on that tag to send the ad's package first (bot-flow.engine.ts).
-    const adPackages = adId ? await findAdPackages(tx, organizationId, adId) : [];
-    let adTaggedNewLead = false;
-
-    let leadId: string | undefined;
-    if (!existing) {
-      // Auto-create (or attach to) a Lead for a brand-new contact.
-      let lead = contactPhone
-        ? await tx.lead.findFirst({ where: { organizationId, phone: contactPhone } })
-        : null;
-      if (!lead) {
-        const repeatBooking = await findRepeatCustomerBooking(tx, organizationId, contactPhone, null);
-        lead = await tx.lead.create({
-          data: {
-            organizationId,
-            name: contactName || (contactPhone ? contactPhone : `${channel === 'WHATSAPP' ? 'WhatsApp' : 'Instagram'} contact`),
-            phone: contactPhone ?? undefined,
-            source: leadSource,
-            isRepeatCustomer: !!repeatBooking,
-            repeatBookingId: repeatBooking?.id,
-            ...(adId && { sourceAdId: adId }),
-            // sourcePackageId drives the "Ad: <package>" badge — the first
-            // package; destination only when every linked package shares one.
-            ...(adPackages.length > 0 && {
-              sourcePackageId: adPackages[0].id,
-              destination: sharedDestination(adPackages) ?? undefined,
-            }),
-          },
-        });
-        adTaggedNewLead = adPackages.length > 0;
-      }
-      leadId = lead.id;
-    }
-
-    // upsert, not findUnique-then-create: two webhook deliveries for the same
-    // brand-new contact can arrive as separate concurrent requests, each
-    // seeing `existing` as null. A plain create() then races on the unique
-    // constraint below — and catching that failure doesn't work either:
-    // Postgres aborts the WHOLE transaction on a constraint violation, so any
-    // further statement in it (even a harmless re-fetch) fails with 25P02
-    // until rollback — confirmed by testing that approach here first, before
-    // landing on upsert. Postgres resolves the conflict inside one atomic
-    // INSERT ... ON CONFLICT statement instead, so there's never a separate
-    // failed statement to recover from.
-    const conversation = await tx.conversation.upsert({
-      where: { organizationId_channel_externalContactId: { organizationId, channel, externalContactId } },
-      create: { organizationId, channel, externalContactId, contactName, contactAvatarUrl, contactPhone, leadId },
-      update: {
-        ...(contactName ? { contactName } : {}),
-        ...(contactAvatarUrl ? { contactAvatarUrl } : {}),
-      },
+    const { conversation, isNewConversation, adPackages, adTaggedNewLead } = await ensureContactConversation(tx, {
+      organizationId,
+      channel,
+      externalContactId,
+      contactName,
+      contactAvatarUrl,
+      contactPhone,
+      leadSource,
+      adId,
     });
 
     // Quoting a message we don't have (older than this chat, or never saved) just shows as a normal message.
@@ -490,6 +526,11 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       }
       continue;
     }
+    // WhatsApp voice calls: ringing, answered, ended (see calls.service.ts).
+    if (field === 'calls') {
+      await handleCallsWebhook(organizationId, value);
+      continue;
+    }
     // account_update, phone_number_quality_update, … — nothing to record as a message.
     if (field !== 'messages') continue;
 
@@ -514,6 +555,22 @@ async function processWhatsAppEntry(entry: Record<string, unknown>): Promise<voi
       // buildCarouselContent), so the Bot Flow engine can match it directly
       // instead of trying to parse free text. button_reply covered too, for
       // any future quick-reply-button use — same shape, different field name.
+      // The customer's answer to our "Allow calls?" request — a note in the
+      // chat, never something for the bots to reply to.
+      const permissionReply = (msg.interactive as { type?: string; call_permission_reply?: Parameters<typeof callPermissionReplyBody>[0] } | undefined);
+      if (type === 'interactive' && permissionReply?.type === 'call_permission_reply') {
+        await recordInbound({
+          organizationId,
+          channel: 'WHATSAPP',
+          externalContactId: from,
+          contactName: contact?.profile?.name ?? null,
+          contactPhone: from,
+          body: callPermissionReplyBody(permissionReply.call_permission_reply ?? {}),
+          externalMessageId: (msg.id as string) ?? null,
+          leadSource: 'WHATSAPP',
+        });
+        continue;
+      }
       const described = describeWhatsAppMessage(msg);
       const interactiveSelectionId = described.interactiveSelectionId;
       const doc = described.document;
