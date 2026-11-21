@@ -344,7 +344,7 @@ export function PublicPackagePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ backgroundColor: 'var(--blue-pale)' }}>
-                    <th className="px-4 py-2.5 text-left font-bold" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>Option</th>
+                    <th className="px-4 py-2.5 text-left font-bold" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>Sharing (per person)</th>
                     <th className="px-4 py-2.5 text-left font-bold" style={{ color: 'var(--blue-dark)', fontFamily: DISPLAY_FONT }}>Price</th>
                   </tr>
                 </thead>

@@ -305,8 +305,27 @@ function buildHtml(c: Ctx): string {
   // --- Costing
   const cur = pkg.priceCurrency || 'INR';
   const options = pkg.pricingOptions.length
-    ? [...pkg.pricingOptions].sort((a, b) => (a.season === 'PEAK' ? 1 : 0) - (b.season === 'PEAK' ? 1 : 0)).map((p) => ({ label: p.season === 'PEAK' ? `${p.label} (Peak)` : p.label, price: p.price, old: null as number | null }))
+    ? pkg.pricingOptions.map((p) => ({ label: p.label, price: p.price, old: null as number | null }))
     : [{ label: 'Per Person', price: pkg.priceAmount, old: pkg.originalPrice && pkg.originalPrice > pkg.priceAmount ? pkg.originalPrice : null }];
+  // Many prices (Quad / Triple / Double / Single…) or peak-season ones: a price
+  // table — one row per sharing type, Standard and Peak side by side.
+  const hasPeak = pkg.pricingOptions.some((p) => p.season === 'PEAK');
+  const priceRows: { label: string; std: number | null; peak: number | null }[] = [];
+  for (const p of pkg.pricingOptions) {
+    const key = p.label.trim().toLowerCase();
+    let r = priceRows.find((x) => x.label.trim().toLowerCase() === key);
+    if (!r) priceRows.push((r = { label: p.label.trim(), std: null, peak: null }));
+    if (p.season === 'PEAK') r.peak ??= p.price;
+    else r.std ??= p.price;
+  }
+  const hasStd = priceRows.some((r) => r.std != null);
+  const cell = (v: number | null, peak = false) => `<td class="pr${peak ? ' peak' : ''}">${v == null ? '—' : `${esc(cur)} ${money(v)}/-`}</td>`;
+  const tableHtml =
+    hasPeak || options.length > 3
+      ? `<div class="pcap">Offer Price <b>· per person</b></div><table class="ptable"><thead><tr><th>Sharing</th>${hasStd ? `<th>${hasPeak ? 'Standard' : 'Price'}</th>` : ''}${hasPeak ? '<th class="pk">Peak season</th>' : ''}</tr></thead><tbody>${priceRows
+          .map((r) => `<tr><td class="lb">${esc(r.label)}</td>${hasStd ? cell(r.std) : ''}${hasPeak ? cell(r.peak, true) : ''}</tr>`)
+          .join('')}</tbody></table>`
+      : null;
   const onSale = !!pkg.originalPrice && pkg.originalPrice > pkg.priceAmount;
   const pickup = lines(pkg.pickupPoints);
   const costingHtml = page(
@@ -314,13 +333,13 @@ function buildHtml(c: Ctx): string {
     `${logo()}
     ${onSale ? `<div class="sale">SALE IS LIVE</div>` : ''}
     <h2>COSTING</h2>${route ? `<div class="route">● ${esc(route)}</div>` : ''}
-    <div class="cols ${options.length > 2 ? 'many' : ''}">${options
+    ${tableHtml ?? `<div class="cols ${options.length > 2 ? 'many' : ''}">${options
       .map(
         (o) => `<div class="col"><div class="lb">Offer Price<b>${esc(o.label)}</b></div>
         <div class="price">${esc(cur)} ${money(o.price)}/-</div>
         ${o.old ? `<div class="price old">${esc(cur)} ${money(o.old)}/-</div>` : ''}</div>`,
       )
-      .join('')}</div>
+      .join('')}</div>`}
     ${pickup.length ? `<div class="notes"><div class="t">✈ PICKUP POINTS ✈</div>${pickup.map((n) => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
     <a class="book" href="${esc(c.bookingUrl)}" style="text-decoration:none"><span>BOOK NOW${pkg.bookingAmount ? ' @' : ''}</span><b>${pkg.bookingAmount ? `${esc(cur)} ${money(pkg.bookingAmount)}/- ` : ''}➜</b></a>
     ${socials.length ? `<div class="soc">${socials.slice(0, 6).map((s) => `<span>${esc(s)}</span>`).join('')}</div>` : ''}
@@ -535,6 +554,10 @@ function fitAll(root: HTMLElement) {
     else if (pg.classList.contains('costing')) {
       all('.price').forEach((el) => fitWidth(el, el.closest('.many') ? 36 : 42, 22));
       all('.col .lb b').forEach((el) => fitWidth(el, 24, 16));
+      // A long price table: tighter rows first, then smaller text.
+      const tooTall = () => bottomIn(pg, '.redir') > H - 58;
+      if (tooTall()) all('.ptable td').forEach((el) => (el.style.paddingTop = el.style.paddingBottom = '8px'));
+      shrink(all('.ptable td'), 24, 15, tooTall);
       shrink(all('.notes p'), 18, 13, () => bottomIn(pg, '.redir') > H - 58);
     }
     else if (pg.classList.contains('policy')) shrink(all('.pl li'), 18, 13, () => bottomIn(pg, '.pl') > H - 40);

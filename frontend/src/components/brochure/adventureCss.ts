@@ -218,6 +218,18 @@ b.hl{color:var(--blue);font-weight:600}
 .incl ul.two{columns:2;column-gap:44px}
 .incl ul.two li{break-inside:avoid}
 .costing .cols.many{gap:26px 40px;flex-wrap:wrap;padding:0 60px}
+.costing .pcap{margin-top:34px;font-size:24px;color:#222}
+.costing .pcap b{color:var(--blue);font-weight:600}
+.costing .ptable{margin:14px auto 0;width:860px;border-collapse:separate;border-spacing:0 10px;table-layout:fixed}
+.costing .ptable th{font-family:'Oswald','Arial Narrow',Impact,sans-serif;font-weight:500;font-size:22px;letter-spacing:1px;text-transform:uppercase;color:var(--blue-dark);padding:0 14px;text-align:center}
+.costing .ptable th:first-child{text-align:left}
+.costing .ptable th.pk{color:var(--orange)}
+.costing .ptable td{padding:14px 18px;font-size:24px;line-height:1.15;border-top:3px solid var(--blue-dark);border-bottom:3px solid var(--blue-dark);background:#fff}
+.costing .ptable td.lb{text-align:left;color:var(--blue);font-weight:600;border-left:3px solid var(--blue-dark);border-radius:8px 0 0 8px;overflow-wrap:anywhere}
+.costing .ptable td.pr{background:var(--blue-dark);color:#fff;font-weight:600;text-align:center;white-space:nowrap;width:250px}
+.costing .ptable td.pr.peak{background:var(--orange);border-color:var(--orange)}
+.costing .ptable td:last-child{border-right:3px solid var(--blue-dark);border-radius:0 8px 8px 0}
+.costing .ptable td.pr.peak:last-child{border-right-color:var(--orange)}
 .costing .cols.many .price{width:280px;height:74px}
 .costing .price{white-space:nowrap;overflow:hidden;padding:0 12px}
 .cover .awards{height:auto;min-height:92px;padding:16px 20px 12px;gap:14px}

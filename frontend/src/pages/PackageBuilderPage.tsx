@@ -479,9 +479,26 @@ function BrochureDesignPicker({ value, onChange }: { value: PdfTemplateId; onCha
   );
 }
 
+/** Price per person by room sharing — the usual way Indian group trips are priced. */
+const SHARING_PRESETS = ['Quad sharing', 'Triple sharing', 'Double sharing', 'Single sharing'];
+const EXTRA_PRESETS = ['Child with bed', 'Child without bed', 'Extra bed'];
+
 function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
-  const { register, control, formState: { errors } } = form;
+  const { register, control, watch, formState: { errors } } = form;
   const pricing = useFieldArray({ control, name: 'pricingOptions' });
+  // One-tap price rows. A label already in the list (same season) isn't added twice.
+  const priceRows = watch('pricingOptions');
+  const [presetSeason, setPresetSeason] = useState<'STANDARD' | 'PEAK'>('STANDARD');
+  const hasRow = (label: string) =>
+    priceRows.some((p) => p.label.trim().toLowerCase() === label.toLowerCase() && (p.season ?? 'STANDARD') === presetSeason);
+  const addPreset = (labels: string[]) => {
+    const missing = labels.filter((l) => !hasRow(l));
+    if (!missing.length) return;
+    // Replace one empty row left from "Add price" before adding new ones.
+    const emptyIdx = priceRows.findIndex((p) => !p.label.trim() && !p.price.trim());
+    if (emptyIdx >= 0) pricing.remove(emptyIdx);
+    pricing.append(missing.map((label) => ({ label, price: '', season: presetSeason })), { shouldFocus: true });
+  };
 
   return (
     <div className="space-y-8">
@@ -544,14 +561,43 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
       </div>
 
       <div>
-        <SectionLabel hint="Add any number of labelled prices — e.g. Single / Double / Triple sharing, Child With Bed, Extra Bed. Tag any as Peak season (Christmas/New Year etc.) to show them as a separate pricing block on the brochure.">
+        <SectionLabel hint="Price per person for each room sharing — tap Quick add, then fill in the amounts. Tag prices as Peak season (Christmas / New Year…) and the brochure shows Standard and Peak side by side.">
           Pricing options
         </SectionLabel>
+        <div className="mb-3 rounded-xl border border-border bg-surface/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">Quick add</p>
+            <div className="inline-flex rounded-full border border-border bg-card p-0.5 text-xs" role="radiogroup" aria-label="Season for quick add">
+              {(['STANDARD', 'PEAK'] as const).map((sn) => (
+                <button
+                  key={sn}
+                  type="button"
+                  role="radio"
+                  aria-checked={presetSeason === sn}
+                  onClick={() => setPresetSeason(sn)}
+                  className={cn('rounded-full px-3 py-1 font-medium transition-colors', presetSeason === sn ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  {sn === 'STANDARD' ? 'Standard' : 'Peak season'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button type="button" size="sm" disabled={SHARING_PRESETS.every(hasRow)} onClick={() => addPreset(SHARING_PRESETS)}>
+              <Plus /> All 4 sharing types
+            </Button>
+            {[...SHARING_PRESETS, ...EXTRA_PRESETS].map((label) => (
+              <Button key={label} type="button" size="sm" variant="outline" disabled={hasRow(label)} onClick={() => addPreset([label])}>
+                <Plus /> {label}
+              </Button>
+            ))}
+          </div>
+        </div>
         <div className="space-y-2">
           {pricing.fields.map((f, i) => (
             <div key={f.id} className="flex gap-2">
               <Input placeholder="Label (e.g. Double sharing)" className="flex-1" {...register(`pricingOptions.${i}.label`)} />
-              <Input type="number" min={0} placeholder="Price" className="w-32" {...register(`pricingOptions.${i}.price`)} />
+              <Input type="number" min={0} placeholder="Price / person" className="w-36" {...register(`pricingOptions.${i}.price`)} />
               <Controller
                 control={control}
                 name={`pricingOptions.${i}.season`}

@@ -229,6 +229,20 @@ function toFileName(name: string): string {
   return `${safe || 'package'}.pdf`;
 }
 
+/** One row per label (in the order first entered) with its standard and peak price. */
+function priceGrid(standard: { label: string; price: number }[], peak: { label: string; price: number }[]) {
+  const rows: { label: string; standard: number | null; peak: number | null }[] = [];
+  const row = (label: string) => {
+    const key = label.trim().toLowerCase();
+    let r = rows.find((x) => x.label.trim().toLowerCase() === key);
+    if (!r) rows.push((r = { label: label.trim(), standard: null, peak: null }));
+    return r;
+  };
+  standard.forEach((t) => (row(t.label).standard ??= t.price));
+  peak.forEach((t) => (row(t.label).peak ??= t.price));
+  return rows;
+}
+
 export function PackageBrochurePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -684,11 +698,32 @@ export function PackageBrochurePage() {
         <Page label="pricing & booking">
           <BrandRow orgName={orgName} logoUrl={logoUrl} />
           <Banner>PRICING &amp; BOOKING PROCESS</Banner>
-          {priceTiers.length > 0 && (
+          {peakTiers.length > 0 && (
+            // Standard and peak-season prices side by side: one row per sharing type.
             <table className="pbx-price-table">
               <thead>
                 <tr>
-                  <th>Option</th>
+                  <th>Sharing (per person)</th>
+                  {standardTiers.length > 0 && <th>Standard</th>}
+                  <th style={{ color: 'var(--orange)' }}>Peak season</th>
+                </tr>
+              </thead>
+              <tbody>
+                {priceGrid(standardTiers, peakTiers).map((row) => (
+                  <tr key={row.label}>
+                    <td>{row.label}</td>
+                    {standardTiers.length > 0 && <td>{row.standard == null ? '—' : formatCurrency(row.standard, pkg.priceCurrency)}</td>}
+                    <td>{row.peak == null ? '—' : formatCurrency(row.peak, pkg.priceCurrency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {peakTiers.length === 0 && priceTiers.length > 0 && (
+            <table className="pbx-price-table">
+              <thead>
+                <tr>
+                  <th>{pkg.pricingOptions.length ? 'Sharing (per person)' : 'Option'}</th>
                   <th>Pricing</th>
                 </tr>
               </thead>
