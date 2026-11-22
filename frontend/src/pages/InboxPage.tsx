@@ -786,17 +786,18 @@ function SelectableRow({
 }
 
 /** Call records in the chat ("📞 Missed WhatsApp call", "[📞 Allowed WhatsApp calls …]") — shown as a centred line, not a bubble. */
-const isCallNote = (body: string | null | undefined) => !!body && /^(📞 (WhatsApp call|Missed WhatsApp call|Called$)|\[📞 )/.test(body);
+const isCallNote = (body: string | null | undefined) => !!body && /^(📞 (WhatsApp call|Missed WhatsApp call|Called$)|\[📞 |💬 Commented on your )/.test(body);
 
 function CallNotePill({ m }: { m: ChannelMessage }) {
-  const text = (m.body ?? '').replace(/^\[|\]$/g, '').replace(/^📞 /, '');
-  const missed = /^Missed|declined|no answer|couldn't connect|failed|^Declined/i.test(text);
-  const Icon = /^(Allowed|Declined) WhatsApp calls/.test(text) ? ShieldCheck : /^Missed/.test(text) ? PhoneMissed : /answered by|declined by/.test(text) ? PhoneIncoming : PhoneOutgoing;
+  const comment = (m.body ?? '').startsWith('💬 ');
+  const text = (m.body ?? '').replace(/^\[|\]$/g, '').replace(/^(📞|💬) /, '');
+  const missed = !comment && /^Missed|declined|no answer|couldn't connect|failed|^Declined/i.test(text);
+  const Icon = comment ? MessageCircle : /^(Allowed|Declined) WhatsApp calls/.test(text) ? ShieldCheck : /^Missed/.test(text) ? PhoneMissed : /answered by|declined by/.test(text) ? PhoneIncoming : PhoneOutgoing;
   return (
     <div className="my-2 flex justify-center px-3">
       <span className="inline-flex max-w-full items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-[12.5px] text-[#54656f] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
         <Icon className={cn('size-4 shrink-0', missed ? 'text-[#f15c6d]' : 'text-[#25d366]')} />
-        <span className="min-w-0 truncate">{text}</span>
+        <span className={cn('min-w-0', comment ? 'line-clamp-2' : 'truncate')}>{text}</span>
         <span className="shrink-0 text-[11px] text-[#667781]">{clockTime(m.createdAt)}</span>
       </span>
     </div>
@@ -2113,7 +2114,7 @@ export function InboxPage() {
                               {dayLabel(m.createdAt)} {clockTime(m.createdAt)}
                             </p>
                           )}
-                          {wa && isCallNote(m.body) ? (
+                          {isCallNote(m.body) ? (
                             <CallNotePill m={m} />
                           ) : (
                           <SelectableRow
@@ -2236,7 +2237,9 @@ export function InboxPage() {
                 {wa && whatsappBillingIssue && <WhatsAppBillingBanner />}
                 {igWindow !== 'open' && (
                   <div className={cn('mb-2 rounded-xl px-3 py-2 text-xs', igWindow === 'closed' ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>
-                    {igWindow === 'closed'
+                    {igWindow === 'closed' && !selected?.lastInboundAt
+                      ? 'They haven’t messaged you yet (they came from a comment) — once they reply to your DM, you can chat here.'
+                      : igWindow === 'closed'
                       ? 'Their last message was over 7 days ago — Instagram won’t deliver a reply until they message you again.'
                       : 'Over 24 hours since their last message — Instagram only accepts a personal reply from your team now (up to 7 days). Your message is sent as a team reply.'}
                   </div>

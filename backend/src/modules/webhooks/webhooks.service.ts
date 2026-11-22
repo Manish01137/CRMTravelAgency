@@ -15,6 +15,7 @@ import { describeWhatsAppMessage, type WhatsAppMediaKind } from '../../lib/whats
 import { env } from '../../env';
 import type { WhatsAppCredentials, InstagramCredentials } from '../channels/channels.service';
 import { callPermissionReplyBody, handleCallsWebhook } from '../calls/calls.service';
+import { handleInstagramComment } from '../instagram-comments/instagram-comments.service';
 
 /**
  * Meta sends WhatsApp + Instagram events to ONE shared webhook URL, so we
@@ -704,6 +705,15 @@ async function processInstagramEntry(entry: Record<string, unknown>): Promise<vo
   if (!igAccountId) return;
   const organizationId = await findConnectionOrgId('INSTAGRAM', igAccountId);
   if (!organizationId) return;
+
+  // Comments on our posts / ads → the comment → DM automation (instagram-comments module).
+  const changes = Array.isArray(entry.changes) ? (entry.changes as { field?: string; value?: Record<string, unknown> }[]) : [];
+  for (const change of changes) {
+    if (change.field !== 'comments' || !change.value) continue;
+    await handleInstagramComment(organizationId, igAccountId, change.value).catch((err) =>
+      console.error('[webhooks] Instagram comment failed:', err instanceof Error ? err.message : err),
+    );
+  }
 
   const messaging = Array.isArray(entry.messaging) ? (entry.messaging as Record<string, unknown>[]) : [];
   for (const event of messaging) {

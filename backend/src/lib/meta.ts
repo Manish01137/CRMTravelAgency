@@ -1200,6 +1200,59 @@ export async function sendInstagramText(
   return { externalMessageId: data.message_id };
 }
 
+/**
+ * Meta's "private reply": one DM to someone who commented on our post or ad
+ * (within 7 days of the comment, one per comment). It's how a comment turns
+ * into a chat; the customer's reply then opens the normal 24h window.
+ */
+export async function sendInstagramPrivateReply(igUserId: string, accessToken: string, commentId: string, text: string): Promise<{ externalMessageId: string | null }> {
+  const data = await instagramGraphFetch<{ message_id?: string }>(`/${igUserId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text } }),
+  });
+  return { externalMessageId: data.message_id ?? null };
+}
+
+/** A public answer under a comment ("Sent you the details in DM 📩"). */
+export async function replyToInstagramComment(commentId: string, accessToken: string, text: string): Promise<void> {
+  await instagramGraphFetch(`/${commentId}/replies?message=${encodeURIComponent(text)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export interface InstagramMediaItem {
+  id: string;
+  caption: string | null;
+  mediaType: string;
+  thumbnailUrl: string | null;
+  permalink: string | null;
+  timestamp: string | null;
+}
+
+/** The account's latest posts / reels, to pick which ones a comment rule is for. */
+export async function listInstagramMedia(igUserId: string, accessToken: string, limit = 30): Promise<InstagramMediaItem[]> {
+  const data = await instagramGraphFetch<{
+    data?: { id: string; caption?: string; media_type?: string; media_url?: string; thumbnail_url?: string; permalink?: string; timestamp?: string }[];
+  }>(`/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=${limit}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return (data.data ?? []).map((m) => ({
+    id: m.id,
+    caption: m.caption ?? null,
+    mediaType: m.media_type ?? 'IMAGE',
+    thumbnailUrl: m.media_type === 'VIDEO' ? (m.thumbnail_url ?? null) : (m.media_url ?? m.thumbnail_url ?? null),
+    permalink: m.permalink ?? null,
+    timestamp: m.timestamp ?? null,
+  }));
+}
+
+/** Turns on the "comments" webhook for this account (safe to repeat). */
+export async function subscribeInstagramCommentWebhooks(accessToken: string): Promise<void> {
+  await subscribeInstagramLoginWebhooks(accessToken);
+}
+
 /** Sends an Instagram DM image from a publicly reachable URL, same pattern as sendWhatsAppImage — see sendInstagramText's comment on why this goes through instagramGraphFetch. */
 export async function sendInstagramImage(
   igUserId: string,
@@ -1382,7 +1435,8 @@ export async function refreshInstagramLongLivedToken(accessToken: string): Promi
  * agency that connects — not only accounts set up in the Meta app dashboard.
  */
 export async function subscribeInstagramLoginWebhooks(accessToken: string): Promise<void> {
-  const fields = 'messages,messaging_postbacks,messaging_seen,message_reactions';
+  // comments: for the comment → DM automation (needs instagram_business_manage_comments).
+  const fields = 'messages,messaging_postbacks,messaging_seen,message_reactions,comments';
   await instagramGraphFetch(`/${env.META_GRAPH_VERSION}/me/subscribed_apps?subscribed_fields=${fields}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },

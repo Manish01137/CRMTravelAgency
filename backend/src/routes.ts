@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import callsRoutes from './modules/calls/calls.routes';
+import instagramCommentsRoutes from './modules/instagram-comments/instagram-comments.routes';
 import authRoutes from './modules/auth/auth.routes';
 import orgRoutes from './modules/organizations/org.routes';
 import usersRoutes from './modules/users/users.routes';
@@ -61,6 +62,7 @@ router.use('/quick-replies', quickRepliesRoutes);
 router.use('/communications', communicationsRoutes);
 router.use('/call-log', callLogRoutes);
 router.use('/calls', callsRoutes);
+router.use('/instagram-comments', instagramCommentsRoutes);
 // Phase 4 — Automation & AI
 router.use('/bot-flows', botFlowRoutes);
 router.use('/ad-package-mappings', adPackageMappingsRoutes);

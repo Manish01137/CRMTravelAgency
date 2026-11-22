@@ -269,12 +269,14 @@ model Organization {
   adPackageMappings         AdPackageMapping[]
   botInteractionLogs        BotInteractionLog[]
 
-  eventLeads          EventLead[]
-  quickReplies        QuickReply[]
-  scheduledMessages   ScheduledMessage[]
-  contactGroups       ContactGroup[]
-  contactGroupMembers ContactGroupMember[]
-  whatsappCalls       WhatsAppCall[]
+  eventLeads              EventLead[]
+  quickReplies            QuickReply[]
+  scheduledMessages       ScheduledMessage[]
+  contactGroups           ContactGroup[]
+  contactGroupMembers     ContactGroupMember[]
+  whatsappCalls           WhatsAppCall[]
+  instagramCommentRules   InstagramCommentRule[]
+  instagramCommentReplies InstagramCommentReply[]
 
   @@map("organizations")
 }
@@ -608,6 +610,7 @@ model Package {
   // Named explicitly since it's a second, distinct relation to Lead.
   adAttributedLeads     Lead[]                    @relation("LeadSourcePackage")
   adPackageMappings     AdPackageMapping[]
+  instagramCommentRules InstagramCommentRule[]
   linktreeCategoryLinks PackageLinktreeCategory[]
 
   @@unique([organizationId, slug])
@@ -1058,6 +1061,65 @@ model ContactGroupMember {
   @@index([conversationId])
   @@index([organizationId])
   @@map("contact_group_members")
+}
+
+/// Instagram "comment → DM": when someone comments on a post / ad, send them
+/// a private DM (Meta's private reply) — usually a package — and optionally
+/// answer the comment publicly.
+model InstagramCommentRule {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  isActive       Boolean  @default(true) @map("is_active")
+  /// The posts / ads it's for: {id, caption?, thumbnailUrl?, permalink?}[] — empty = every post and ad.
+  media          Json     @default("[]")
+  /// Words that trigger it ("price", "details") — empty = any comment.
+  keywords       Json     @default("[]")
+  packageId      String?  @map("package_id") @db.Uuid
+  /// The DM. {name} = their @username, {link} = the package page.
+  dmText         String   @map("dm_text")
+  /// Optional public answer under the comment ("Sent you the details in DM 📩").
+  publicReply    String?  @map("public_reply")
+  sentCount      Int      @default(0) @map("sent_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  package      Package?                @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  replies      InstagramCommentReply[]
+
+  @@index([organizationId])
+  @@map("instagram_comment_rules")
+}
+
+enum CommentReplyStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Every comment the auto-DM looked at (one per comment — Meta allows one private reply each).
+model InstagramCommentReply {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  ruleId         String?            @map("rule_id") @db.Uuid
+  commentId      String             @unique @map("comment_id")
+  mediaId        String?            @map("media_id")
+  adId           String?            @map("ad_id")
+  igUserId       String             @map("ig_user_id")
+  username       String?
+  commentText    String?            @map("comment_text")
+  conversationId String?            @map("conversation_id") @db.Uuid
+  status         CommentReplyStatus
+  error          String?
+  createdAt      DateTime           @default(now()) @map("created_at")
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rule         InstagramCommentRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([igUserId, mediaId])
+  @@map("instagram_comment_replies")
 }
 
 enum CallDirection {

@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, ImagePlus, Link2, Loader2, Trash2, UploadCloud } from 'lucide-react';
+import { AlertTriangle, ImagePlus, Link2, Loader2, Pencil, Trash2, UploadCloud } from 'lucide-react';
+import { ImageEditorDialog } from './image-editor';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -11,11 +12,25 @@ interface ImageUploadProps {
   compact?: boolean;
   tile?: boolean;
   className?: string;
+  /** Frame the editor starts with (width / height), e.g. 16 / 9 for a banner. Default: the photo's own shape. */
+  aspect?: number | null;
+  /** false = upload straight away, no editor. */
+  editable?: boolean;
 }
 
 const MAX_MB = 5;
+/** Bigger photos (straight from a phone camera) are fine — the editor saves them smaller. */
+const MAX_EDIT_MB = 25;
 
-export function ImageUpload({ value, onChange, compact, tile, className }: ImageUploadProps) {
+interface Editing {
+  src: string;
+  name: string;
+  keepPng: boolean;
+  /** The picked file, when it's a fresh upload (not editing an uploaded photo). */
+  file: File | null;
+}
+
+export function ImageUpload({ value, onChange, compact, tile, className, aspect = null, editable = true }: ImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -30,25 +45,70 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
   const hasImage = !!value && /^https?:\/\//.test(value);
   const imgFailed = hasImage && erroredValue === value;
 
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const closeEditor = () => {
+    if (editing?.file) URL.revokeObjectURL(editing.src);
+    setEditing(null);
+  };
+
+  // A picked photo opens the editor first (GIFs keep their animation, so they skip it).
   const doUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please choose an image file');
       return;
     }
-    if (file.size > MAX_MB * 1024 * 1024) {
-      toast.error(`Image is too large (max ${MAX_MB} MB)`);
+    const canEdit = editable && file.type !== 'image/gif';
+    if (file.size > (canEdit ? MAX_EDIT_MB : MAX_MB) * 1024 * 1024) {
+      toast.error(`Image is too large (max ${canEdit ? MAX_EDIT_MB : MAX_MB} MB)`);
       return;
     }
+    if (canEdit) {
+      setEditing({ src: URL.createObjectURL(file), name: file.name, keepPng: file.type === 'image/png', file });
+      return;
+    }
+    await sendFile(file);
+  };
+
+  const editExisting = () => {
+    if (!value) return;
+    const name = decodeURIComponent(value.split('?')[0].split('/').pop() || 'photo');
+    setEditing({ src: value, name, keepPng: /\.png$/i.test(name), file: null });
+  };
+
+  const sendFile = async (file: File): Promise<boolean> => {
     setUploading(true);
     try {
       const { url } = await api.upload('/uploads', file);
       onChange(url);
+      return true;
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Upload failed');
+      return false;
     } finally {
       setUploading(false);
     }
   };
+
+  const editor = (
+    <ImageEditorDialog
+      source={editing?.src ?? null}
+      fileName={editing?.name ?? 'photo'}
+      keepPng={!!editing?.keepPng}
+      defaultAspect={aspect}
+      busy={uploading}
+      isNew={!!editing?.file}
+      onCancel={closeEditor}
+      onUseOriginal={
+        editing?.file && editing.file.size <= MAX_MB * 1024 * 1024
+          ? () => {
+              const f = editing.file!;
+              void sendFile(f).then((ok) => ok && closeEditor());
+            }
+          : undefined
+      }
+      onApply={(f) => void sendFile(f).then((ok) => ok && closeEditor())}
+    />
+  );
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -70,11 +130,17 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
       }}
     />
   );
+  const extras = (
+    <>
+      {hiddenInput}
+      {editor}
+    </>
+  );
 
   if (tile) {
     return (
-      <>
-        {hiddenInput}
+      <div className="group/tile relative">
+        {extras}
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
@@ -107,14 +173,25 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
             </>
           )}
         </button>
-      </>
+        {editable && hasImage && !imgFailed && !uploading && (
+          <button
+            type="button"
+            onClick={editExisting}
+            className="absolute right-1.5 top-1.5 flex size-7 items-center justify-center rounded-full bg-white/95 text-foreground shadow opacity-100 transition-opacity sm:opacity-0 sm:group-hover/tile:opacity-100"
+            aria-label="Edit photo"
+            title="Edit photo (crop, zoom, rotate)"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        )}
+      </div>
     );
   }
 
   if (compact) {
     return (
       <div className={cn('flex items-center gap-2', className)}>
-        {hiddenInput}
+        {extras}
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
@@ -132,6 +209,11 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
             <ImagePlus className="size-4 text-muted-foreground/60" />
           )}
         </button>
+        {editable && hasImage && !imgFailed && (
+          <button type="button" onClick={editExisting} className="text-muted-foreground hover:text-primary" aria-label="Edit photo" title="Edit photo">
+            <Pencil className="size-4" />
+          </button>
+        )}
         {hasImage && (
           <button type="button" onClick={() => onChange(null)} className="text-muted-foreground hover:text-destructive" aria-label="Remove image">
             <Trash2 className="size-4" />
@@ -143,11 +225,16 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
 
   return (
     <div className={className}>
-      {hiddenInput}
+      {extras}
       {hasImage && !imgFailed ? (
         <div className="group relative overflow-hidden rounded-xl border border-border">
           <img src={value!} alt="" className="h-40 w-full object-cover" onError={() => setErroredValue(value!)} />
-          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {editable && (
+              <button type="button" onClick={editExisting} disabled={uploading} className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-foreground">
+                <Pencil className="size-3.5" /> Edit
+              </button>
+            )}
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -203,7 +290,7 @@ export function ImageUpload({ value, onChange, compact, tile, className }: Image
                 <UploadCloud className="size-5" />
               </span>
               <span className="text-sm font-semibold text-foreground">Upload image</span>
-              <span className="text-xs text-muted-foreground">Drag & drop or click · PNG/JPG/WEBP · max {MAX_MB} MB</span>
+              <span className="text-xs text-muted-foreground">Drag & drop or click · PNG/JPG/WEBP · crop & adjust before upload</span>
             </>
           )}
         </button>

@@ -50,6 +50,7 @@ import { InstagramCallbackPage } from '@/pages/InstagramCallbackPage';
 import { InboxPage } from '@/pages/InboxPage';
 import { CommunicationsPage } from '@/pages/CommunicationsPage';
 import { CallLogPage } from '@/pages/CallLogPage';
+import { InstagramCommentsPage } from '@/pages/InstagramCommentsPage';
 import { BotFlowsPage } from '@/pages/BotFlowsPage';
 import { BotFlowBuilderPage } from '@/pages/BotFlowBuilderPage';
 import { AiAgentSettingsPage } from '@/pages/AiAgentSettingsPage';
@@ -176,6 +177,7 @@ function AppRoutes() {
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/communications" element={<CommunicationsPage />} />
         <Route path="/call-log" element={<CallLogPage />} />
+        <Route path="/instagram-auto-dm" element={<InstagramCommentsPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/bills" element={<BillsPage />} />
         <Route path="/settings/profile" element={<ProfilePage />} />
