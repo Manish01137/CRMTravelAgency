@@ -8,6 +8,13 @@ const nullText = (max = 5000) => z.preprocess(emptyToNull, z.string().max(max).n
 const optUrl = z.preprocess(emptyToUndefined, z.string().url('Enter a valid URL').max(2000).optional());
 const nullUrl = z.preprocess(emptyToNull, z.string().url('Enter a valid URL').max(2000).nullable()).optional();
 
+// A trip's own WhatsApp number: "+91 98765-43210" → "919876543210" (digits only, as wa.me wants).
+// Blank clears it; text without digits stays as typed so the regex flags it.
+const WA_NUMBER_MESSAGE = 'Enter the WhatsApp number with country code, e.g. 919876543210';
+const toWaDigits = (v: unknown) => (typeof v === 'string' ? (v.trim() ? v.replace(/\D/g, '') || v.trim() : null) : v);
+const waNumberCreate = z.preprocess((v) => toWaDigits(v) ?? undefined, z.string().regex(/^\d{8,15}$/, WA_NUMBER_MESSAGE).optional());
+const waNumberUpdate = z.preprocess(toWaDigits, z.string().regex(/^\d{8,15}$/, WA_NUMBER_MESSAGE).nullable()).optional();
+
 // --- Repeatable structured blocks (stored as JSON) ---------------------------
 const pricingOptionSchema = z.object({
   label: z.string().trim().min(1).max(80),
@@ -80,6 +87,7 @@ const builderFields = {
   whatsappBannerUrl: optUrl,
   whatsappDescription: optText(2000),
   contactNumber: optText(40),
+  whatsappNumber: waNumberCreate,
   contactEmail: z.preprocess(emptyToUndefined, z.string().email('Enter a valid email').max(200).optional()),
   route: optText(120),
   bookingAmount: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
@@ -143,6 +151,7 @@ export const updatePackageSchema = z
     whatsappBannerUrl: nullUrl,
     whatsappDescription: nullText(2000),
     contactNumber: nullText(40),
+    whatsappNumber: waNumberUpdate,
     contactEmail: z.preprocess(emptyToNull, z.string().email().max(200).nullable()).optional(),
     route: nullText(120),
     bookingAmount: z.preprocess(emptyToNull, z.coerce.number().int().nonnegative().max(1_000_000_000).nullable()).optional(),

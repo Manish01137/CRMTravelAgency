@@ -21,10 +21,46 @@ import { formatCurrency } from '@/lib/format';
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
 /**
+ * True when the (lowercased) search text appears in any of the fields. Numbers
+ * also match ignoring spaces / + / dashes, so "98765 43" finds "+91 98765-43210".
+ */
+export function matchesSearch(search: string, fields: (string | null | undefined)[]): boolean {
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+  const text = fields.filter(Boolean).join(' ').toLowerCase();
+  if (text.includes(q)) return true;
+  const qDigits = q.replace(/\D/g, '');
+  return qDigits.length >= 3 && /^[\d\s+()-]+$/.test(q) && fields.some((f) => !!f && f.replace(/\D/g, '').includes(qDigits));
+}
+
+/**
  * Existing CRM leads assigned to an event. Each row is the original lead
  * (never a copy); a lead can be converted into a booking on this event.
  */
-export function EventLeads({ event, leads, seatsRemaining }: { event: EventItem; leads: EventLeadItem[]; seatsRemaining: number }) {
+export function EventLeads({
+  event,
+  leads,
+  seatsRemaining,
+  search = '',
+}: {
+  event: EventItem;
+  leads: EventLeadItem[];
+  seatsRemaining: number;
+  /** Lowercased search text from the event page (name, phone, email, booking no., agent). */
+  search?: string;
+}) {
+  const shown = search
+    ? leads.filter((l) =>
+        matchesSearch(search, [
+          l.lead.name,
+          l.lead.phone,
+          l.lead.email,
+          l.lead.assignedTo?.name,
+          l.booking ? bookingRef(l.booking.bookingNumber) : null,
+          l.booking ? String(l.booking.bookingNumber) : null,
+        ]),
+      )
+    : leads;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
@@ -52,7 +88,7 @@ export function EventLeads({ event, leads, seatsRemaining }: { event: EventItem;
     <>
       <div className="mb-3 mt-6 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-foreground">
-          Leads ({leads.length})
+          Leads ({search ? `${shown.length} of ${leads.length}` : leads.length})
           {leads.length > 0 && <span className="ml-2 text-xs font-medium text-muted-foreground">{booked} booked</span>}
         </h2>
         <Button size="sm" onClick={() => setAdding(true)}>
@@ -66,6 +102,8 @@ export function EventLeads({ event, leads, seatsRemaining }: { event: EventItem;
           title="No leads assigned yet"
           description="Add people from your Leads list who are interested in this departure. When they confirm, convert them into a booking here."
         />
+      ) : shown.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No leads match this search.</p>
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
@@ -80,7 +118,7 @@ export function EventLeads({ event, leads, seatsRemaining }: { event: EventItem;
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {leads.map((l) => {
+                {shown.map((l) => {
                   const st = leadStatusStyle(l.lead.status);
                   return (
                     <tr key={l.id}>

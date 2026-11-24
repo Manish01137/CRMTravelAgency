@@ -170,8 +170,9 @@ router.get(
     // Instagram from the org's existing links (same derivation as LinkTree/Host Page).
     const links = (org?.hostLinks as Array<{ label: string; url: string }> | null) ?? [];
     const instagramUrl = links.find((l) => /instagram\.com/i.test(l.url))?.url ?? null;
-    // WhatsApp number: same fallback chain as the Host Page (org contact, else the package's own).
-    const rawWhatsapp = org?.contactPhone ?? pkg.contactNumber ?? null;
+    // WhatsApp number: the trip's own WhatsApp number first, then the Host Page chain
+    // (org contact, else the package's contact number).
+    const rawWhatsapp = pkg.whatsappNumber ?? org?.contactPhone ?? pkg.contactNumber ?? null;
     const whatsappNumber = rawWhatsapp ? rawWhatsapp.replace(/\D/g, '') || null : null;
     const { hostLinks: _hl, contactPhone: _cp, ...publicOrg } = org ?? {};
     // Social / website links (the Adventure brochure's icon row and contact page).
@@ -264,6 +265,7 @@ router.get(
           priceCurrency: true,
           originalPrice: true,
           bannerImageUrl: true,
+          whatsappNumber: true, // the trip's own WhatsApp number (else the LinkTree one)
           linktreeCategoryLinks: { select: { linktreeCategoryId: true } },
         },
         orderBy: { createdAt: 'desc' },

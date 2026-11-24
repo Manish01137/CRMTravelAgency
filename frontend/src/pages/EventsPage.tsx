@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { format, parseISO } from 'date-fns';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -37,6 +38,20 @@ const STATUS_META: Record<EventStatus, { label: string; pill: string; dot: strin
   CANCELLED: { label: 'Cancelled', pill: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
 };
 const STATUSES = Object.keys(STATUS_META) as EventStatus[];
+
+/** Event name, package, destination, pickup city, status and dates ("dec", "december", "25 dec", "2026") in one lowercase string. */
+function eventSearchText(e: EventItem): string {
+  const dates = [e.departureDate, e.returnDate]
+    .filter((d): d is string => !!d)
+    .map((d) => {
+      try {
+        return format(parseISO(d), 'd MMM MMMM yyyy dd/MM/yyyy');
+      } catch {
+        return '';
+      }
+    });
+  return [e.name, e.packageName, e.destination, e.pickupCity, STATUS_META[e.status].label, ...dates].filter(Boolean).join(' ').toLowerCase();
+}
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -233,15 +248,16 @@ export function EventsPage() {
   const packagesQuery = useQuery({ queryKey: ['packages'], queryFn: () => api.get<TravelPackage[]>('/packages') });
 
   const all = useMemo(() => eventsQuery.data ?? [], [eventsQuery.data]);
-  const events = useMemo(
-    () =>
-      all.filter(
-        (e) =>
-          (statusFilter === 'ALL' || e.status === statusFilter) &&
-          (!search || e.packageName.toLowerCase().includes(search) || e.destination.toLowerCase().includes(search)),
-      ),
-    [all, statusFilter, search],
-  );
+  const events = useMemo(() => {
+    // Every word must match somewhere: "goa dec" → Goa departures in December.
+    const words = search.split(/\s+/).filter(Boolean);
+    return all.filter((e) => {
+      if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
+      if (!words.length) return true;
+      const text = eventSearchText(e);
+      return words.every((w) => text.includes(w));
+    });
+  }, [all, statusFilter, search]);
 
   const s = statsQuery.data;
   const currency = all[0]?.priceCurrency ?? 'INR';
@@ -264,7 +280,7 @@ export function EventsPage() {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search events…" className="pl-9" aria-label="Search events" />
+          <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search name, place, pickup or month…" className="pl-9" aria-label="Search events" />
         </div>
         <div className="flex flex-wrap gap-1.5">
           {(['ALL', ...STATUSES] as const).map((st) => (

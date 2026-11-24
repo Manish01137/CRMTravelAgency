@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, CalendarRange, Link2, MapPin, Phone, UserPlus, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, CalendarRange, Link2, MapPin, Phone, Search, UserPlus, Users, Wallet, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { EventDetail, EventStatus } from '@/types';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -13,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { BOOKING_STATUS_STYLES, bookingRef } from '@/lib/crmMeta';
 import { formatCurrency, formatTravelDate } from '@/lib/format';
 import { brochureUrl, copyToClipboard } from '@/lib/share';
-import { EventLeads } from '@/components/events/EventLeads';
+import { EventLeads, matchesSearch } from '@/components/events/EventLeads';
 
 const STATUS_LABEL: Record<EventStatus, string> = {
   DRAFT: 'Draft',
@@ -39,6 +41,8 @@ export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState('');
+  const search = searchInput.trim().toLowerCase();
 
   const query = useQuery({
     queryKey: ['event', id],
@@ -77,6 +81,9 @@ export function EventDetailPage() {
   }
 
   const { event: e, seatsBooked, seatsRemaining, revenue, pending, bookings, leads = [] } = query.data;
+  const shownBookings = search
+    ? bookings.filter((b) => matchesSearch(search, [b.customerName, b.customerPhone, bookingRef(b.bookingNumber), String(b.bookingNumber), b.assignedTo?.name]))
+    : bookings;
   const currency = e.priceCurrency;
   const fill = Math.min(100, e.capacity > 0 ? Math.round((seatsBooked / e.capacity) * 100) : 0);
 
@@ -182,17 +189,45 @@ export function EventDetailPage() {
         <Stat label="Pending payments" value={formatCurrency(pending, currency)} icon={<Wallet />} tint="bg-red-100 text-red-600" />
       </div>
 
+      {/* One search for both lists — name, phone, email, booking number or agent */}
+      {(leads.length > 0 || bookings.length > 0) && (
+        <div className="relative mt-6 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(ev) => setSearchInput(ev.target.value)}
+            placeholder="Search name, phone or booking no…"
+            className="pl-9 pr-9"
+            aria-label="Search leads and passengers"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Existing leads assigned to this event */}
-      <EventLeads event={e} leads={leads} seatsRemaining={seatsRemaining} />
+      <EventLeads event={e} leads={leads} seatsRemaining={seatsRemaining} search={search} />
 
       {/* Passenger / booking list */}
-      <h2 className="mb-3 mt-6 font-display text-base font-semibold text-foreground">Passengers ({bookings.length})</h2>
+      <h2 className="mb-3 mt-6 font-display text-base font-semibold text-foreground">
+        Passengers ({search ? `${shownBookings.length} of ${bookings.length}` : bookings.length})
+      </h2>
       {bookings.length === 0 ? (
         <EmptyState
           icon={<Users />}
           title="No passengers yet"
           description="Bookings assigned to this departure show up here. Create a booking, choose this package and pick this departure."
         />
+      ) : shownBookings.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">No passengers match “{searchInput.trim()}”.</p>
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
@@ -209,7 +244,7 @@ export function EventDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {bookings.map((b) => {
+                {shownBookings.map((b) => {
                   const bst = BOOKING_STATUS_STYLES[b.status];
                   const due = Math.max(0, b.totalAmount - b.amountPaid);
                   return (

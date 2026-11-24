@@ -78,6 +78,7 @@ export interface Values {
   description: string;
   contactNumber: string;
   contactEmail: string;
+  whatsappNumber: string;
   route: string;
   bookingAmount: string;
   itinerary: {
@@ -109,6 +110,36 @@ export interface Values {
   showOnHostpage: boolean;
   pdfTemplateId: PdfTemplateId;
   linktreeCategoryIds: string[];
+}
+
+/**
+ * This trip's own WhatsApp number — the LinkTree and trip-page WhatsApp buttons
+ * open a chat with it (message ready to send). Blank = the agency's main LinkTree number.
+ */
+function TripWhatsAppField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
+  const value = form.watch('whatsappNumber');
+  const digits = (value ?? '').replace(/\D/g, '');
+  const valid = !value?.trim() || /^\d{8,15}$/.test(digits);
+  const error = form.formState.errors.whatsappNumber?.message;
+  return (
+    <div className="rounded-xl border border-border bg-surface/60 p-4">
+      <Field
+        label="WhatsApp number for this trip"
+        htmlFor="tripWhatsapp"
+        error={error ?? (valid ? undefined : 'Enter the number with country code, e.g. 919876543210')}
+        hint="Optional. The WhatsApp button for this trip on LinkTree and the trip page opens a chat with this number. Leave blank to use your main LinkTree WhatsApp number."
+      >
+        <div className="flex gap-2">
+          <Input id="tripWhatsapp" inputMode="tel" placeholder="91XXXXXXXXXX" {...form.register('whatsappNumber')} />
+          {digits && valid && (
+            <Button type="button" variant="outline" onClick={() => window.open(`https://wa.me/${digits}`, '_blank', 'noopener')}>
+              Test
+            </Button>
+          )}
+        </div>
+      </Field>
+    </div>
+  );
 }
 
 /** LinkTree category multi-select (join-table based; syncs with Manage Categories). */
@@ -183,6 +214,7 @@ const FIELD_LOCATION: Record<string, { label: string; step: number }> = {
   description: { label: 'Description', step: 0 },
   contactNumber: { label: 'Contact number', step: 0 },
   contactEmail: { label: 'Contact email', step: 0 },
+  whatsappNumber: { label: 'WhatsApp number for this trip', step: 6 },
   categories: { label: 'Categories', step: 0 },
   itinerary: { label: 'Itinerary (a day title, photo or sightseeing entry)', step: 1 },
   inclusions: { label: 'Inclusions', step: 2 },
@@ -224,6 +256,7 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
     description: pkg?.description ?? '',
     contactNumber: pkg?.contactNumber ?? '',
     contactEmail: pkg?.contactEmail ?? '',
+    whatsappNumber: pkg?.whatsappNumber ?? '',
     route: pkg?.route ?? '',
     bookingAmount: pkg?.bookingAmount != null ? String(pkg.bookingAmount) : '',
     itinerary: (pkg?.itinerary ?? []).map((d) => ({
@@ -298,6 +331,7 @@ function toPayload(v: Values): Record<string, unknown> {
     description: v.description.trim() || null,
     contactNumber: v.contactNumber.trim() || null,
     contactEmail: v.contactEmail.trim() || null,
+    whatsappNumber: v.whatsappNumber.trim() || null,
     route: v.route.trim() || null,
     bookingAmount: num(v.bookingAmount),
     // A day is kept if it has ANY content — picking sightseeing (or a hotel,
@@ -1119,6 +1153,8 @@ function ReviewStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           </div>
         )}
       />
+
+      <TripWhatsAppField form={form} />
 
       <LinktreeCategoriesField form={form} />
 

@@ -584,6 +584,9 @@ model Package {
   whatsappDescription String? @map("whatsapp_description")
   contactNumber       String? @map("contact_number")
   contactEmail        String? @map("contact_email")
+  /// This trip's own WhatsApp number (digits with country code, e.g. 919876543210) — the
+  /// LinkTree / trip-page WhatsApp buttons open a chat with it instead of the agency's main number.
+  whatsappNumber      String? @map("whatsapp_number")
   // Adventure brochure: the trip's start/end ("Delhi to Delhi") and the amount that books a seat.
   route               String?
   bookingAmount       Int?    @map("booking_amount")

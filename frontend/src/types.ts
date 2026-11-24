@@ -309,6 +309,8 @@ export interface TravelPackage {
   whatsappDescription: string | null;
   contactNumber: string | null;
   contactEmail: string | null;
+  /** This trip's own WhatsApp number (digits); LinkTree / trip page buttons use it before the agency's. */
+  whatsappNumber: string | null;
   /** Adventure brochure: "Delhi to Delhi", and the amount that books a seat. */
   route: string | null;
   bookingAmount: number | null;
@@ -543,6 +545,8 @@ export interface LinktreeModulePackage {
   priceCurrency: string;
   originalPrice: number | null;
   bannerImageUrl: string | null;
+  /** The trip's own WhatsApp number — falls back to the LinkTree number when empty. */
+  whatsappNumber: string | null;
   linktreeCategoryIds: string[];
   departures: string[];
 }

@@ -126,8 +126,10 @@ export function LinktreePage() {
   const wantVideo = bgType === 'video' && !!theme.backgroundVideoUrl && !videoFailed && (!isMobile || !!theme.allowVideoOnMobile);
   const exploreHref = theme.websiteUrl || `/site/${org.slug}`;
 
+  // Each trip can have its own WhatsApp number; otherwise the LinkTree one.
+  const tripWa = (p: LinktreeModulePackage) => (p.whatsappNumber ?? '').replace(/\D/g, '') || waDigits;
   const waHref = (p: LinktreeModulePackage) =>
-    `https://wa.me/${waDigits}?text=${encodeURIComponent(
+    `https://wa.me/${tripWa(p)}?text=${encodeURIComponent(
       `Hi ${name}, I'm interested in *${p.name}* (${p.days}D/${p.nights}N). Please share the details.`,
     )}`;
 
@@ -295,7 +297,7 @@ export function LinktreePage() {
                 >
                   BOOK
                 </button>
-                {waDigits && (
+                {tripWa(p) && (
                   <a
                     href={waHref(p)}
                     target="_blank"
@@ -328,7 +330,7 @@ export function LinktreePage() {
         pkg={booking?.pkg ?? null}
         mode={booking?.mode}
         agencyName={name}
-        whatsappHref={booking && waDigits ? waHref(booking.pkg) : null}
+        whatsappHref={booking && tripWa(booking.pkg) ? waHref(booking.pkg) : null}
         onClose={closeBooking}
       />
 
