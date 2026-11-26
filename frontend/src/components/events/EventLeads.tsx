@@ -17,21 +17,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { BOOKING_STATUS_STYLES, bookingRef } from '@/lib/crmMeta';
 import { leadStatusStyle } from '@/lib/leadMeta';
 import { formatCurrency } from '@/lib/format';
+import { matchesSearch } from '@/lib/search';
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
-
-/**
- * True when the (lowercased) search text appears in any of the fields. Numbers
- * also match ignoring spaces / + / dashes, so "98765 43" finds "+91 98765-43210".
- */
-export function matchesSearch(search: string, fields: (string | null | undefined)[]): boolean {
-  const q = search.trim().toLowerCase();
-  if (!q) return true;
-  const text = fields.filter(Boolean).join(' ').toLowerCase();
-  if (text.includes(q)) return true;
-  const qDigits = q.replace(/\D/g, '');
-  return qDigits.length >= 3 && /^[\d\s+()-]+$/.test(q) && fields.some((f) => !!f && f.replace(/\D/g, '').includes(qDigits));
-}
 
 /**
  * Existing CRM leads assigned to an event. Each row is the original lead

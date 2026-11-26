@@ -418,7 +418,9 @@ function buildHtml(c: Ctx): string {
   if (handHtml.length) sections.push('Traveller Handbook');
 
   // --- Contact
-  const phones = [pkg.contactNumber, ...(org?.phones ?? [])].filter((p, i, a): p is string => !!p?.trim() && a.indexOf(p) === i).slice(0, 2);
+  // Main number, then the trip's extra contacts, then the agency's — 3 lines fit the contact page.
+  const extraPhones = (pkg.extraContacts ?? []).filter((c) => c.phone?.trim()).map((c) => (c.name?.trim() ? `${c.name.trim()}: ${c.phone!.trim()}` : c.phone!.trim()));
+  const phones = [pkg.contactNumber, ...extraPhones, ...(org?.phones ?? [])].filter((p, i, a): p is string => !!p?.trim() && a.indexOf(p) === i).slice(0, 3);
   const email = pkg.contactEmail || org?.contactEmail || '';
   const website = (org?.socialLinks ?? []).find((l) => socialTag(l.label, l.url) === 'web')?.url ?? '';
   const contactHtml = page(

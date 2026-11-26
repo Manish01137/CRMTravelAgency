@@ -430,7 +430,8 @@ export function PackageBrochurePage() {
         : [];
 
   const hasBankDetails = !!(org?.bankName || org?.bankAccountNumber || org?.ifscCode);
-  const hasContact = !!(phone || pkg.contactEmail || instagramUrl || whatsappNumber);
+  const extraContacts = (pkg.extraContacts ?? []).filter((c) => c.phone || c.email);
+  const hasContact = !!(phone || pkg.contactEmail || instagramUrl || whatsappNumber || extraContacts.length);
 
   return (
     <div className="pbx-screen" style={vars as React.CSSProperties}>
@@ -518,6 +519,10 @@ export function PackageBrochurePage() {
 
         .pbx-contact-row { border:1.5px solid var(--yellow); border-radius:14px; padding:14px 20px; display:flex; align-items:center; gap:12px; font-weight:700; font-size:16px; line-height:1.2; margin-bottom:14px; color:${INK}; text-decoration:none; }
         .pbx-contact-row .ic { font-size:20px; line-height:1; display:inline-flex; }
+        .pbx-contact-extra { align-items:flex-start; }
+        .pbx-contact-extra > span:last-child { display:flex; flex-direction:column; gap:4px; min-width:0; }
+        .pbx-contact-extra small { font-size:12px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; opacity:.65; }
+        .pbx-contact-extra a { color:inherit; text-decoration:none; word-break:break-all; }
         .pbx-ig-block { text-align:center; margin-top:30px; }
         .pbx-ig-block .title { font-family:${DISPLAY_FONT}; font-weight:700; font-size:17px; margin-bottom:2px; }
         .pbx-ig-block .sub { font-size:11px; color:${MUTED}; letter-spacing:.08em; margin-bottom:16px; }
@@ -828,6 +833,18 @@ export function PackageBrochurePage() {
                 <span className="ic">💬</span> +{whatsappNumber}
               </a>
             )}
+            {extraContacts.map((c, i) => (
+              <div key={i} className="pbx-contact-row pbx-contact-extra">
+                <span className="ic">👤</span>
+                <span>
+                  {c.name && <small>{c.name}</small>}
+                  {c.phone && (
+                    <a href={`tel:${c.phone.replace(/[^\d+]/g, '')}`}>📞 {c.phone}</a>
+                  )}
+                  {c.email && <a href={`mailto:${c.email}`}>✉️ {c.email}</a>}
+                </span>
+              </div>
+            ))}
           </div>
           {instagramUrl && (
             <div className="pbx-ig-block">

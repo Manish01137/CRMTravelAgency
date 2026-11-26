@@ -12,6 +12,16 @@ const nullUrl = z.preprocess(emptyToNull, z.string().url('Enter a valid URL').ma
 // Blank clears it; text without digits stays as typed so the regex flags it.
 const WA_NUMBER_MESSAGE = 'Enter the WhatsApp number with country code, e.g. 919876543210';
 const toWaDigits = (v: unknown) => (typeof v === 'string' ? (v.trim() ? v.replace(/\D/g, '') || v.trim() : null) : v);
+// More contacts for the trip ("Trip captain — Rahul", phone and/or email). Max 5.
+const extraContactSchema = z
+  .object({
+    name: z.preprocess(emptyToUndefined, z.string().trim().max(80).optional()),
+    phone: z.preprocess(emptyToUndefined, z.string().trim().max(40).optional()),
+    email: z.preprocess(emptyToUndefined, z.string().trim().email('Enter a valid email for the extra contact').max(200).optional()),
+  })
+  .refine((c) => !!(c.phone || c.email), { message: 'Each extra contact needs a phone number or an email' });
+const extraContactsSchema = z.array(extraContactSchema).max(5, 'Add up to 5 extra contacts');
+
 const waNumberCreate = z.preprocess((v) => toWaDigits(v) ?? undefined, z.string().regex(/^\d{8,15}$/, WA_NUMBER_MESSAGE).optional());
 const waNumberUpdate = z.preprocess(toWaDigits, z.string().regex(/^\d{8,15}$/, WA_NUMBER_MESSAGE).nullable()).optional();
 
@@ -88,6 +98,7 @@ const builderFields = {
   whatsappDescription: optText(2000),
   contactNumber: optText(40),
   whatsappNumber: waNumberCreate,
+  extraContacts: extraContactsSchema.default([]),
   contactEmail: z.preprocess(emptyToUndefined, z.string().email('Enter a valid email').max(200).optional()),
   route: optText(120),
   bookingAmount: z.preprocess(emptyToUndefined, z.coerce.number().int().nonnegative().max(1_000_000_000).optional()),
@@ -152,6 +163,7 @@ export const updatePackageSchema = z
     whatsappDescription: nullText(2000),
     contactNumber: nullText(40),
     whatsappNumber: waNumberUpdate,
+    extraContacts: extraContactsSchema.optional(),
     contactEmail: z.preprocess(emptyToNull, z.string().email().max(200).nullable()).optional(),
     route: nullText(120),
     bookingAmount: z.preprocess(emptyToNull, z.coerce.number().int().nonnegative().max(1_000_000_000).nullable()).optional(),

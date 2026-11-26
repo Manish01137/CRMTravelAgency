@@ -128,6 +128,7 @@ export function PublicPackagePage() {
   const thingsToCarry = lines(pkg.thingsToCarry);
   const terms = lines(pkg.termsConditions);
 
+  const extraContacts = (pkg.extraContacts ?? []).filter((c) => c.phone || c.email);
   const waDigits = org?.whatsappNumber ?? (pkg.contactNumber ?? '').replace(/\D/g, '');
   const waText = encodeURIComponent(
     `Hi ${orgName}, I'm interested in *${pkg.name}* (${pkg.destination}, ${pkg.days}D/${pkg.nights}N). Please share details.`,
@@ -424,7 +425,7 @@ export function PublicPackagePage() {
         </motion.div>
 
         {/* Contact */}
-        {(pkg.contactNumber || pkg.contactEmail || org?.instagramUrl) && (
+        {(pkg.contactNumber || pkg.contactEmail || extraContacts.length > 0 || org?.instagramUrl) && (
           <motion.div {...rise(0.44)} className="mt-10">
             <Banner>CONTACT US!</Banner>
             <div className="space-y-2.5">
@@ -438,6 +439,23 @@ export function PublicPackagePage() {
                   <Mail className="size-4" style={{ color: 'var(--blue)' }} /> {pkg.contactEmail}
                 </div>
               )}
+              {extraContacts.map((c, i) => (
+                <div key={i} className="rounded-xl px-4 py-3" style={{ border: `1.5px solid var(--yellow)` }}>
+                  {c.name && <p className="mb-1 text-xs font-bold uppercase tracking-wide" style={{ color: MUTED }}>{c.name}</p>}
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 font-semibold">
+                    {c.phone && (
+                      <a href={`tel:${c.phone.replace(/[^\d+]/g, '')}`} className="flex items-center gap-3" style={{ color: INK }}>
+                        <Phone className="size-4" style={{ color: 'var(--blue)' }} /> {c.phone}
+                      </a>
+                    )}
+                    {c.email && (
+                      <a href={`mailto:${c.email}`} className="flex min-w-0 items-center gap-3 break-all" style={{ color: INK }}>
+                        <Mail className="size-4 shrink-0" style={{ color: 'var(--blue)' }} /> {c.email}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
               {org?.instagramUrl && (
                 <a
                   href={org.instagramUrl}

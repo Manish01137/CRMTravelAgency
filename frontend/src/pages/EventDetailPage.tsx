@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { BOOKING_STATUS_STYLES, bookingRef } from '@/lib/crmMeta';
 import { formatCurrency, formatTravelDate } from '@/lib/format';
 import { brochureUrl, copyToClipboard } from '@/lib/share';
-import { EventLeads, matchesSearch } from '@/components/events/EventLeads';
+import { EventLeads } from '@/components/events/EventLeads';
+import { matchesSearch } from '@/lib/search';
 
 const STATUS_LABEL: Record<EventStatus, string> = {
   DRAFT: 'Draft',

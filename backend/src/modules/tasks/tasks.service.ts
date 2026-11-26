@@ -5,7 +5,7 @@ import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from './tasks.s
 
 const taskInclude = {
   assignedTo: { select: { id: true, name: true } },
-  lead: { select: { id: true, name: true } },
+  lead: { select: { id: true, name: true, phone: true } }, // phone: the Tasks search finds tasks by the lead's number
   booking: { select: { id: true, customerName: true, bookingNumber: true } },
 } satisfies Prisma.TaskInclude;
 

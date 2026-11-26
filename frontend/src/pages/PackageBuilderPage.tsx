@@ -78,6 +78,7 @@ export interface Values {
   description: string;
   contactNumber: string;
   contactEmail: string;
+  extraContacts: { name: string; phone: string; email: string }[];
   whatsappNumber: string;
   route: string;
   bookingAmount: string;
@@ -138,6 +139,52 @@ function TripWhatsAppField({ form }: { form: ReturnType<typeof useForm<Values>> 
           )}
         </div>
       </Field>
+    </div>
+  );
+}
+
+const MAX_EXTRA_CONTACTS = 5;
+
+/**
+ * Optional extra contacts for the trip — e.g. "Trip captain — Rahul" with a
+ * phone and/or email. Shown on the trip page and in the brochures.
+ */
+function ExtraContactsField({ form }: { form: ReturnType<typeof useForm<Values>> }) {
+  const { register, control, watch, formState: { errors } } = form;
+  const contacts = useFieldArray({ control, name: 'extraContacts' });
+  const rows = watch('extraContacts');
+  const serverError = (errors.extraContacts as { message?: string } | undefined)?.message;
+  return (
+    <div className="space-y-3">
+      {contacts.fields.map((f, i) => {
+        const row = rows?.[i];
+        const filledName = !!row?.name.trim();
+        const missing = filledName && !row?.phone.trim() && !row?.email.trim();
+        return (
+          <div key={f.id} className="rounded-xl border border-border bg-surface/60 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact {i + 2}</p>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove contact ${i + 2}`} onClick={() => contacts.remove(i)}>
+                <Trash2 className="text-destructive" />
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input aria-label={`Contact ${i + 2} name`} placeholder="Name / role (e.g. Trip captain Rahul)" maxLength={80} {...register(`extraContacts.${i}.name`)} />
+              <Input aria-label={`Contact ${i + 2} phone`} inputMode="tel" placeholder="Phone" maxLength={40} {...register(`extraContacts.${i}.phone`)} />
+              <Input aria-label={`Contact ${i + 2} email`} type="email" placeholder="Email" maxLength={200} {...register(`extraContacts.${i}.email`)} />
+            </div>
+            {missing && <p className="mt-1.5 text-xs text-amber-700">Add a phone number or an email — otherwise this contact isn’t saved.</p>}
+          </div>
+        );
+      })}
+      {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+      {contacts.fields.length < MAX_EXTRA_CONTACTS ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => contacts.append({ name: '', phone: '', email: '' })}>
+          <Plus /> Add another contact <span className="font-normal text-muted-foreground">(optional)</span>
+        </Button>
+      ) : (
+        <p className="text-xs text-muted-foreground">You can add up to {MAX_EXTRA_CONTACTS} extra contacts.</p>
+      )}
     </div>
   );
 }
@@ -215,6 +262,7 @@ const FIELD_LOCATION: Record<string, { label: string; step: number }> = {
   contactNumber: { label: 'Contact number', step: 0 },
   contactEmail: { label: 'Contact email', step: 0 },
   whatsappNumber: { label: 'WhatsApp number for this trip', step: 6 },
+  extraContacts: { label: 'More contacts', step: 0 },
   categories: { label: 'Categories', step: 0 },
   itinerary: { label: 'Itinerary (a day title, photo or sightseeing entry)', step: 1 },
   inclusions: { label: 'Inclusions', step: 2 },
@@ -256,6 +304,7 @@ export function toValues(pkg: TravelPackage | null, orgDefaults?: OrgPolicyDefau
     description: pkg?.description ?? '',
     contactNumber: pkg?.contactNumber ?? '',
     contactEmail: pkg?.contactEmail ?? '',
+    extraContacts: (pkg?.extraContacts ?? []).map((c) => ({ name: c.name ?? '', phone: c.phone ?? '', email: c.email ?? '' })),
     whatsappNumber: pkg?.whatsappNumber ?? '',
     route: pkg?.route ?? '',
     bookingAmount: pkg?.bookingAmount != null ? String(pkg.bookingAmount) : '',
@@ -331,6 +380,10 @@ function toPayload(v: Values): Record<string, unknown> {
     description: v.description.trim() || null,
     contactNumber: v.contactNumber.trim() || null,
     contactEmail: v.contactEmail.trim() || null,
+    // Rows left empty are dropped; a row needs a phone or an email.
+    extraContacts: v.extraContacts
+      .map((c) => ({ name: c.name.trim() || undefined, phone: c.phone.trim() || undefined, email: c.email.trim() || undefined }))
+      .filter((c) => c.phone || c.email),
     whatsappNumber: v.whatsappNumber.trim() || null,
     route: v.route.trim() || null,
     bookingAmount: num(v.bookingAmount),
@@ -696,6 +749,8 @@ function BasicsStep({ form }: { form: ReturnType<typeof useForm<Values>> }) {
           <Input id="contactEmail" type="email" placeholder="hello@example.com" {...register('contactEmail')} />
         </Field>
       </div>
+
+      <ExtraContactsField form={form} />
     </div>
   );
 }

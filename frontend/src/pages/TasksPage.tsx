@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { isPast, isToday, parseISO } from 'date-fns';
-import { BellRing, Check, ListChecks, Plus, Trash2 } from 'lucide-react';
+import { format, isPast, isToday, parseISO } from 'date-fns';
+import { BellRing, Check, ListChecks, Plus, Search, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Task, TaskType, User } from '@/types';
@@ -31,11 +31,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { TASK_TYPES, TASK_TYPE_META } from '@/lib/crmMeta';
+import { TASK_TYPES, TASK_TYPE_META, bookingRef } from '@/lib/crmMeta';
+import { matchesSearch } from '@/lib/search';
 import { formatSmartTime } from '@/lib/format';
 
 const NONE = 'none';
 type Filter = 'PENDING' | 'DONE' | 'ALL';
+
+/** Everything a task can be found by: title, notes, type, lead (name + phone), booking, assignee and due date ("dec", "monday"). */
+function taskSearchFields(t: Task): (string | null | undefined)[] {
+  let due = '';
+  try {
+    due = format(parseISO(t.dueAt), 'd MMM MMMM yyyy EEEE dd/MM/yyyy');
+  } catch {
+    /* keep it searchable by everything else */
+  }
+  return [
+    t.title,
+    t.notes,
+    TASK_TYPE_META[t.type]?.label,
+    t.lead?.name,
+    t.lead?.phone,
+    t.booking?.customerName,
+    t.booking ? bookingRef(t.booking.bookingNumber) : null,
+    t.assignedTo?.name,
+    due,
+  ];
+}
 
 interface FormValues {
   title: string;
@@ -145,6 +167,8 @@ export function TasksPage() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>('PENDING');
   const [formOpen, setFormOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const search = searchInput.trim();
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', filter],
@@ -167,7 +191,8 @@ export function TasksPage() {
     },
   });
 
-  const tasks = tasksQuery.data ?? [];
+  const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+  const tasks = useMemo(() => (search ? allTasks.filter((t) => matchesSearch(search, taskSearchFields(t))) : allTasks), [allTasks, search]);
 
   // Group: Overdue / Today / Upcoming (or by state when showing done/all)
   const groups = useMemo(() => {
@@ -240,7 +265,28 @@ export function TasksPage() {
         </Button>
       </PageHeader>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative sm:max-w-xs sm:flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search task, lead, phone or date…"
+            className="pl-9 pr-9"
+            aria-label="Search tasks"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput('')}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
         {(['PENDING', 'DONE', 'ALL'] as Filter[]).map((f) => (
           <button
             key={f}
@@ -256,6 +302,7 @@ export function TasksPage() {
             {f === 'PENDING' ? 'Open' : f === 'DONE' ? 'Completed' : 'All'}
           </button>
         ))}
+        </div>
       </div>
 
       {tasksQuery.isLoading ? (
@@ -270,6 +317,17 @@ export function TasksPage() {
             </div>
           ))}
         </Card>
+      ) : search && tasks.length === 0 ? (
+        <EmptyState
+          icon={<Search />}
+          title="No tasks match"
+          description={`Nothing ${filter === 'PENDING' ? 'open ' : filter === 'DONE' ? 'completed ' : ''}matches “${search}”. Try another word${filter !== 'ALL' ? ', or look in All' : ''}.`}
+          action={
+            <Button variant="outline" onClick={() => setSearchInput('')}>
+              Clear search
+            </Button>
+          }
+        />
       ) : tasks.length === 0 ? (
         <EmptyState
           icon={filter === 'DONE' ? <ListChecks /> : <BellRing />}

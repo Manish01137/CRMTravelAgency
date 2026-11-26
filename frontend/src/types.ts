@@ -251,6 +251,13 @@ export type PdfTemplateId = 'signature' | 'adventure';
 /** Which "Signature" template color variant a package renders in — set only by picking a template in the builder, never an independent field. */
 export type SignatureTheme = 'SUNRISE' | 'OCEAN' | 'HERITAGE';
 
+/** An extra person to contact for a trip (besides the package's main number / email). */
+export interface PackageContact {
+  name?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
 export interface PricingOption {
   label: string;
   price: number;
@@ -311,6 +318,8 @@ export interface TravelPackage {
   contactEmail: string | null;
   /** This trip's own WhatsApp number (digits); LinkTree / trip page buttons use it before the agency's. */
   whatsappNumber: string | null;
+  /** More contacts for the trip (max 5) — shown on the trip page and brochures. */
+  extraContacts?: PackageContact[];
   /** Adventure brochure: "Delhi to Delhi", and the amount that books a seat. */
   route: string | null;
   bookingAmount: number | null;
@@ -397,7 +406,7 @@ export interface Task {
   bookingId: string | null;
   assignedToId: string | null;
   assignedTo: { id: string; name: string } | null;
-  lead: { id: string; name: string } | null;
+  lead: { id: string; name: string; phone?: string | null } | null;
   booking: { id: string; customerName: string; bookingNumber: number } | null;
   createdAt: string;
 }

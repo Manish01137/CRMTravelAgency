@@ -84,6 +84,11 @@ function packageMessage(pkg: TravelPackage): string {
   if (pkg.highlights.length) lines.push('', 'Highlights:', ...pkg.highlights.slice(0, 5).map((h) => `• ${h}`));
   if (pkg.whatsappDescription) lines.push('', pkg.whatsappDescription);
   if (pkg.contactNumber) lines.push('', `Call us: ${pkg.contactNumber}`);
+  const extra = (pkg.extraContacts ?? [])
+    .map((c) => ({ name: c.name, how: [c.phone, c.email].filter(Boolean).join(' · ') }))
+    .filter((c) => c.how)
+    .map((c) => (c.name ? `${c.name}: ${c.how}` : c.how));
+  if (extra.length) lines.push(...(pkg.contactNumber ? [] : ['', 'Contact:']), ...extra);
   return lines.join('\n');
 }
 
